@@ -109,8 +109,8 @@ export default function SettingsScreen() {
                 </View>
                 <TouchableOpacity
                   style={[styles.smallBtn, { borderColor: theme.backgroundSelected }]}
-                  onPress={handleShowTrips}>
-                  <ThemedText type="small">切り替え</ThemedText>
+                  onPress={showTripList ? () => setShowTripList(false) : handleShowTrips}>
+                  <ThemedText type="small">{showTripList ? '閉じる' : '切り替え'}</ThemedText>
                 </TouchableOpacity>
               </View>
             ) : (
@@ -156,22 +156,6 @@ export default function SettingsScreen() {
                   placeholder="旅行名（例：ハワイ旅行）"
                   placeholderTextColor={theme.textSecondary}
                 />
-                <TextInput
-                  style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                  value={newBudget}
-                  onChangeText={setNewBudget}
-                  placeholder="予算（円）例：50000"
-                  placeholderTextColor={theme.textSecondary}
-                  keyboardType="number-pad"
-                />
-                <TextInput
-                  style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                  value={newRate}
-                  onChangeText={setNewRate}
-                  placeholder="レート（例：148.5）※後からでも設定可"
-                  placeholderTextColor={theme.textSecondary}
-                  keyboardType="decimal-pad"
-                />
                 <ThemedText type="small" themeColor="textSecondary">通貨</ThemedText>
                 <View style={styles.chips}>
                   {CURRENCY_CODES.map((code) => {
@@ -188,6 +172,25 @@ export default function SettingsScreen() {
                       </TouchableOpacity>
                     );
                   })}
+                </View>
+                <TextInput
+                  style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                  value={newRate}
+                  onChangeText={setNewRate}
+                  placeholder={`レート（例：1 ${newCurrency} = ¥148.5）`}
+                  placeholderTextColor={theme.textSecondary}
+                  keyboardType="decimal-pad"
+                />
+                <View style={styles.budgetRow}>
+                  <ThemedText type="small" themeColor="textSecondary" style={styles.budgetPrefix}>¥</ThemedText>
+                  <TextInput
+                    style={[styles.input, styles.budgetInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                    value={newBudget}
+                    onChangeText={setNewBudget}
+                    placeholder="予算（例：50000）"
+                    placeholderTextColor={theme.textSecondary}
+                    keyboardType="number-pad"
+                  />
                 </View>
                 <View style={styles.formButtons}>
                   <TouchableOpacity
@@ -319,6 +322,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.one,
     fontSize: 15,
   },
+  budgetRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  budgetPrefix: { fontSize: 15, paddingBottom: 1 },
+  budgetInput: { flex: 1 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one },
   chip: {
     flexDirection: 'row',

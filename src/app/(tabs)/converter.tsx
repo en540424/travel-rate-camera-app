@@ -12,6 +12,7 @@ import { CURRENCIES, CURRENCY_CODES } from '@/constants/currencies';
 import { Spacing } from '@/constants/theme';
 import { useHistory } from '@/hooks/use-history';
 import { useRates } from '@/hooks/use-rates';
+import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useTheme } from '@/hooks/use-theme';
 import { convert } from '@/utils/currency';
@@ -25,12 +26,13 @@ export default function ConverterScreen() {
   const theme = useTheme();
   const { selectedCurrency, setSelectedCurrency } = useSettingsStore();
   const { addEntry } = useHistory();
+  const { activeTrip } = useTrips();
 
   const rate = rates[selectedCurrency] ?? 0;
   const amount = parseFloat(amountText) || 0;
   const jpyAmount = convert(amount, rate);
   const hasRate = rate > 0;
-  const hasResult = hasRate && amount > 0;
+  const hasResult = !!activeTrip && hasRate && amount > 0;
 
   async function handleSave() {
     if (!hasResult) return;

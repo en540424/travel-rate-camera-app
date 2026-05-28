@@ -135,41 +135,55 @@ export default function CameraScreen() {
             </View>
 
             {/* 買い物サマリー（判断の文脈） */}
-            <View style={styles.summaryCard}>
-              <ThemedText style={styles.summaryTitle}>買い物サマリー</ThemedText>
+            {activeTrip ? (
+              <View style={styles.summaryCard}>
+                <ThemedText style={styles.summaryTitle}>買い物サマリー</ThemedText>
 
-              <View style={styles.summaryRow}>
-                <ThemedText style={styles.summaryLabel}>買い物候補</ThemedText>
-                <ThemedText style={styles.summaryValue}>{stats.candidateCount}件</ThemedText>
-              </View>
-              <View style={styles.summaryRow}>
-                <ThemedText style={styles.summaryLabel}>候補合計</ThemedText>
-                <ThemedText style={styles.summaryValueAccent}>
-                  {formatJpy(stats.candidateTotalJpy)}
-                </ThemedText>
-              </View>
-              <View style={styles.summaryRow}>
-                <ThemedText style={styles.summaryLabel}>購入済み</ThemedText>
-                <ThemedText style={styles.summaryValue}>
-                  {formatJpy(stats.purchasedTotalJpy)}
-                </ThemedText>
-              </View>
-              <View style={styles.summaryRow}>
-                <ThemedText style={styles.summaryLabel}>残り予算</ThemedText>
-                <ThemedText style={styles.summaryRemaining}>
-                  {tripBudgetJpy > 0 ? formatJpy(stats.remainingBudget) : '未設定'}
-                </ThemedText>
-              </View>
+                <View style={styles.summaryRow}>
+                  <ThemedText style={styles.summaryLabel}>買い物候補</ThemedText>
+                  <ThemedText style={styles.summaryValue}>{stats.candidateCount}件</ThemedText>
+                </View>
+                <View style={styles.summaryRow}>
+                  <ThemedText style={styles.summaryLabel}>候補合計</ThemedText>
+                  <ThemedText style={styles.summaryValueAccent}>
+                    {formatJpy(stats.candidateTotalJpy)}
+                  </ThemedText>
+                </View>
+                <View style={styles.summaryRow}>
+                  <ThemedText style={styles.summaryLabel}>購入済み</ThemedText>
+                  <ThemedText style={styles.summaryValue}>
+                    {formatJpy(stats.purchasedTotalJpy)}
+                  </ThemedText>
+                </View>
+                <View style={styles.summaryRow}>
+                  <ThemedText style={styles.summaryLabel}>残り予算</ThemedText>
+                  <ThemedText style={styles.summaryRemaining}>
+                    {tripBudgetJpy > 0 ? formatJpy(stats.remainingBudget) : '未設定'}
+                  </ThemedText>
+                </View>
 
-              <View style={styles.budgetBarTrack}>
-                <View
-                  style={[
-                    styles.budgetBarFill,
-                    { width: `${budgetUsedRatio * 100}%` },
-                  ]}
-                />
+                <View style={styles.budgetBarTrack}>
+                  <View
+                    style={[
+                      styles.budgetBarFill,
+                      { width: `${budgetUsedRatio * 100}%` },
+                    ]}
+                  />
+                </View>
               </View>
-            </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.noTripBanner}
+                onPress={() => router.push('/settings')}
+                activeOpacity={0.75}>
+                <ThemedText style={styles.noTripBannerText}>
+                  旅行フォルダがありません
+                </ThemedText>
+                <ThemedText style={styles.noTripBannerLink}>
+                  設定で旅行を作成する →
+                </ThemedText>
+              </TouchableOpacity>
+            )}
 
             {/* 判断アクション（補助） */}
             <View style={styles.judgmentSection}>
@@ -348,6 +362,27 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: C.budgetBar,
     minWidth: 0,
+  },
+
+  noTripBanner: {
+    backgroundColor: C.surface,
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1.5,
+    borderColor: C.brand,
+    borderStyle: 'dashed',
+  },
+  noTripBannerText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: C.textSecondary,
+  },
+  noTripBannerLink: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: C.brand,
   },
 
   judgmentSection: {
