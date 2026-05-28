@@ -177,13 +177,24 @@ export default function SettingsScreen() {
                     <TouchableOpacity
                       style={styles.tripListName}
                       onPress={() => handleSwitch(t.id)}>
-                      <ThemedText
-                        type="small"
-                        style={activeTrip?.id === t.id ? styles.activeTripLabel : undefined}>
-                        {activeTrip?.id === t.id ? '✓ ' : ''}{t.name}
+                      <View style={styles.tripListNameRow}>
+                        <ThemedText
+                          type="smallBold"
+                          style={activeTrip?.id === t.id ? styles.activeTripLabel : undefined}>
+                          {t.name}
+                        </ThemedText>
+                        {activeTrip?.id === t.id && (
+                          <View style={styles.selectedBadge}>
+                            <ThemedText style={styles.selectedBadgeText}>選択中</ThemedText>
+                          </View>
+                        )}
+                      </View>
+                      <ThemedText type="small" themeColor="textSecondary">
+                        {t.base_currency} → {t.target_currency}
+                        {t.manual_rate > 0 ? `  ·  1 ${t.base_currency} = ¥${t.manual_rate}` : '  ·  レート未設定'}
                       </ThemedText>
                       <ThemedText type="small" themeColor="textSecondary">
-                        ¥{t.budget_jpy.toLocaleString()} ・ {t.base_currency}
+                        予算 {t.budget_jpy > 0 ? `¥${t.budget_jpy.toLocaleString()}` : '未設定'}
                       </ThemedText>
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -414,15 +425,23 @@ const styles = StyleSheet.create({
   tripList: { gap: Spacing.one },
   tripListRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#cccccc44',
   },
-  tripListName: { flex: 1, gap: 2 },
+  tripListName: { flex: 1, gap: 3 },
+  tripListNameRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },
   activeTripLabel: { color: '#208AEF', fontWeight: '700' },
-  removeBtn: { color: '#FF3B30' },
+  selectedBadge: {
+    backgroundColor: '#208AEF22',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  selectedBadgeText: { fontSize: 10, fontWeight: '700', color: '#208AEF' },
+  removeBtn: { color: '#FF3B30', paddingTop: 2 },
 
   addTripBtn: {
     paddingVertical: Spacing.one,
