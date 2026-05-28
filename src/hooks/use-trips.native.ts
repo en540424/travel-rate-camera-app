@@ -62,7 +62,12 @@ export function useTrips() {
   ): Promise<void> {
     await updateTrip(db, id, fields);
     const updated = await getTripById(db, id);
-    if (updated && activeTrip?.id === id) setActiveTrip(updated);
+    if (updated && activeTrip?.id === id) {
+      setActiveTrip(updated);
+      if (fields.base_currency) {
+        useSettingsStore.getState().setSelectedCurrency(fields.base_currency);
+      }
+    }
   }
 
   async function removeTrip(id: number): Promise<void> {
