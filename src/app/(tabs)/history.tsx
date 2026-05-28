@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { Alert, FlatList, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -31,6 +31,12 @@ function formatSavedAt(createdAt: string): string {
 
 export default function HistoryScreen() {
   const { history, totalCount, clearAll, reload, togglePurchased, removeEntry } = useHistory();
+
+  // React Compiler のメモ化でクロージャが古くなるのを防ぐ ref
+  const removeEntryRef = useRef(removeEntry);
+  const togglePurchasedRef = useRef(togglePurchased);
+  removeEntryRef.current = removeEntry;
+  togglePurchasedRef.current = togglePurchased;
   const isPro = useSettingsStore((s) => s.isPro);
   const isLimited = !isPro && totalCount >= FREE_HISTORY_LIMIT;
   const { activeTrip } = useTrips();
@@ -55,7 +61,7 @@ export default function HistoryScreen() {
       'この候補を履歴から削除します。この操作は取り消せません。',
       [
         { text: 'キャンセル', style: 'cancel' },
-        { text: '削除', style: 'destructive', onPress: () => removeEntry(id) },
+        { text: '削除', style: 'destructive', onPress: () => removeEntryRef.current(id) },
       ],
     );
   }
@@ -70,7 +76,7 @@ export default function HistoryScreen() {
           <ThemedText style={styles.tripLabel}>{tripName}</ThemedText>
           <TouchableOpacity
             style={[styles.badge, isPurchased && styles.badgePurchased]}
-            onPress={() => togglePurchased(item.id, item.is_purchased ?? 0)}
+            onPress={() => togglePurchasedRef.current(item.id, item.is_purchased ?? 0)}
             hitSlop={8}>
             <ThemedText style={[styles.badgeText, isPurchased && styles.badgeTextPurchased]}>
               {isPurchased ? '✓ 購入済み' : '候補'}
