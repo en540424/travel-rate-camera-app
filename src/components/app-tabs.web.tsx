@@ -15,7 +15,7 @@ import { Colors, Spacing } from '@/constants/theme';
 const TAB_HEIGHT = 58;
 
 const TAB_ITEMS = [
-  { name: 'index',     href: '/(tabs)/index'     as const, label: '📷 カメラ' },
+  { name: 'index',     href: '/'                 as const, label: '📷 カメラ' },
   { name: 'converter', href: '/converter'         as const, label: '換算' },
   { name: 'history',   href: '/history'           as const, label: '履歴' },
   { name: 'settings',  href: '/settings'          as const, label: '設定' },

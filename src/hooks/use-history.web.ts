@@ -7,16 +7,29 @@ import type { CurrencyCode } from '@/constants/currencies';
 import { FREE_HISTORY_LIMIT } from '@/db/queries/history';
 import type { HistoryRow } from '@/db/queries/history';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useTripStore } from '@/stores/trip-store';
 
 const STORAGE_KEY = 'travelrate:history';
 
-// Web 用簡易 ID（セッションをまたいでも重複しにくいよう timestamp ベース）
 let idCounter = Date.now();
 
 function loadAll(): HistoryRow[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as HistoryRow[]) : [];
+    if (!raw) return [];
+    return (JSON.parse(raw) as Partial<HistoryRow & { purchase_date?: string }>[]).map((r) => ({
+      id: r.id ?? 0,
+      currency: (r.currency ?? 'USD') as CurrencyCode,
+      foreign_amount: r.foreign_amount ?? 0,
+      jpy_amount: r.jpy_amount ?? 0,
+      rate_used: r.rate_used ?? 0,
+      trip_id: r.trip_id ?? null,
+      is_purchased: (r.is_purchased === 1 ? 1 : 0) as 0 | 1,
+      // 旧フィールド purchase_date も読み込めるよう互換処理
+      purchased_at: r.purchased_at ?? r.purchase_date ?? null,
+      updated_at: r.updated_at ?? null,
+      created_at: r.created_at ?? '',
+    }));
   } catch {
     return [];
   }
@@ -30,15 +43,19 @@ function persistAll(rows: HistoryRow[]) {
 
 export function useHistory() {
   const isPro = useSettingsStore((s) => s.isPro);
+  const activeTrip = useTripStore((s) => s.activeTrip);
   const [history, setHistoryState] = useState<HistoryRow[]>([]);
   const [totalCount, setTotalCount] = useState(0);
 
   const load = useCallback(() => {
     const all = loadAll();
-    setTotalCount(all.length);
+    const rows = activeTrip
+      ? all.filter((r) => r.trip_id === activeTrip.id)
+      : all;
+    setTotalCount(rows.length);
     const limit = isPro ? 500 : FREE_HISTORY_LIMIT;
-    setHistoryState(all.slice(0, limit));
-  }, [isPro]);
+    setHistoryState(rows.slice(0, limit));
+  }, [isPro, activeTrip]);
 
   useEffect(() => {
     load();
@@ -50,18 +67,21 @@ export function useHistory() {
     jpyAmount: number,
     rateUsed: number,
   ) {
-    const all = loadAll();
+    if (!activeTrip) return;
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
     const entry: HistoryRow = {
       id: idCounter++,
       currency,
       foreign_amount: foreignAmount,
       jpy_amount: jpyAmount,
       rate_used: rateUsed,
-      trip_id: null,
-      // SQLite の datetime('now') に合わせた形式
-      created_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      trip_id: activeTrip.id,
+      is_purchased: 0,
+      purchased_at: null,
+      updated_at: now,
+      created_at: now,
     };
-    persistAll([entry, ...all]);
+    persistAll([entry, ...loadAll()]);
     load();
   }
 
@@ -71,7 +91,29 @@ export function useHistory() {
   }
 
   async function clearAll() {
-    persistAll([]);
+    if (activeTrip) {
+      persistAll(loadAll().filter((r) => r.trip_id !== activeTrip.id));
+    } else {
+      persistAll([]);
+    }
+    load();
+  }
+
+  async function togglePurchased(id: number, currentValue: 0 | 1) {
+    const isPurchased = currentValue === 0;
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    persistAll(
+      loadAll().map((r) =>
+        r.id === id
+          ? {
+              ...r,
+              is_purchased: (isPurchased ? 1 : 0) as 0 | 1,
+              purchased_at: isPurchased ? now : null,
+              updated_at: now,
+            }
+          : r,
+      ),
+    );
     load();
   }
 
@@ -84,7 +126,7 @@ export function useHistory() {
     addEntry,
     removeEntry,
     clearAll,
-    /** localStorage から再読込（タブフォーカス時など） */
+    togglePurchased,
     reload: load,
   };
 }

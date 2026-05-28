@@ -6,15 +6,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import {
   CAMERA_UI as C,
-  DEMO_TRIP_NAME,
-  MOCK_TRIP_BUDGET_JPY,
+  FALLBACK_BUDGET_JPY,
+  FALLBACK_TRIP_NAME,
 } from '@/constants/camera-screen';
 import { FREE_HISTORY_LIMIT } from '@/db/queries/history';
 import type { HistoryRow } from '@/db/queries/history';
 import { useHistory } from '@/hooks/use-history';
+import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
-import { getTodayCandidateStatsForDisplay } from '@/utils/today-candidates';
+import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
 function formatSavedAt(createdAt: string): string {
   const isoUtc = createdAt.includes('T')
@@ -29,15 +30,18 @@ function formatSavedAt(createdAt: string): string {
 }
 
 export default function HistoryScreen() {
-  const { history, totalCount, clearAll, reload } = useHistory();
+  const { history, totalCount, clearAll, reload, togglePurchased } = useHistory();
   const isPro = useSettingsStore((s) => s.isPro);
   const isLimited = !isPro && totalCount >= FREE_HISTORY_LIMIT;
+  const { activeTrip } = useTrips();
 
-  const { todayCount, todayTotalJpy } = useMemo(
-    () => getTodayCandidateStatsForDisplay(history),
-    [history, totalCount],
+  const tripName = activeTrip?.name ?? FALLBACK_TRIP_NAME;
+  const tripBudgetJpy = activeTrip?.budget_jpy ?? FALLBACK_BUDGET_JPY;
+
+  const stats = useMemo(
+    () => getTripStatsForDisplay(history, tripBudgetJpy, activeTrip?.id),
+    [history, totalCount, tripBudgetJpy, activeTrip?.id],
   );
-  const remainingBudget = Math.max(0, MOCK_TRIP_BUDGET_JPY - todayTotalJpy);
 
   useFocusEffect(
     useCallback(() => {
@@ -47,20 +51,26 @@ export default function HistoryScreen() {
 
   function renderItem({ item }: { item: HistoryRow }) {
     const dateStr = formatSavedAt(item.created_at);
+    const isPurchased = (item.is_purchased ?? 0) === 1;
 
     return (
       <View style={styles.candidateCard}>
         <View style={styles.cardTop}>
-          <ThemedText style={styles.tripLabel}>{DEMO_TRIP_NAME}</ThemedText>
-          <View style={styles.badge}>
-            <ThemedText style={styles.badgeText}>候補</ThemedText>
-          </View>
+          <ThemedText style={styles.tripLabel}>{tripName}</ThemedText>
+          <TouchableOpacity
+            style={[styles.badge, isPurchased && styles.badgePurchased]}
+            onPress={() => togglePurchased(item.id, item.is_purchased ?? 0)}
+            hitSlop={8}>
+            <ThemedText style={[styles.badgeText, isPurchased && styles.badgeTextPurchased]}>
+              {isPurchased ? '✓ 購入済み' : '候補'}
+            </ThemedText>
+          </TouchableOpacity>
         </View>
 
         <ThemedText style={styles.foreignPrice}>
           {formatForeign(item.foreign_amount, item.currency)}
         </ThemedText>
-        <ThemedText style={styles.jpyPrice}>
+        <ThemedText style={[styles.jpyPrice, isPurchased && styles.jpyPricePurchased]}>
           約 {formatJpy(item.jpy_amount)}
         </ThemedText>
 
@@ -90,25 +100,25 @@ export default function HistoryScreen() {
 
       <View style={styles.summaryCard}>
         <View style={styles.summaryRow}>
-          <ThemedText style={styles.summaryLabel}>今日の候補</ThemedText>
-          <ThemedText style={styles.summaryValue}>{todayCount}件</ThemedText>
+          <ThemedText style={styles.summaryLabel}>買い物候補</ThemedText>
+          <ThemedText style={styles.summaryValue}>{stats.candidateCount}件</ThemedText>
         </View>
         <View style={styles.summaryRow}>
           <ThemedText style={styles.summaryLabel}>候補合計</ThemedText>
           <ThemedText style={styles.summaryAccent}>
-            {formatJpy(todayTotalJpy)}
+            {formatJpy(stats.candidateTotalJpy)}
           </ThemedText>
         </View>
         <View style={styles.summaryRow}>
-          <ThemedText style={styles.summaryLabel}>旅行予算</ThemedText>
+          <ThemedText style={styles.summaryLabel}>購入済み</ThemedText>
           <ThemedText style={styles.summaryValue}>
-            {formatJpy(MOCK_TRIP_BUDGET_JPY)}
+            {formatJpy(stats.purchasedTotalJpy)}
           </ThemedText>
         </View>
         <View style={[styles.summaryRow, styles.summaryRowLast]}>
-          <ThemedText style={styles.summaryLabel}>残り</ThemedText>
+          <ThemedText style={styles.summaryLabel}>残り予算</ThemedText>
           <ThemedText style={styles.summaryRemaining}>
-            {formatJpy(remainingBudget)}
+            {tripBudgetJpy > 0 ? formatJpy(stats.remainingBudget) : '未設定'}
           </ThemedText>
         </View>
       </View>
@@ -289,11 +299,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
+  badgePurchased: {
+    backgroundColor: '#E6F9EE',
+  },
   badgeText: {
     fontSize: 11,
     fontWeight: '700',
     color: C.brand,
     letterSpacing: 0.3,
+  },
+  badgeTextPurchased: {
+    color: '#22A45D',
+  },
+  jpyPricePurchased: {
+    opacity: 0.45,
   },
   foreignPrice: {
     fontSize: 22,

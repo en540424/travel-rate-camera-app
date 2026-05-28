@@ -10,10 +10,12 @@ import type { CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES, CURRENCY_CODES } from '@/constants/currencies';
 import { Spacing } from '@/constants/theme';
 import { useRates } from '@/hooks/use-rates';
+import { useTrips } from '@/hooks/use-trips';
 import { useTheme } from '@/hooks/use-theme';
 
 export default function RateSetupScreen() {
   const { rates, saveRate } = useRates();
+  const { activeTrip, editTrip } = useTrips();
   const theme = useTheme();
 
   // 編集中の値を文字列で保持（各通貨ごと）
@@ -30,6 +32,9 @@ export default function RateSetupScreen() {
       const n = parseFloat(raw);
       if (isFinite(n) && n > 0) {
         await saveRate(code, n);
+        if (activeTrip && code === activeTrip.base_currency) {
+          await editTrip(activeTrip.id, { manual_rate: n });
+        }
       }
     }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

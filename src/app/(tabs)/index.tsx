@@ -9,15 +9,16 @@ import type { CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES, CURRENCY_CODES } from '@/constants/currencies';
 import {
   CAMERA_UI as C,
-  DEMO_TRIP_NAME,
-  MOCK_TRIP_BUDGET_JPY,
+  FALLBACK_BUDGET_JPY,
+  FALLBACK_TRIP_NAME,
 } from '@/constants/camera-screen';
 import { useHistory } from '@/hooks/use-history';
 import { useRates } from '@/hooks/use-rates';
+import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { convert } from '@/utils/currency';
 import { formatJpy, formatRate } from '@/utils/format';
-import { getTodayCandidateStatsForDisplay } from '@/utils/today-candidates';
+import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
 const WEB_DEMO_AMOUNT = 29.99;
 
@@ -28,6 +29,10 @@ export default function CameraScreen() {
   const { rates } = useRates();
   const { selectedCurrency, setSelectedCurrency } = useSettingsStore();
   const { history, totalCount, addEntry, reload } = useHistory();
+  const { activeTrip } = useTrips();
+
+  const tripName = activeTrip?.name ?? FALLBACK_TRIP_NAME;
+  const tripBudgetJpy = activeTrip?.budget_jpy ?? FALLBACK_BUDGET_JPY;
 
   useFocusEffect(
     useCallback(() => {
@@ -35,7 +40,9 @@ export default function CameraScreen() {
     }, [reload]),
   );
 
-  const rate = rates[selectedCurrency] ?? 0;
+  const tripRate = activeTrip?.manual_rate ?? 0;
+  const globalRate = rates[selectedCurrency] ?? 0;
+  const rate = tripRate > 0 ? tripRate : globalRate;
   const saveAmount = Platform.OS === 'web'
     ? WEB_DEMO_AMOUNT
     : (parseFloat(nativeAmount) || 0);
@@ -43,17 +50,17 @@ export default function CameraScreen() {
   const canSave = rate > 0 && saveAmount > 0;
   const c = CURRENCIES[selectedCurrency];
 
-  const { todayCount, todayTotalJpy } = useMemo(
-    () => getTodayCandidateStatsForDisplay(history),
-    [history, totalCount],
+  const stats = useMemo(
+    () => getTripStatsForDisplay(history, tripBudgetJpy, activeTrip?.id),
+    [history, totalCount, tripBudgetJpy, activeTrip?.id],
   );
 
-  const remainingBudget = Math.max(0, MOCK_TRIP_BUDGET_JPY - todayTotalJpy);
-  /** 保存済み合計＋現在読み取り中の円（未保存の予測）。サマリーには含めない */
   const remainingIfSaved = canSave
-    ? Math.max(0, MOCK_TRIP_BUDGET_JPY - todayTotalJpy - Math.round(jpyAmount))
+    ? Math.max(0, stats.remainingBudget - Math.round(jpyAmount))
     : null;
-  const budgetUsedRatio = Math.min(1, todayTotalJpy / MOCK_TRIP_BUDGET_JPY);
+  const budgetUsedRatio = tripBudgetJpy > 0
+    ? Math.min(1, stats.purchasedTotalJpy / tripBudgetJpy)
+    : 0;
 
   const isWeb = Platform.OS === 'web';
 
@@ -103,7 +110,7 @@ export default function CameraScreen() {
             {/* 上部：ブランド＋旅行コンテキスト */}
             <View style={styles.topSection}>
               <ThemedText style={styles.appTitle}>旅レートカメラ</ThemedText>
-              <ThemedText style={styles.tripName}>{DEMO_TRIP_NAME}</ThemedText>
+              <ThemedText style={styles.tripName}>{tripName}</ThemedText>
 
               <View style={styles.contextRow}>
                 <TouchableOpacity
@@ -132,25 +139,25 @@ export default function CameraScreen() {
               <ThemedText style={styles.summaryTitle}>買い物サマリー</ThemedText>
 
               <View style={styles.summaryRow}>
-                <ThemedText style={styles.summaryLabel}>今日の候補</ThemedText>
-                <ThemedText style={styles.summaryValue}>{todayCount}件</ThemedText>
+                <ThemedText style={styles.summaryLabel}>買い物候補</ThemedText>
+                <ThemedText style={styles.summaryValue}>{stats.candidateCount}件</ThemedText>
               </View>
               <View style={styles.summaryRow}>
-                <ThemedText style={styles.summaryLabel}>今日の候補合計</ThemedText>
+                <ThemedText style={styles.summaryLabel}>候補合計</ThemedText>
                 <ThemedText style={styles.summaryValueAccent}>
-                  {formatJpy(todayTotalJpy)}
+                  {formatJpy(stats.candidateTotalJpy)}
                 </ThemedText>
               </View>
               <View style={styles.summaryRow}>
-                <ThemedText style={styles.summaryLabel}>旅行予算</ThemedText>
+                <ThemedText style={styles.summaryLabel}>購入済み</ThemedText>
                 <ThemedText style={styles.summaryValue}>
-                  {formatJpy(MOCK_TRIP_BUDGET_JPY)}
+                  {formatJpy(stats.purchasedTotalJpy)}
                 </ThemedText>
               </View>
               <View style={styles.summaryRow}>
                 <ThemedText style={styles.summaryLabel}>残り予算</ThemedText>
                 <ThemedText style={styles.summaryRemaining}>
-                  {formatJpy(remainingBudget)}
+                  {tripBudgetJpy > 0 ? formatJpy(stats.remainingBudget) : '未設定'}
                 </ThemedText>
               </View>
 

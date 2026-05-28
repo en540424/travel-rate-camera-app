@@ -1,9 +1,6 @@
-/** Phase A: UI表示用モック（DB・store 未連携） */
-
-export const DEMO_TRIP_NAME = 'ハワイ旅行';
-
-/** 旅行予算（円）— 将来は旅行データと連携 */
-export const MOCK_TRIP_BUDGET_JPY = 50_000;
+/** 旅行未選択時のフォールバック表示 */
+export const FALLBACK_TRIP_NAME = '旅行未選択';
+export const FALLBACK_BUDGET_JPY = 0;
 
 export const CAMERA_UI = {
   bg: '#EEF2F7',
