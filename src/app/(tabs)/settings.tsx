@@ -15,6 +15,7 @@ import { ThemedView } from '@/components/themed-view';
 import type { CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES, CURRENCY_CODES } from '@/constants/currencies';
 import { Spacing } from '@/constants/theme';
+import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useTheme } from '@/hooks/use-theme';
@@ -22,6 +23,7 @@ import { useTheme } from '@/hooks/use-theme';
 export default function SettingsScreen() {
   const { selectedCurrency, setSelectedCurrency, isPro } = useSettingsStore();
   const { activeTrip, loadTrips, createTrip, editTrip, removeTrip, switchTrip } = useTrips();
+  const { saveRate } = useRates();
   const theme = useTheme();
 
   const [trips, setTrips] = useState<Awaited<ReturnType<typeof loadTrips>>>([]);
@@ -79,6 +81,8 @@ export default function SettingsScreen() {
     const currency = editCurrencyRef.current;
     const rate = parseFloat(editRateRef.current) || 0;
     await editTrip(activeTrip.id, { name, budget_jpy: budget, base_currency: currency, manual_rate: rate });
+    // レート設定画面と同期（rate-setup.tsx と同じ動作）
+    if (rate > 0) await saveRate(currency, rate);
     setEditing(false);
   }
 
