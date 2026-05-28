@@ -71,7 +71,11 @@ export function useTrips() {
       const remaining = await loadTrips();
       const next = remaining[0] ?? null;
       setActiveTrip(next);
-      if (next) useSettingsStore.getState().setSelectedCurrency(next.base_currency);
+      if (next) {
+        useSettingsStore.getState().setSelectedCurrency(next.base_currency);
+      } else {
+        useSettingsStore.getState().setSelectedCurrency('USD');
+      }
     }
   }
 

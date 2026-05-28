@@ -47,7 +47,7 @@ export default function CameraScreen() {
     ? WEB_DEMO_AMOUNT
     : (parseFloat(nativeAmount) || 0);
   const jpyAmount = convert(saveAmount, rate);
-  const canSave = rate > 0 && saveAmount > 0;
+  const canSave = !!activeTrip && rate > 0 && saveAmount > 0;
   const c = CURRENCIES[selectedCurrency];
 
   const stats = useMemo(
