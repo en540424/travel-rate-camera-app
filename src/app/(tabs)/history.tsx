@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo } from 'react';
-import { FlatList, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -30,7 +30,7 @@ function formatSavedAt(createdAt: string): string {
 }
 
 export default function HistoryScreen() {
-  const { history, totalCount, clearAll, reload, togglePurchased } = useHistory();
+  const { history, totalCount, clearAll, reload, togglePurchased, removeEntry } = useHistory();
   const isPro = useSettingsStore((s) => s.isPro);
   const isLimited = !isPro && totalCount >= FREE_HISTORY_LIMIT;
   const { activeTrip } = useTrips();
@@ -48,6 +48,17 @@ export default function HistoryScreen() {
       reload();
     }, [reload]),
   );
+
+  function handleDeleteItem(id: number) {
+    Alert.alert(
+      '買い物候補を削除しますか？',
+      'この候補を履歴から削除します。この操作は取り消せません。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '削除', style: 'destructive', onPress: () => removeEntry(id) },
+      ],
+    );
+  }
 
   function renderItem({ item }: { item: HistoryRow }) {
     const dateStr = formatSavedAt(item.created_at);
@@ -78,7 +89,12 @@ export default function HistoryScreen() {
           <ThemedText style={styles.rateText}>
             {formatRate(item.rate_used, item.currency)}
           </ThemedText>
-          <ThemedText style={styles.dateText}>{dateStr}</ThemedText>
+          <View style={styles.metaRight}>
+            <ThemedText style={styles.dateText}>{dateStr}</ThemedText>
+            <TouchableOpacity onPress={() => handleDeleteItem(item.id)} hitSlop={8}>
+              <ThemedText style={styles.deleteLink}>削除</ThemedText>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     );
@@ -342,9 +358,19 @@ const styles = StyleSheet.create({
     color: C.textMuted,
     fontWeight: '500',
   },
+  metaRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   dateText: {
     fontSize: 13,
     color: C.textMuted,
+    fontWeight: '500',
+  },
+  deleteLink: {
+    fontSize: 13,
+    color: '#FF3B30',
     fontWeight: '500',
   },
 
