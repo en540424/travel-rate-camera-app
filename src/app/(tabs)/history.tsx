@@ -2,7 +2,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { Image } from 'expo-image';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, Modal, Platform, Pressable, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -18,6 +18,25 @@ import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
+
+type FilterMode = 'all' | 'candidate' | 'purchased' | 'has-memo' | 'has-photo';
+type SortMode   = 'newest' | 'price-desc' | 'price-asc';
+
+const FILTER_LABELS: Record<FilterMode, string> = {
+  all: 'すべて',
+  candidate: '候補',
+  purchased: '購入済み',
+  'has-memo': 'メモあり',
+  'has-photo': '写真あり',
+};
+const SORT_LABELS: Record<SortMode, string> = {
+  newest: '新しい順',
+  'price-desc': '高い順',
+  'price-asc': '安い順',
+};
+
+const FILTER_MODES = Object.keys(FILTER_LABELS) as FilterMode[];
+const SORT_MODES   = Object.keys(SORT_LABELS)   as SortMode[];
 
 function formatSavedAt(createdAt: string): string {
   const isoUtc = createdAt.includes('T')
@@ -58,6 +77,8 @@ export default function HistoryScreen() {
   editingPriceIdRef.current = editingPriceId;
   editingPriceTextRef.current = editingPriceText;
   const [photoModalUri, setPhotoModalUri] = useState<string | null>(null);
+  const [filterMode, setFilterMode] = useState<FilterMode>('all');
+  const [sortMode,   setSortMode]   = useState<SortMode>('newest');
   const isPro = useSettingsStore((s) => s.isPro);
   const isLimited = !isPro && totalCount >= FREE_HISTORY_LIMIT;
   const { activeTrip } = useTrips();
@@ -69,6 +90,17 @@ export default function HistoryScreen() {
     () => getTripStatsForDisplay(history, tripBudgetJpy, activeTrip?.id),
     [history, totalCount, tripBudgetJpy, activeTrip?.id],
   );
+
+  const displayHistory = useMemo(() => {
+    let result = history;
+    if (filterMode === 'candidate')  result = result.filter((r) => r.is_purchased === 0);
+    if (filterMode === 'purchased')  result = result.filter((r) => r.is_purchased === 1);
+    if (filterMode === 'has-memo')   result = result.filter((r) => !!r.memo);
+    if (filterMode === 'has-photo')  result = result.filter((r) => !!r.image_uri);
+    if (sortMode === 'price-desc')   result = [...result].sort((a, b) => b.jpy_amount - a.jpy_amount);
+    if (sortMode === 'price-asc')    result = [...result].sort((a, b) => a.jpy_amount - b.jpy_amount);
+    return result;
+  }, [history, filterMode, sortMode]);
 
   useFocusEffect(
     useCallback(() => {
@@ -340,6 +372,40 @@ export default function HistoryScreen() {
           </ThemedText>
         </TouchableOpacity>
       )}
+
+      {/* フィルター */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterRow}
+        keyboardShouldPersistTaps="handled">
+        {FILTER_MODES.map((f) => (
+          <TouchableOpacity
+            key={f}
+            style={[styles.filterChip, filterMode === f && styles.filterChipActive]}
+            onPress={() => setFilterMode(f)}
+            activeOpacity={0.75}>
+            <ThemedText style={[styles.filterChipText, filterMode === f && styles.filterChipTextActive]}>
+              {FILTER_LABELS[f]}
+            </ThemedText>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* 並び替え */}
+      <View style={styles.sortRow}>
+        {SORT_MODES.map((s) => (
+          <TouchableOpacity
+            key={s}
+            style={[styles.sortBtn, sortMode === s && styles.sortBtnActive]}
+            onPress={() => setSortMode(s)}
+            activeOpacity={0.75}>
+            <ThemedText style={[styles.sortBtnText, sortMode === s && styles.sortBtnTextActive]}>
+              {SORT_LABELS[s]}
+            </ThemedText>
+          </TouchableOpacity>
+        ))}
+      </View>
     </View>
   );
 
@@ -347,7 +413,7 @@ export default function HistoryScreen() {
     <View style={styles.screen}>
       <SafeAreaView style={styles.safe} edges={['top']}>
         <FlatList
-          data={history}
+          data={displayHistory}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
@@ -356,10 +422,14 @@ export default function HistoryScreen() {
           ListEmptyComponent={
             <View style={styles.empty}>
               <ThemedText style={styles.emptyTitle}>
-                まだ買い物候補はありません
+                {history.length === 0
+                  ? 'まだ買い物候補はありません'
+                  : 'フィルターに一致する候補がありません'}
               </ThemedText>
               <ThemedText style={styles.emptyBody}>
-                カメラで値札を読み取って、{'\n'}気になる商品を保存できます
+                {history.length === 0
+                  ? `カメラで値札を読み取って、${'\n'}気になる商品を保存できます`
+                  : '「すべて」を選ぶと全件表示されます'}
               </ThemedText>
             </View>
           }
@@ -703,6 +773,59 @@ const styles = StyleSheet.create({
     color: C.textMuted,
     textAlign: 'center',
     lineHeight: 22,
+  },
+
+  filterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 2,
+  },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.border,
+  },
+  filterChipActive: {
+    backgroundColor: C.brand,
+    borderColor: C.brand,
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: C.textSecondary,
+  },
+  filterChipTextActive: {
+    color: '#fff',
+  },
+
+  sortRow: {
+    flexDirection: 'row',
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.border,
+    overflow: 'hidden',
+    backgroundColor: C.surface,
+  },
+  sortBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  sortBtnActive: {
+    backgroundColor: C.bg,
+  },
+  sortBtnText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: C.textMuted,
+  },
+  sortBtnTextActive: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: C.text,
   },
 
   thumbnail: {
