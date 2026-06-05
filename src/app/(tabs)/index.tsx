@@ -170,7 +170,7 @@ export default function CameraScreen() {
               <View style={styles.ocrCard}>
                 {/* ヘッダー */}
                 <View style={styles.ocrCardHeader}>
-                  <ThemedText style={styles.ocrCardTitle}>読み取り結果</ThemedText>
+                  <ThemedText style={styles.ocrCardTitle}>読み取り結果 [v4]</ThemedText>
                   <TouchableOpacity onPress={() => setOcrResult(null)} hitSlop={8}>
                     <ThemedText style={styles.ocrCardClose}>✕</ThemedText>
                   </TouchableOpacity>

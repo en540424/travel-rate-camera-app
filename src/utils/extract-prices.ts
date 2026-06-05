@@ -30,21 +30,6 @@ const LOW_KEYWORDS = [
 
 type PriceScore = 'high' | 'normal' | 'low';
 
-function scorePrice(upperText: string, matchIndex: number): PriceScore {
-  // 前後両方向を広く見る（キーワードが価格の前後どちらにあっても検出）
-  // \n→スペースに正規化してからキーワード検索
-  const context = upperText
-    .slice(Math.max(0, matchIndex - 200), matchIndex + 200)
-    .replace(/\s+/g, ' ');
-  for (const kw of HIGH_KEYWORDS) {
-    if (context.includes(kw)) return 'high';
-  }
-  for (const kw of LOW_KEYWORDS) {
-    if (context.includes(kw)) return 'low';
-  }
-  return 'normal';
-}
-
 export interface PriceCandidates {
   /** キーワード文脈からおすすめと判定した価格（high スコア） */
   recommended: string[];
@@ -53,9 +38,19 @@ export interface PriceCandidates {
 }
 
 export function extractPriceCandidates(text: string): PriceCandidates {
-  const upper = text.toUpperCase();
+  // テキスト全体を最初に正規化（大文字化 + 空白・改行を単一スペースに統一）
+  // これにより "PRICE\nAT\nREGISTER" → "PRICE AT REGISTER" となりキーワードマッチが確実に動く
+  const norm = text.toUpperCase().replace(/\s+/g, ' ');
+
   const seen = new Set<string>();
   const scored: { value: string; score: PriceScore; idx: number }[] = [];
+
+  function scoreAtIndex(idx: number): PriceScore {
+    const ctx = norm.slice(Math.max(0, idx - 200), idx + 200);
+    for (const kw of HIGH_KEYWORDS) if (ctx.includes(kw)) return 'high';
+    for (const kw of LOW_KEYWORDS) if (ctx.includes(kw)) return 'low';
+    return 'normal';
+  }
 
   function add(numStr: string, idx: number) {
     const n = parseFloat(numStr.replace(',', '.'));
@@ -63,22 +58,25 @@ export function extractPriceCandidates(text: string): PriceCandidates {
     const key = n.toFixed(2);
     if (!seen.has(key)) {
       seen.add(key);
-      scored.push({ value: key, score: scorePrice(upper, idx), idx });
+      scored.push({ value: key, score: scoreAtIndex(idx), idx });
     }
   }
 
-  // Pass 1: $XX, $XX.XX, $X,XXX.XX（通貨記号付き優先）
+  // 正規化済みテキスト上で正規表現を実行（インデックスのズレなし）
   const dollarRe = /\$\s*(\d{1,4}(?:[.,]\d{1,2})?)/g;
   let m: RegExpExecArray | null;
-  while ((m = dollarRe.exec(text)) !== null) add(m[1], m.index);
+  while ((m = dollarRe.exec(norm)) !== null) add(m[1], m.index);
 
-  // Pass 2: XX.XX（小数2桁、整数部1〜3桁）
   const decRe = /\b(\d{1,3}\.\d{2})\b/g;
-  while ((m = decRe.exec(text)) !== null) add(m[1], m.index);
+  while ((m = decRe.exec(norm)) !== null) add(m[1], m.index);
 
-  // high → normal → low → OCR出現順（安定ソート）
   const ORDER: Record<PriceScore, number> = { high: 0, normal: 1, low: 2 };
   scored.sort((a, b) => ORDER[a.score] - ORDER[b.score] || a.idx - b.idx);
+
+  console.log(
+    '[extractPrices v4]',
+    scored.map((p) => `${p.value}=${p.score}`).join(', '),
+  );
 
   return {
     recommended: scored.filter((p) => p.score === 'high').map((p) => p.value),
