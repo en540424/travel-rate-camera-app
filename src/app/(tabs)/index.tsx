@@ -31,7 +31,6 @@ export default function CameraScreen() {
     raw: string;
     prices: string[];
   } | null>(null);
-  const [ocrRawExpanded, setOcrRawExpanded] = useState(false);
 
   const { rates } = useRates();
   const { selectedCurrency, setSelectedCurrency } = useSettingsStore();
@@ -89,8 +88,14 @@ export default function CameraScreen() {
   function handlePickPrice(price: string) {
     setNativeAmount(price);
     setInputMode('TO_JPY');
-    setOcrResult(null);
-    setOcrRawExpanded(false);
+    // OCRカードは閉じない（全文を見ながらメモを書けるようにする）
+  }
+
+  function handleCopyRawToMemo() {
+    if (!ocrResult) return;
+    // 改行・連続空白を単一スペースに整形してメモ欄へ（60文字上限）
+    const cleaned = ocrResult.raw.replace(/\s+/g, ' ').trim().slice(0, 60);
+    setMemo(cleaned);
   }
 
   function cycleCurrency() {
@@ -110,6 +115,7 @@ export default function CameraScreen() {
     await addEntry(selectedCurrency, foreignAmount, jpyAmount, rate, memo.trim() || undefined);
     setNativeAmount('');
     setMemo('');
+    setOcrResult(null);
     if (Platform.OS !== 'web') {
       try {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -172,9 +178,7 @@ export default function CameraScreen() {
                 {/* ヘッダー */}
                 <View style={styles.ocrCardHeader}>
                   <ThemedText style={styles.ocrCardTitle}>読み取り結果</ThemedText>
-                  <TouchableOpacity
-                    onPress={() => { setOcrResult(null); setOcrRawExpanded(false); }}
-                    hitSlop={8}>
+                  <TouchableOpacity onPress={() => setOcrResult(null)} hitSlop={8}>
                     <ThemedText style={styles.ocrCardClose}>✕</ThemedText>
                   </TouchableOpacity>
                 </View>
@@ -201,20 +205,21 @@ export default function CameraScreen() {
                   )}
                 </View>
 
-                {/* 読み取った文字（折りたたみ） */}
-                <TouchableOpacity
-                  style={styles.ocrRawToggle}
-                  onPress={() => setOcrRawExpanded((v) => !v)}
-                  activeOpacity={0.7}>
-                  <ThemedText style={styles.ocrRawToggleText}>
-                    {ocrRawExpanded ? '▼ 読み取った文字' : '▶ 読み取った文字'}
-                  </ThemedText>
-                </TouchableOpacity>
-                {ocrRawExpanded && (
-                  <ThemedText style={styles.ocrRawText} selectable>
+                {/* 読み取った文字（常時表示） */}
+                <View style={styles.ocrSection}>
+                  <ThemedText style={styles.ocrSectionLabel}>読み取った文字</ThemedText>
+                  <ThemedText style={styles.ocrRawText} numberOfLines={4} selectable>
                     {ocrResult.raw || 'テキストなし'}
                   </ThemedText>
-                )}
+                  <TouchableOpacity
+                    style={styles.ocrCopyBtn}
+                    onPress={handleCopyRawToMemo}
+                    activeOpacity={0.75}>
+                    <ThemedText style={styles.ocrCopyBtnText}>
+                      読み取った文字をメモにコピー
+                    </ThemedText>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
 
@@ -504,18 +509,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: C.textMuted,
   },
-  ocrRawToggle: {
-    paddingVertical: 4,
-  },
-  ocrRawToggleText: {
-    fontSize: 12,
-    color: C.textMuted,
-    fontWeight: '600',
-  },
   ocrRawText: {
     fontSize: 12,
     color: C.textSecondary,
-    lineHeight: 19,
+    lineHeight: 18,
+  },
+  ocrCopyBtn: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: C.brand,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginTop: 4,
+  },
+  ocrCopyBtnText: {
+    fontSize: 12,
+    color: C.brand,
+    fontWeight: '600',
   },
 
   inputCard: {
