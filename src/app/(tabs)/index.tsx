@@ -89,7 +89,7 @@ export default function CameraScreen() {
   function handleOcrResult(raw: string) {
     setOcrResult({
       raw,
-      prices: extractPriceCandidates(raw),
+      prices: extractPriceCandidates(raw, isJpyMode),
       memoLines: extractMemoLines(raw),
     });
   }
