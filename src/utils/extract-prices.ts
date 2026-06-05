@@ -1,6 +1,5 @@
 /**
- * OCRテキストから価格候補を抽出する
- * （スコアリング・優先順位付けなし。全候補をOCR出現順で返す）
+ * OCRテキストから価格候補・メモ候補行を抽出する
  */
 
 export function extractPriceCandidates(text: string): string[] {
@@ -30,4 +29,44 @@ export function extractPriceCandidates(text: string): string[] {
   // OCR出現順
   results.sort((a, b) => a.idx - b.idx);
   return results.map((r) => r.value);
+}
+
+/**
+ * OCRテキストから商品名メモ候補行を抽出する
+ *
+ * 除外: 価格行・バーコード数字・3文字未満・50文字超
+ * ソート: 英字比率が高い行（商品名らしい）を上位に
+ */
+export function extractMemoLines(text: string): string[] {
+  // 行単体が価格パターン（$7.99 / 7.99 など）
+  const PRICE_LINE = /^(\$\s*)?\d{1,4}([.,]\d{1,2})?$/;
+  // バーコード / 6桁以上の連続数字
+  const BARCODE = /^\d{6,}$/;
+  // 行内に価格パターンを含む（$7.99, 10.99 など）
+  const CONTAINS_PRICE = /\$\s*\d|\b\d{1,3}\.\d{2}\b/;
+
+  const seen = new Set<string>();
+  const candidates: { line: string; score: number }[] = [];
+
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (line.length < 3 || line.length > 50) continue;
+    if (PRICE_LINE.test(line)) continue;
+    if (BARCODE.test(line)) continue;
+    if (CONTAINS_PRICE.test(line)) continue;
+
+    const key = line.toUpperCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const letters = (line.match(/[A-Za-z]/g) || []).length;
+    const ratio = letters / line.length;
+    // 英字比率でスコア: 0=商品名らしい、1=混在、2=数字多め
+    const score = ratio > 0.7 ? 0 : ratio > 0.3 ? 1 : 2;
+    candidates.push({ line, score });
+  }
+
+  // スコア昇順（同スコアは出現順を維持）
+  candidates.sort((a, b) => a.score - b.score);
+  return candidates.slice(0, 8).map((c) => c.line);
 }

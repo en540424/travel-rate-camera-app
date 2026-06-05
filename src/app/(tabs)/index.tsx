@@ -18,7 +18,7 @@ import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { convert } from '@/utils/currency';
-import { extractPriceCandidates } from '@/utils/extract-prices';
+import { extractMemoLines, extractPriceCandidates } from '@/utils/extract-prices';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
@@ -30,7 +30,9 @@ export default function CameraScreen() {
   const [ocrResult, setOcrResult] = useState<{
     raw: string;
     prices: string[];
+    memoLines: string[];
   } | null>(null);
+  const [ocrRawExpanded, setOcrRawExpanded] = useState(false);
 
   const { rates } = useRates();
   const { selectedCurrency, setSelectedCurrency } = useSettingsStore();
@@ -82,7 +84,11 @@ export default function CameraScreen() {
   }
 
   function handleOcrResult(raw: string) {
-    setOcrResult({ raw, prices: extractPriceCandidates(raw) });
+    setOcrResult({
+      raw,
+      prices: extractPriceCandidates(raw),
+      memoLines: extractMemoLines(raw),
+    });
   }
 
   function handlePickPrice(price: string) {
@@ -91,10 +97,19 @@ export default function CameraScreen() {
     // OCRカードは閉じない（全文を見ながらメモを書けるようにする）
   }
 
+  function handleAddMemoLine(line: string) {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    setMemo((prev) => {
+      const current = prev.trim();
+      if (!current) return trimmed.slice(0, 100);
+      return `${current} ${trimmed}`.slice(0, 100);
+    });
+  }
+
   function handleCopyRawToMemo() {
     if (!ocrResult) return;
-    // 改行・連続空白を単一スペースに整形してメモ欄へ（60文字上限）
-    const cleaned = ocrResult.raw.replace(/\s+/g, ' ').trim().slice(0, 60);
+    const cleaned = ocrResult.raw.replace(/\s+/g, ' ').trim().slice(0, 100);
     setMemo(cleaned);
   }
 
@@ -116,6 +131,7 @@ export default function CameraScreen() {
     setNativeAmount('');
     setMemo('');
     setOcrResult(null);
+    setOcrRawExpanded(false);
     if (Platform.OS !== 'web') {
       try {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -178,7 +194,9 @@ export default function CameraScreen() {
                 {/* ヘッダー */}
                 <View style={styles.ocrCardHeader}>
                   <ThemedText style={styles.ocrCardTitle}>読み取り結果</ThemedText>
-                  <TouchableOpacity onPress={() => setOcrResult(null)} hitSlop={8}>
+                  <TouchableOpacity
+                    onPress={() => { setOcrResult(null); setOcrRawExpanded(false); }}
+                    hitSlop={8}>
                     <ThemedText style={styles.ocrCardClose}>✕</ThemedText>
                   </TouchableOpacity>
                 </View>
@@ -205,21 +223,52 @@ export default function CameraScreen() {
                   )}
                 </View>
 
-                {/* 読み取った文字（常時表示） */}
-                <View style={styles.ocrSection}>
-                  <ThemedText style={styles.ocrSectionLabel}>読み取った文字</ThemedText>
-                  <ThemedText style={styles.ocrRawText} numberOfLines={4} selectable>
-                    {ocrResult.raw || 'テキストなし'}
-                  </ThemedText>
-                  <TouchableOpacity
-                    style={styles.ocrCopyBtn}
-                    onPress={handleCopyRawToMemo}
-                    activeOpacity={0.75}>
-                    <ThemedText style={styles.ocrCopyBtnText}>
-                      読み取った文字をメモにコピー
+                {/* メモ候補 */}
+                {ocrResult.memoLines.length > 0 && (
+                  <View style={styles.ocrSection}>
+                    <ThemedText style={styles.ocrSectionLabel}>
+                      メモ候補（タップで追加）
                     </ThemedText>
-                  </TouchableOpacity>
-                </View>
+                    {ocrResult.memoLines.map((line) => (
+                      <View key={line} style={styles.ocrMemoLineRow}>
+                        <ThemedText style={styles.ocrMemoLineText} numberOfLines={1}>
+                          {line}
+                        </ThemedText>
+                        <TouchableOpacity
+                          style={styles.ocrAddMemoBtn}
+                          onPress={() => handleAddMemoLine(line)}
+                          activeOpacity={0.75}>
+                          <ThemedText style={styles.ocrAddMemoBtnText}>＋メモ</ThemedText>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* 読み取った文字（折りたたみ・全文コピーはここに） */}
+                <TouchableOpacity
+                  style={styles.ocrRawToggle}
+                  onPress={() => setOcrRawExpanded((v) => !v)}
+                  activeOpacity={0.7}>
+                  <ThemedText style={styles.ocrRawToggleText}>
+                    {ocrRawExpanded ? '▼ 読み取った文字（全文）' : '▶ 読み取った文字（全文）'}
+                  </ThemedText>
+                </TouchableOpacity>
+                {ocrRawExpanded && (
+                  <View style={styles.ocrSection}>
+                    <ThemedText style={styles.ocrRawText} selectable>
+                      {ocrResult.raw || 'テキストなし'}
+                    </ThemedText>
+                    <TouchableOpacity
+                      style={styles.ocrCopyBtn}
+                      onPress={handleCopyRawToMemo}
+                      activeOpacity={0.75}>
+                      <ThemedText style={styles.ocrCopyBtnText}>
+                        全文をメモにコピー
+                      </ThemedText>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             )}
 
@@ -279,7 +328,7 @@ export default function CameraScreen() {
                   placeholder="モッツァレラ / Tシャツ / お土産"
                   placeholderTextColor={C.textMuted}
                   returnKeyType="done"
-                  maxLength={60}
+                  maxLength={100}
                 />
               </View>
 
@@ -508,6 +557,38 @@ const styles = StyleSheet.create({
   ocrNoneText: {
     fontSize: 13,
     color: C.textMuted,
+  },
+  ocrMemoLineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 3,
+  },
+  ocrMemoLineText: {
+    flex: 1,
+    fontSize: 13,
+    color: C.text,
+    fontWeight: '500',
+  },
+  ocrAddMemoBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: C.brand,
+    borderRadius: 6,
+  },
+  ocrAddMemoBtnText: {
+    fontSize: 12,
+    color: C.brand,
+    fontWeight: '600',
+  },
+  ocrRawToggle: {
+    paddingVertical: 4,
+  },
+  ocrRawToggleText: {
+    fontSize: 12,
+    color: C.textMuted,
+    fontWeight: '600',
   },
   ocrRawText: {
     fontSize: 12,
