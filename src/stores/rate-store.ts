@@ -1,13 +1,13 @@
 import { create } from 'zustand';
 
 import type { CurrencyCode } from '@/constants/currencies';
-import { CURRENCY_CODES } from '@/constants/currencies';
+import { FOREIGN_CURRENCY_CODES } from '@/constants/currencies';
 
-export type RateMap = Record<CurrencyCode, number>;
+export type RateMap = Partial<Record<CurrencyCode, number>>;
 
 const DEFAULT_RATES: RateMap = Object.fromEntries(
-  CURRENCY_CODES.map((c) => [c, 0]),
-) as RateMap;
+  FOREIGN_CURRENCY_CODES.map((c) => [c, 0]),
+);
 
 interface RateStore {
   rates: RateMap;

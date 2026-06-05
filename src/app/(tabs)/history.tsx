@@ -112,11 +112,13 @@ export default function HistoryScreen() {
           </TouchableOpacity>
         </View>
 
-        <ThemedText style={styles.foreignPrice}>
-          {formatForeign(item.foreign_amount, item.currency)}
-        </ThemedText>
+        {item.currency !== 'JPY' && (
+          <ThemedText style={styles.foreignPrice}>
+            {formatForeign(item.foreign_amount, item.currency)}
+          </ThemedText>
+        )}
         <ThemedText style={[styles.jpyPrice, isPurchased && styles.jpyPricePurchased]}>
-          約 {formatJpy(item.jpy_amount)}
+          {item.currency === 'JPY' ? formatJpy(item.jpy_amount) : `約 ${formatJpy(item.jpy_amount)}`}
         </ThemedText>
 
         {/* メモ表示 / インライン編集 */}

@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import type { CurrencyCode } from '@/constants/currencies';
-import { CURRENCIES, CURRENCY_CODES } from '@/constants/currencies';
+import { CURRENCIES, FOREIGN_CURRENCY_CODES } from '@/constants/currencies';
 import { Spacing } from '@/constants/theme';
 import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
@@ -21,12 +21,12 @@ export default function RateSetupScreen() {
   // 編集中の値を文字列で保持（各通貨ごと）
   const [inputs, setInputs] = useState<Partial<Record<CurrencyCode, string>>>(
     Object.fromEntries(
-      CURRENCY_CODES.map((c) => [c, rates[c] > 0 ? String(rates[c]) : '']),
+      FOREIGN_CURRENCY_CODES.map((c) => [c, (rates[c] ?? 0) > 0 ? String(rates[c]) : '']),
     ),
   );
 
   async function handleSave() {
-    for (const code of CURRENCY_CODES) {
+    for (const code of FOREIGN_CURRENCY_CODES) {
       const raw = inputs[code];
       if (!raw) continue;
       const n = parseFloat(raw);
@@ -51,7 +51,7 @@ export default function RateSetupScreen() {
             各通貨の 1単位あたりのJPYレートを入力してください。
           </ThemedText>
 
-          {CURRENCY_CODES.map((code) => {
+          {FOREIGN_CURRENCY_CODES.map((code) => {
             const c = CURRENCIES[code];
             return (
               <ThemedView key={code} type="backgroundElement" style={styles.row}>

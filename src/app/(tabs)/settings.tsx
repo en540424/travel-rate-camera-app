@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import type { CurrencyCode } from '@/constants/currencies';
-import { CURRENCIES, CURRENCY_CODES } from '@/constants/currencies';
+import { CURRENCIES, CURRENCY_CODES, FOREIGN_CURRENCY_CODES } from '@/constants/currencies';
 import { Spacing } from '@/constants/theme';
 import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
@@ -146,8 +146,10 @@ export default function SettingsScreen() {
                 <View style={styles.activeTripInfo}>
                   <ThemedText type="smallBold">{activeTrip.name}</ThemedText>
                   <ThemedText type="small" themeColor="textSecondary">
-                    予算 ¥{activeTrip.budget_jpy.toLocaleString()} ・ {activeTrip.base_currency}
-                    {activeTrip.manual_rate > 0 ? ` ・ ¥${activeTrip.manual_rate}` : ''}
+                    予算 ¥{activeTrip.budget_jpy.toLocaleString()} ・{' '}
+                    {activeTrip.base_currency === 'JPY'
+                      ? '🇯🇵 国内モード'
+                      : `${activeTrip.base_currency}${activeTrip.manual_rate > 0 ? ` ・ ¥${activeTrip.manual_rate}` : ''}`}
                   </ThemedText>
                 </View>
                 <View style={styles.activeTripActions}>
@@ -190,8 +192,9 @@ export default function SettingsScreen() {
                         )}
                       </View>
                       <ThemedText type="small" themeColor="textSecondary">
-                        {t.base_currency} → {t.target_currency}
-                        {t.manual_rate > 0 ? `  ·  1 ${t.base_currency} = ¥${t.manual_rate}` : '  ·  レート未設定'}
+                        {t.base_currency === 'JPY'
+                          ? '🇯🇵 国内モード'
+                          : `${t.base_currency} → JPY${t.manual_rate > 0 ? `  ·  1 ${t.base_currency} = ¥${t.manual_rate}` : '  ·  レート未設定'}`}
                       </ThemedText>
                       <ThemedText type="small" themeColor="textSecondary">
                         予算 {t.budget_jpy > 0 ? `¥${t.budget_jpy.toLocaleString()}` : '未設定'}
@@ -235,14 +238,16 @@ export default function SettingsScreen() {
                     );
                   })}
                 </View>
-                <TextInput
-                  style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                  value={editRate}
-                  onChangeText={setEditRate}
-                  placeholder={`レート（例：1 ${editCurrency} = ¥148.5）`}
-                  placeholderTextColor={theme.textSecondary}
-                  keyboardType="decimal-pad"
-                />
+                {editCurrency !== 'JPY' && (
+                  <TextInput
+                    style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                    value={editRate}
+                    onChangeText={setEditRate}
+                    placeholder={`レート（例：1 ${editCurrency} = ¥148.5）`}
+                    placeholderTextColor={theme.textSecondary}
+                    keyboardType="decimal-pad"
+                  />
+                )}
                 <View style={styles.budgetRow}>
                   <ThemedText type="small" themeColor="textSecondary" style={styles.budgetPrefix}>¥</ThemedText>
                   <TextInput
@@ -297,14 +302,16 @@ export default function SettingsScreen() {
                     );
                   })}
                 </View>
-                <TextInput
-                  style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                  value={newRate}
-                  onChangeText={setNewRate}
-                  placeholder={`レート（例：1 ${newCurrency} = ¥148.5）`}
-                  placeholderTextColor={theme.textSecondary}
-                  keyboardType="decimal-pad"
-                />
+                {newCurrency !== 'JPY' && (
+                  <TextInput
+                    style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                    value={newRate}
+                    onChangeText={setNewRate}
+                    placeholder={`レート（例：1 ${newCurrency} = ¥148.5）`}
+                    placeholderTextColor={theme.textSecondary}
+                    keyboardType="decimal-pad"
+                  />
+                )}
                 <View style={styles.budgetRow}>
                   <ThemedText type="small" themeColor="textSecondary" style={styles.budgetPrefix}>¥</ThemedText>
                   <TextInput
@@ -361,7 +368,7 @@ export default function SettingsScreen() {
           <ThemedView type="backgroundElement" style={styles.section}>
             <ThemedText type="smallBold" style={styles.sectionTitle}>デフォルト通貨</ThemedText>
             <View style={styles.chips}>
-              {CURRENCY_CODES.map((code) => {
+              {FOREIGN_CURRENCY_CODES.map((code) => {
                 const c = CURRENCIES[code as CurrencyCode];
                 const selected = selectedCurrency === code;
                 return (

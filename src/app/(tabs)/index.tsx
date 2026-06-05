@@ -7,7 +7,7 @@ import * as Haptics from 'expo-haptics';
 import { CameraPreview } from '@/components/camera/CameraPreview';
 import { ThemedText } from '@/components/themed-text';
 import type { ConversionDirection, CurrencyCode } from '@/constants/currencies';
-import { CURRENCIES, CURRENCY_CODES } from '@/constants/currencies';
+import { CURRENCIES, FOREIGN_CURRENCY_CODES } from '@/constants/currencies';
 import {
   CAMERA_UI as C,
   FALLBACK_BUDGET_JPY,
@@ -54,15 +54,18 @@ export default function CameraScreen() {
     }, [reload]),
   );
 
+  const isJpyMode = activeTrip?.base_currency === 'JPY';
   const tripRate = activeTrip?.manual_rate ?? 0;
   const globalRate = rates[selectedCurrency] ?? 0;
-  const rate = tripRate > 0 ? tripRate : globalRate;
-  const isReverse = inputMode === 'FROM_JPY';
+  const rate = isJpyMode ? 1 : (tripRate > 0 ? tripRate : globalRate);
+  const isReverse = !isJpyMode && inputMode === 'FROM_JPY';
   const inputNum = parseFloat(nativeAmount) || 0;
-  const foreignAmount = isReverse ? convert(inputNum, rate, 'FROM_JPY') : inputNum;
-  const jpyAmount = isReverse ? inputNum : convert(inputNum, rate, 'TO_JPY');
-  const canSave = !!activeTrip && rate > 0 && foreignAmount > 0 && jpyAmount > 0;
-  const c = CURRENCIES[selectedCurrency];
+  const foreignAmount = isJpyMode ? inputNum : (isReverse ? convert(inputNum, rate, 'FROM_JPY') : inputNum);
+  const jpyAmount = isJpyMode ? inputNum : (isReverse ? inputNum : convert(inputNum, rate, 'TO_JPY'));
+  const canSave = isJpyMode
+    ? !!activeTrip && inputNum > 0
+    : !!activeTrip && rate > 0 && foreignAmount > 0 && jpyAmount > 0;
+  const c = CURRENCIES[isJpyMode ? 'JPY' : selectedCurrency];
 
   const stats = useMemo(
     () => getTripStatsForDisplay(history, tripBudgetJpy, activeTrip?.id),
@@ -114,9 +117,9 @@ export default function CameraScreen() {
   }
 
   function cycleCurrency() {
-    const idx = CURRENCY_CODES.indexOf(selectedCurrency);
+    const idx = FOREIGN_CURRENCY_CODES.indexOf(selectedCurrency);
     setSelectedCurrency(
-      CURRENCY_CODES[(idx + 1) % CURRENCY_CODES.length] as CurrencyCode,
+      FOREIGN_CURRENCY_CODES[(idx + 1) % FOREIGN_CURRENCY_CODES.length] as CurrencyCode,
     );
   }
 
@@ -127,7 +130,8 @@ export default function CameraScreen() {
 
   async function handleSaveCandidate() {
     if (!canSave) return;
-    await addEntry(selectedCurrency, foreignAmount, jpyAmount, rate, memo.trim() || undefined);
+    const currencyToSave: CurrencyCode = isJpyMode ? 'JPY' : selectedCurrency;
+    await addEntry(currencyToSave, foreignAmount, jpyAmount, rate, memo.trim() || undefined);
     setNativeAmount('');
     setMemo('');
     setOcrResult(null);
@@ -167,18 +171,24 @@ export default function CameraScreen() {
               <ThemedText style={styles.tripName}>{tripName}</ThemedText>
 
               <View style={styles.contextRow}>
-                <TouchableOpacity
-                  style={styles.modeChip}
-                  onPress={cycleCurrency}
-                  activeOpacity={0.75}>
-                  <ThemedText style={styles.modeChipText}>
-                    {c.flag} {selectedCurrency} → JPY
-                  </ThemedText>
-                </TouchableOpacity>
+                {isJpyMode ? (
+                  <View style={styles.modeChip}>
+                    <ThemedText style={styles.modeChipText}>
+                      🇯🇵 JPY 国内モード
+                    </ThemedText>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.modeChip}
+                    onPress={cycleCurrency}
+                    activeOpacity={0.75}>
+                    <ThemedText style={styles.modeChipText}>
+                      {c.flag} {selectedCurrency} → JPY
+                    </ThemedText>
+                  </TouchableOpacity>
+                )}
                 <ThemedText style={styles.rateInline} numberOfLines={1}>
-                  {rate > 0
-                    ? formatRate(rate, selectedCurrency)
-                    : 'レート未設定'}
+                  {isJpyMode ? '変換なし' : (rate > 0 ? formatRate(rate, selectedCurrency) : 'レート未設定')}
                 </ThemedText>
               </View>
             </View>
@@ -274,25 +284,27 @@ export default function CameraScreen() {
 
             {/* 金額入力カード（カメラ下）*/}
             <View style={styles.inputCard}>
-              {/* 入力モード切り替え */}
-              <View style={styles.inputModeRow}>
-                <TouchableOpacity
-                  style={[styles.inputModeBtn, !isReverse && styles.inputModeBtnActive]}
-                  onPress={() => switchInputMode('TO_JPY')}
-                  activeOpacity={0.75}>
-                  <ThemedText style={[styles.inputModeBtnText, !isReverse && styles.inputModeBtnTextActive]}>
-                    {selectedCurrency} → JPY
-                  </ThemedText>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.inputModeBtn, isReverse && styles.inputModeBtnActive]}
-                  onPress={() => switchInputMode('FROM_JPY')}
-                  activeOpacity={0.75}>
-                  <ThemedText style={[styles.inputModeBtnText, isReverse && styles.inputModeBtnTextActive]}>
-                    JPY → {selectedCurrency}
-                  </ThemedText>
-                </TouchableOpacity>
-              </View>
+              {/* 入力モード切り替え（JPY モードでは非表示） */}
+              {!isJpyMode && (
+                <View style={styles.inputModeRow}>
+                  <TouchableOpacity
+                    style={[styles.inputModeBtn, !isReverse && styles.inputModeBtnActive]}
+                    onPress={() => switchInputMode('TO_JPY')}
+                    activeOpacity={0.75}>
+                    <ThemedText style={[styles.inputModeBtnText, !isReverse && styles.inputModeBtnTextActive]}>
+                      {selectedCurrency} → JPY
+                    </ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.inputModeBtn, isReverse && styles.inputModeBtnActive]}
+                    onPress={() => switchInputMode('FROM_JPY')}
+                    activeOpacity={0.75}>
+                    <ThemedText style={[styles.inputModeBtnText, isReverse && styles.inputModeBtnTextActive]}>
+                      JPY → {selectedCurrency}
+                    </ThemedText>
+                  </TouchableOpacity>
+                </View>
+              )}
 
               <View style={styles.inputAmountRow}>
                 <ThemedText style={styles.inputCurrencySymbol}>
@@ -308,15 +320,17 @@ export default function CameraScreen() {
                   inputMode="decimal"
                   selectTextOnFocus
                 />
-                {isReverse
-                  ? (foreignAmount > 0 && (
-                      <ThemedText style={styles.inputJpy}>
-                        ≈ {formatForeign(foreignAmount, selectedCurrency)}
-                      </ThemedText>
-                    ))
-                  : (jpyAmount > 0 && (
-                      <ThemedText style={styles.inputJpy}>≈ {formatJpy(jpyAmount)}</ThemedText>
-                    ))
+                {isJpyMode
+                  ? null
+                  : isReverse
+                    ? (foreignAmount > 0 && (
+                        <ThemedText style={styles.inputJpy}>
+                          ≈ {formatForeign(foreignAmount, selectedCurrency)}
+                        </ThemedText>
+                      ))
+                    : (jpyAmount > 0 && (
+                        <ThemedText style={styles.inputJpy}>≈ {formatJpy(jpyAmount)}</ThemedText>
+                      ))
                 }
               </View>
               <View style={styles.memoRow}>

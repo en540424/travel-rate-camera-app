@@ -28,6 +28,7 @@ export function formatForeign(amount: number, code: CurrencyCode): string {
  * 例: formatRate(152.5, 'USD') → "1 USD = ¥152.50"
  */
 export function formatRate(ratePerUnit: number, code: CurrencyCode): string {
+  if (code === 'JPY') return '変換なし';
   if (ratePerUnit <= 0) return 'レート未設定';
   return `1 ${code} = ¥${ratePerUnit.toLocaleString('ja-JP', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
