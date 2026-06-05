@@ -13,6 +13,7 @@ import {
   getHistoryForTrip,
   insertHistory,
   markPurchased as markPurchasedQuery,
+  updateAmount as updateAmountQuery,
   updateMemo as updateMemoQuery,
 } from '@/db/queries/history';
 import type { HistoryRow } from '@/db/queries/history';
@@ -82,6 +83,11 @@ export function useHistory() {
     await load();
   }
 
+  async function updateAmount(id: number, amount: number) {
+    await updateAmountQuery(db, id, amount, amount);
+    await load();
+  }
+
   async function updateMemo(id: number, memo: string | null) {
     await updateMemoQuery(db, id, memo);
     await load();
@@ -97,6 +103,7 @@ export function useHistory() {
     removeEntry,
     clearAll,
     togglePurchased,
+    updateAmount,
     updateMemo,
     reload: load,
   };

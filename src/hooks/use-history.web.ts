@@ -120,6 +120,18 @@ export function useHistory() {
     load();
   }
 
+  async function updateAmount(id: number, amount: number) {
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    persistAll(
+      loadAll().map((r) =>
+        r.id === id
+          ? { ...r, foreign_amount: amount, jpy_amount: amount, updated_at: now }
+          : r,
+      ),
+    );
+    load();
+  }
+
   async function updateMemo(id: number, memo: string | null) {
     const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
     persistAll(
@@ -140,6 +152,7 @@ export function useHistory() {
     removeEntry,
     clearAll,
     togglePurchased,
+    updateAmount,
     updateMemo,
     reload: load,
   };

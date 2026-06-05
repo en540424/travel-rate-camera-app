@@ -30,14 +30,16 @@ function formatSavedAt(createdAt: string): string {
 }
 
 export default function HistoryScreen() {
-  const { history, totalCount, clearAll, reload, togglePurchased, removeEntry, updateMemo } = useHistory();
+  const { history, totalCount, clearAll, reload, togglePurchased, removeEntry, updateAmount, updateMemo } = useHistory();
 
   // React Compiler のメモ化でクロージャが古くなるのを防ぐ ref
   const removeEntryRef = useRef(removeEntry);
   const togglePurchasedRef = useRef(togglePurchased);
+  const updateAmountRef = useRef(updateAmount);
   const updateMemoRef = useRef(updateMemo);
   removeEntryRef.current = removeEntry;
   togglePurchasedRef.current = togglePurchased;
+  updateAmountRef.current = updateAmount;
   updateMemoRef.current = updateMemo;
 
   const [editingMemoId, setEditingMemoId] = useState<number | null>(null);
@@ -46,6 +48,13 @@ export default function HistoryScreen() {
   const editingMemoTextRef = useRef(editingMemoText);
   editingMemoIdRef.current = editingMemoId;
   editingMemoTextRef.current = editingMemoText;
+
+  const [editingPriceId, setEditingPriceId] = useState<number | null>(null);
+  const [editingPriceText, setEditingPriceText] = useState('');
+  const editingPriceIdRef = useRef(editingPriceId);
+  const editingPriceTextRef = useRef(editingPriceText);
+  editingPriceIdRef.current = editingPriceId;
+  editingPriceTextRef.current = editingPriceText;
   const isPro = useSettingsStore((s) => s.isPro);
   const isLimited = !isPro && totalCount >= FREE_HISTORY_LIMIT;
   const { activeTrip } = useTrips();
@@ -75,9 +84,34 @@ export default function HistoryScreen() {
     );
   }
 
+  function startEditPrice(id: number, currentAmount: number) {
+    setEditingPriceId(id);
+    setEditingPriceText(String(currentAmount));
+    setEditingMemoId(null);
+    setEditingMemoText('');
+  }
+
+  async function saveEditPrice() {
+    const id = editingPriceIdRef.current;
+    const text = editingPriceTextRef.current;
+    if (id === null) return;
+    const amount = parseInt(text.trim(), 10);
+    if (!isFinite(amount) || amount <= 0) return;
+    await updateAmountRef.current(id, amount);
+    setEditingPriceId(null);
+    setEditingPriceText('');
+  }
+
+  function cancelEditPrice() {
+    setEditingPriceId(null);
+    setEditingPriceText('');
+  }
+
   function startEditMemo(id: number, currentMemo: string | null) {
     setEditingMemoId(id);
     setEditingMemoText(currentMemo ?? '');
+    setEditingPriceId(null);
+    setEditingPriceText('');
   }
 
   async function saveEditMemo() {
@@ -112,14 +146,45 @@ export default function HistoryScreen() {
           </TouchableOpacity>
         </View>
 
-        {item.currency !== 'JPY' && (
-          <ThemedText style={styles.foreignPrice}>
-            {formatForeign(item.foreign_amount, item.currency)}
-          </ThemedText>
+        {editingPriceId === item.id ? (
+          <View style={styles.priceEditBlock}>
+            <View style={styles.priceEditRow}>
+              <ThemedText style={styles.priceEditSymbol}>¥</ThemedText>
+              <TextInput
+                style={styles.priceEditInput}
+                value={editingPriceText}
+                onChangeText={setEditingPriceText}
+                keyboardType="number-pad"
+                returnKeyType="done"
+                onSubmitEditing={saveEditPrice}
+                autoFocus
+                selectTextOnFocus
+              />
+            </View>
+            <View style={styles.priceEditActions}>
+              <TouchableOpacity
+                style={styles.priceSaveBtn}
+                onPress={saveEditPrice}
+                activeOpacity={0.75}>
+                <ThemedText style={styles.priceSaveBtnText}>保存</ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={cancelEditPrice} hitSlop={8}>
+                <ThemedText style={styles.priceCancelText}>キャンセル</ThemedText>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <>
+            {item.currency !== 'JPY' && (
+              <ThemedText style={styles.foreignPrice}>
+                {formatForeign(item.foreign_amount, item.currency)}
+              </ThemedText>
+            )}
+            <ThemedText style={[styles.jpyPrice, isPurchased && styles.jpyPricePurchased]}>
+              {item.currency === 'JPY' ? formatJpy(item.jpy_amount) : `約 ${formatJpy(item.jpy_amount)}`}
+            </ThemedText>
+          </>
         )}
-        <ThemedText style={[styles.jpyPrice, isPurchased && styles.jpyPricePurchased]}>
-          {item.currency === 'JPY' ? formatJpy(item.jpy_amount) : `約 ${formatJpy(item.jpy_amount)}`}
-        </ThemedText>
 
         {/* メモ表示 / インライン編集 */}
         {editingMemoId === item.id ? (
@@ -161,14 +226,23 @@ export default function HistoryScreen() {
           </ThemedText>
           <View style={styles.metaRight}>
             <ThemedText style={styles.dateText}>{dateStr}</ThemedText>
-            {editingMemoId !== item.id && (
-              <TouchableOpacity
-                onPress={() => startEditMemo(item.id, item.memo)}
-                hitSlop={8}>
-                <ThemedText style={styles.memoEditLink}>
-                  {item.memo ? 'メモ編集' : 'メモ追加'}
-                </ThemedText>
-              </TouchableOpacity>
+            {editingPriceId !== item.id && editingMemoId !== item.id && (
+              <>
+                {item.currency === 'JPY' && (
+                  <TouchableOpacity
+                    onPress={() => startEditPrice(item.id, item.jpy_amount)}
+                    hitSlop={8}>
+                    <ThemedText style={styles.priceEditLink}>価格編集</ThemedText>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  onPress={() => startEditMemo(item.id, item.memo)}
+                  hitSlop={8}>
+                  <ThemedText style={styles.memoEditLink}>
+                    {item.memo ? 'メモ編集' : 'メモ追加'}
+                  </ThemedText>
+                </TouchableOpacity>
+              </>
             )}
             <TouchableOpacity onPress={() => handleDeleteItem(item.id)} hitSlop={8}>
               <ThemedText style={styles.deleteLink}>削除</ThemedText>
@@ -473,6 +547,56 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: C.brand,
     fontWeight: '500',
+  },
+  priceEditLink: {
+    fontSize: 13,
+    color: C.brand,
+    fontWeight: '500',
+  },
+  priceEditBlock: {
+    gap: 8,
+    marginTop: 2,
+  },
+  priceEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  priceEditSymbol: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: C.text,
+  },
+  priceEditInput: {
+    flex: 1,
+    backgroundColor: C.bg,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: 22,
+    fontWeight: '700',
+    color: C.text,
+  },
+  priceEditActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  priceSaveBtn: {
+    backgroundColor: C.brand,
+    borderRadius: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 7,
+  },
+  priceSaveBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  priceCancelText: {
+    fontSize: 13,
+    color: C.textMuted,
+    fontWeight: '600',
   },
   cardMeta: {
     flexDirection: 'row',

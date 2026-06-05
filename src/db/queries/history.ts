@@ -108,6 +108,23 @@ export async function markPurchased(
   );
 }
 
+/** 金額を更新（JPYモード用: foreign_amount と jpy_amount を同じ値で上書き） */
+export async function updateAmount(
+  db: SQLiteDatabase,
+  id: number,
+  foreignAmount: number,
+  jpyAmount: number,
+): Promise<void> {
+  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  await db.runAsync(
+    `UPDATE conversion_history SET foreign_amount = ?, jpy_amount = ?, updated_at = ? WHERE id = ?`,
+    foreignAmount,
+    jpyAmount,
+    now,
+    id,
+  );
+}
+
 /** メモを更新 */
 export async function updateMemo(
   db: SQLiteDatabase,
