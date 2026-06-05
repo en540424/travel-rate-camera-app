@@ -7,7 +7,7 @@ import { useState } from 'react';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import type { CurrencyCode } from '@/constants/currencies';
+import type { ConversionDirection, CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES, CURRENCY_CODES } from '@/constants/currencies';
 import { Spacing } from '@/constants/theme';
 import { useHistory } from '@/hooks/use-history';
@@ -22,21 +22,29 @@ const CARD_MAX_WIDTH = 430;
 
 export default function ConverterScreen() {
   const [amountText, setAmountText] = useState('');
+  const [direction, setDirection] = useState<ConversionDirection>('TO_JPY');
   const { rates } = useRates();
   const theme = useTheme();
-  const { selectedCurrency, setSelectedCurrency } = useSettingsStore();
+  const { selectedCurrency, setSelectedCurrency, setPendingCameraAmount } = useSettingsStore();
   const { addEntry } = useHistory();
   const { activeTrip } = useTrips();
 
-  const rate = rates[selectedCurrency] ?? 0;
+  const tripRate = activeTrip?.manual_rate ?? 0;
+  const rate = tripRate > 0 ? tripRate : (rates[selectedCurrency] ?? 0);
   const amount = parseFloat(amountText) || 0;
-  const jpyAmount = convert(amount, rate);
+  const isReverse = direction === 'FROM_JPY';
+  const result = convert(amount, rate, direction);
   const hasRate = rate > 0;
   const hasResult = !!activeTrip && hasRate && amount > 0;
 
+  function switchDirection(next: ConversionDirection) {
+    setDirection(next);
+    setAmountText('');
+  }
+
   async function handleSave() {
-    if (!hasResult) return;
-    await addEntry(selectedCurrency, amount, jpyAmount, rate);
+    if (!hasResult || isReverse) return;
+    await addEntry(selectedCurrency, amount, result, rate);
     if (Platform.OS !== 'web') {
       const { default: Haptics } = await import('expo-haptics');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -56,8 +64,28 @@ export default function ConverterScreen() {
             <View style={styles.titleRow}>
               <ThemedText style={styles.title}>手入力で換算</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
-                カメラが使えない場合など
+                {isReverse ? '円からいくらか逆算する' : 'カメラが使えない場合など'}
               </ThemedText>
+            </View>
+
+            {/* 換算方向切り替え */}
+            <View style={styles.dirRow}>
+              <TouchableOpacity
+                style={[styles.dirBtn, !isReverse && styles.dirBtnActive]}
+                onPress={() => switchDirection('TO_JPY')}
+                activeOpacity={0.75}>
+                <ThemedText style={[styles.dirBtnText, !isReverse && styles.dirBtnTextActive]}>
+                  {selectedCurrency} → 円
+                </ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.dirBtn, isReverse && styles.dirBtnActive]}
+                onPress={() => switchDirection('FROM_JPY')}
+                activeOpacity={0.75}>
+                <ThemedText style={[styles.dirBtnText, isReverse && styles.dirBtnTextActive]}>
+                  円 → {selectedCurrency}
+                </ThemedText>
+              </TouchableOpacity>
             </View>
 
             {/* 通貨セレクター */}
@@ -84,19 +112,27 @@ export default function ConverterScreen() {
             {/* レート行 */}
             <TouchableOpacity
               style={[styles.rateRow, { borderColor: theme.backgroundElement }]}
-              onPress={() => router.push('/rate-setup')}>
+              onPress={() => router.push(activeTrip ? '/rate-setup' : '/settings')}>
               <ThemedText type="small">
                 {hasRate
                   ? formatRate(rate, selectedCurrency)
-                  : `${selectedCurrency} のレートが未設定`}
+                  : activeTrip
+                    ? '旅行フォルダにレートが未登録です'
+                    : '旅行フォルダがありません'}
               </ThemedText>
               <ThemedText type="small" style={styles.editLink}>
-                {hasRate ? '変更 →' : '設定する →'}
+                {hasRate
+                  ? '変更 →'
+                  : activeTrip
+                    ? 'レートを設定する →'
+                    : '設定タブで作成する →'}
               </ThemedText>
             </TouchableOpacity>
 
             {/* 金額入力 */}
-            <ThemedText type="small" themeColor="textSecondary">金額を入力</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {isReverse ? '円金額を入力' : '金額を入力'}
+            </ThemedText>
             <View style={[styles.inputRow, { borderColor: theme.backgroundSelected }]}>
               <TextInput
                 style={[
@@ -114,7 +150,7 @@ export default function ConverterScreen() {
                 selectTextOnFocus
               />
               <ThemedText type="smallBold" themeColor="textSecondary" style={styles.unit}>
-                {CURRENCIES[selectedCurrency].symbol} {selectedCurrency}
+                {isReverse ? '¥ JPY' : `${CURRENCIES[selectedCurrency].symbol} ${selectedCurrency}`}
               </ThemedText>
             </View>
 
@@ -123,10 +159,12 @@ export default function ConverterScreen() {
               {hasResult ? (
                 <>
                   <ThemedText type="small" themeColor="textSecondary">
-                    日本円換算
+                    {isReverse ? '外貨換算' : '日本円換算'}
                   </ThemedText>
                   <ThemedText style={styles.jpyAmount}>
-                    {formatJpy(jpyAmount)}
+                    {isReverse
+                      ? `${CURRENCIES[selectedCurrency].symbol} ${result.toFixed(2)}`
+                      : formatJpy(result)}
                   </ThemedText>
                   <ThemedText type="small" themeColor="textSecondary">
                     {formatRate(rate, selectedCurrency)}
@@ -142,13 +180,30 @@ export default function ConverterScreen() {
               )}
             </ThemedView>
 
-            {/* 保存ボタン */}
-            <TouchableOpacity
-              style={[styles.saveBtn, !hasResult && styles.saveBtnDisabled]}
-              onPress={handleSave}
-              disabled={!hasResult}>
-              <ThemedText style={styles.saveBtnText}>💾 履歴に保存する</ThemedText>
-            </TouchableOpacity>
+            {/* この金額をカメラ入力に使う（円→外貨 モードのみ） */}
+            {isReverse && hasResult && (
+              <TouchableOpacity
+                style={styles.useToCameraBtn}
+                onPress={() => {
+                  setPendingCameraAmount(result.toFixed(2));
+                  router.navigate('/');
+                }}
+                activeOpacity={0.75}>
+                <ThemedText style={styles.useToCameraBtnText}>
+                  この金額をカメラ入力に使う →
+                </ThemedText>
+              </TouchableOpacity>
+            )}
+
+            {/* 保存ボタン（外貨→円 モードのみ） */}
+            {!isReverse && (
+              <TouchableOpacity
+                style={[styles.saveBtn, !hasResult && styles.saveBtnDisabled]}
+                onPress={handleSave}
+                disabled={!hasResult}>
+                <ThemedText style={styles.saveBtnText}>💾 履歴に保存する</ThemedText>
+              </TouchableOpacity>
+            )}
 
           </View>
         </ScrollView>
@@ -170,6 +225,30 @@ const styles = StyleSheet.create({
   card: { width: '100%', maxWidth: CARD_MAX_WIDTH, gap: Spacing.two },
   titleRow: { gap: 2, marginBottom: Spacing.one },
   title: { fontSize: 20, fontWeight: '700' },
+  dirRow: {
+    flexDirection: 'row',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#cccccc55',
+    overflow: 'hidden',
+  },
+  dirBtn: {
+    flex: 1,
+    paddingVertical: Spacing.two,
+    alignItems: 'center',
+  },
+  dirBtnActive: {
+    backgroundColor: '#208AEF',
+  },
+  dirBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#888',
+  },
+  dirBtnTextActive: {
+    color: '#fff',
+  },
+
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one },
   chip: {
     paddingHorizontal: Spacing.two,
@@ -225,4 +304,18 @@ const styles = StyleSheet.create({
   },
   saveBtnDisabled: { opacity: 0.35 },
   saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  useToCameraBtn: {
+    borderRadius: Spacing.two,
+    padding: Spacing.three,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#208AEF',
+    marginTop: Spacing.one,
+  },
+  useToCameraBtnText: {
+    color: '#208AEF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
 });

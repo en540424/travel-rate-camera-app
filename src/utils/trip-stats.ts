@@ -48,7 +48,7 @@ export function getTripStats(rows: HistoryRow[], budgetJpy: number): TripStats {
     candidateCount: candidates.length,
     candidateTotalJpy,
     purchasedTotalJpy,
-    remainingBudget: Math.max(0, budgetJpy - purchasedTotalJpy),
+    remainingBudget: Math.max(0, budgetJpy - candidateTotalJpy - purchasedTotalJpy),
   };
 }
 

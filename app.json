@@ -8,8 +8,11 @@
     "scheme": "travelratecameraapp",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "bundleIdentifier": "com.e_step.travelratecamera",
-      "icon": "./assets/images/icon.png"
+      "bundleIdentifier": "com.estep.travelratecamera",
+      "icon": "./assets/images/icon.png",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {

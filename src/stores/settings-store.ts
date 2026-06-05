@@ -13,6 +13,10 @@ interface SettingsStore {
    */
   isPro: boolean;
   setIsPro: (isPro: boolean) => void;
+
+  /** 換算タブ → カメラ画面への金額受け渡し用 */
+  pendingCameraAmount: string | null;
+  setPendingCameraAmount: (v: string | null) => void;
 }
 
 export const useSettingsStore = create<SettingsStore>((set) => ({
@@ -21,4 +25,7 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
 
   isPro: false,
   setIsPro: (isPro) => set({ isPro }),
+
+  pendingCameraAmount: null,
+  setPendingCameraAmount: (v) => set({ pendingCameraAmount: v }),
 }));

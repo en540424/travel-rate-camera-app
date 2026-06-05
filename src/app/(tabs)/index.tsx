@@ -1,11 +1,12 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 
 import { CameraPreview } from '@/components/camera/CameraPreview';
 import { ThemedText } from '@/components/themed-text';
-import type { CurrencyCode } from '@/constants/currencies';
+import type { ConversionDirection, CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES, CURRENCY_CODES } from '@/constants/currencies';
 import {
   CAMERA_UI as C,
@@ -17,14 +18,13 @@ import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { convert } from '@/utils/currency';
-import { formatJpy, formatRate } from '@/utils/format';
+import { formatForeign, formatJpy, formatRate } from '@/utils/format';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
-
-const WEB_DEMO_AMOUNT = 29.99;
 
 export default function CameraScreen() {
   const [nativeAmount, setNativeAmount] = useState('');
   const [scanKey, setScanKey] = useState(0);
+  const [inputMode, setInputMode] = useState<ConversionDirection>('TO_JPY');
 
   const { rates } = useRates();
   const { selectedCurrency, setSelectedCurrency } = useSettingsStore();
@@ -37,17 +37,23 @@ export default function CameraScreen() {
   useFocusEffect(
     useCallback(() => {
       reload();
+      const { pendingCameraAmount, setPendingCameraAmount } = useSettingsStore.getState();
+      if (pendingCameraAmount) {
+        setNativeAmount(pendingCameraAmount);
+        setPendingCameraAmount(null);
+        setInputMode('TO_JPY');
+      }
     }, [reload]),
   );
 
   const tripRate = activeTrip?.manual_rate ?? 0;
   const globalRate = rates[selectedCurrency] ?? 0;
   const rate = tripRate > 0 ? tripRate : globalRate;
-  const saveAmount = Platform.OS === 'web'
-    ? WEB_DEMO_AMOUNT
-    : (parseFloat(nativeAmount) || 0);
-  const jpyAmount = convert(saveAmount, rate);
-  const canSave = !!activeTrip && rate > 0 && saveAmount > 0;
+  const isReverse = inputMode === 'FROM_JPY';
+  const inputNum = parseFloat(nativeAmount) || 0;
+  const foreignAmount = isReverse ? convert(inputNum, rate, 'FROM_JPY') : inputNum;
+  const jpyAmount = isReverse ? inputNum : convert(inputNum, rate, 'TO_JPY');
+  const canSave = !!activeTrip && rate > 0 && foreignAmount > 0 && jpyAmount > 0;
   const c = CURRENCIES[selectedCurrency];
 
   const stats = useMemo(
@@ -64,6 +70,11 @@ export default function CameraScreen() {
 
   const isWeb = Platform.OS === 'web';
 
+  function switchInputMode(mode: ConversionDirection) {
+    setInputMode(mode);
+    setNativeAmount('');
+  }
+
   function cycleCurrency() {
     const idx = CURRENCY_CODES.indexOf(selectedCurrency);
     setSelectedCurrency(
@@ -78,11 +89,14 @@ export default function CameraScreen() {
 
   async function handleSaveCandidate() {
     if (!canSave) return;
-    await addEntry(selectedCurrency, saveAmount, jpyAmount, rate);
+    await addEntry(selectedCurrency, foreignAmount, jpyAmount, rate);
     setNativeAmount('');
     if (Platform.OS !== 'web') {
-      const { default: Haptics } = await import('expo-haptics');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch (e) {
+        console.warn('Haptics not available:', e);
+      }
     }
   }
 
@@ -92,8 +106,6 @@ export default function CameraScreen() {
       currency={selectedCurrency}
       rate={rate}
       remainingIfSaved={remainingIfSaved}
-      amountText={isWeb ? undefined : nativeAmount}
-      onAmountChange={isWeb ? undefined : setNativeAmount}
     />
   );
 
@@ -132,6 +144,68 @@ export default function CameraScreen() {
             {/* 中央：カメラ（主役） */}
             <View style={styles.cameraHero}>
               {cameraPreview}
+            </View>
+
+            {/* 金額入力カード（カメラ下）*/}
+            <View style={styles.inputCard}>
+              {/* 入力モード切り替え */}
+              <View style={styles.inputModeRow}>
+                <TouchableOpacity
+                  style={[styles.inputModeBtn, !isReverse && styles.inputModeBtnActive]}
+                  onPress={() => switchInputMode('TO_JPY')}
+                  activeOpacity={0.75}>
+                  <ThemedText style={[styles.inputModeBtnText, !isReverse && styles.inputModeBtnTextActive]}>
+                    {selectedCurrency} → JPY
+                  </ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.inputModeBtn, isReverse && styles.inputModeBtnActive]}
+                  onPress={() => switchInputMode('FROM_JPY')}
+                  activeOpacity={0.75}>
+                  <ThemedText style={[styles.inputModeBtnText, isReverse && styles.inputModeBtnTextActive]}>
+                    JPY → {selectedCurrency}
+                  </ThemedText>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.inputAmountRow}>
+                <ThemedText style={styles.inputCurrencySymbol}>
+                  {isReverse ? '¥' : c.symbol}
+                </ThemedText>
+                <TextInput
+                  style={styles.inputAmountField}
+                  value={nativeAmount}
+                  onChangeText={setNativeAmount}
+                  placeholder="0"
+                  placeholderTextColor={C.textMuted}
+                  keyboardType="decimal-pad"
+                  inputMode="decimal"
+                  selectTextOnFocus
+                />
+                {isReverse
+                  ? (foreignAmount > 0 && (
+                      <ThemedText style={styles.inputJpy}>
+                        ≈ {formatForeign(foreignAmount, selectedCurrency)}
+                      </ThemedText>
+                    ))
+                  : (jpyAmount > 0 && (
+                      <ThemedText style={styles.inputJpy}>≈ {formatJpy(jpyAmount)}</ThemedText>
+                    ))
+                }
+              </View>
+              <TouchableOpacity
+                style={[styles.candidateBtn, !canSave && styles.candidateBtnDisabled]}
+                onPress={handleSaveCandidate}
+                disabled={!canSave}
+                activeOpacity={0.75}>
+                <ThemedText
+                  style={[
+                    styles.candidateBtnText,
+                    !canSave && styles.candidateBtnTextDisabled,
+                  ]}>
+                  買い物候補に保存
+                </ThemedText>
+              </TouchableOpacity>
             </View>
 
             {/* 買い物サマリー（判断の文脈） */}
@@ -185,23 +259,8 @@ export default function CameraScreen() {
               </TouchableOpacity>
             )}
 
-            {/* 判断アクション（補助） */}
+            {/* 再スキャン */}
             <View style={styles.judgmentSection}>
-              <ThemedText style={styles.judgmentLabel}>気になる商品は候補に残す</ThemedText>
-              <TouchableOpacity
-                style={[styles.candidateBtn, !canSave && styles.candidateBtnDisabled]}
-                onPress={handleSaveCandidate}
-                disabled={!canSave}
-                activeOpacity={0.75}>
-                <ThemedText
-                  style={[
-                    styles.candidateBtnText,
-                    !canSave && styles.candidateBtnTextDisabled,
-                  ]}>
-                  買い物候補に保存
-                </ThemedText>
-              </TouchableOpacity>
-
               <TouchableOpacity
                 style={styles.rescanBtn}
                 onPress={handleRescan}
@@ -306,6 +365,61 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     shadowOffset: { width: 0, height: 8 },
     elevation: 10,
+  },
+
+  inputCard: {
+    backgroundColor: C.surface,
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.border,
+  },
+  inputModeRow: {
+    flexDirection: 'row',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+    overflow: 'hidden',
+  },
+  inputModeBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  inputModeBtnActive: {
+    backgroundColor: C.brand,
+  },
+  inputModeBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: C.textSecondary,
+  },
+  inputModeBtnTextActive: {
+    color: '#fff',
+  },
+  inputAmountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  inputCurrencySymbol: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: C.text,
+  },
+  inputAmountField: {
+    flex: 1,
+    fontSize: 36,
+    fontWeight: '800',
+    color: C.text,
+    paddingVertical: 0,
+  },
+  inputJpy: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: C.textSecondary,
+    flexShrink: 1,
   },
 
   summaryCard: {
