@@ -108,6 +108,21 @@ export async function markPurchased(
   );
 }
 
+/** メモを更新 */
+export async function updateMemo(
+  db: SQLiteDatabase,
+  id: number,
+  memo: string | null,
+): Promise<void> {
+  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  await db.runAsync(
+    `UPDATE conversion_history SET memo = ?, updated_at = ? WHERE id = ?`,
+    memo,
+    now,
+    id,
+  );
+}
+
 /** 履歴を1件削除 */
 export async function deleteHistory(db: SQLiteDatabase, id: number): Promise<void> {
   await db.runAsync('DELETE FROM conversion_history WHERE id = ?', id);
