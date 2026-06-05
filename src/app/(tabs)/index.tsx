@@ -26,7 +26,11 @@ export default function CameraScreen() {
   const [nativeAmount, setNativeAmount] = useState('');
   const [scanKey, setScanKey] = useState(0);
   const [inputMode, setInputMode] = useState<ConversionDirection>('TO_JPY');
-  const [ocrResult, setOcrResult] = useState<{ raw: string; prices: string[] } | null>(null);
+  const [ocrResult, setOcrResult] = useState<{
+    raw: string;
+    recommended: string[];
+    others: string[];
+  } | null>(null);
 
   const { rates } = useRates();
   const { selectedCurrency, setSelectedCurrency } = useSettingsStore();
@@ -78,7 +82,7 @@ export default function CameraScreen() {
   }
 
   function handleOcrResult(raw: string) {
-    setOcrResult({ raw, prices: extractPriceCandidates(raw) });
+    setOcrResult({ raw, ...extractPriceCandidates(raw) });
   }
 
   function handlePickPrice(price: string) {
@@ -171,26 +175,53 @@ export default function CameraScreen() {
                 </View>
 
                 {/* 価格候補 */}
-                <View style={styles.ocrSection}>
-                  <ThemedText style={styles.ocrSectionLabel}>価格候補</ThemedText>
-                  {ocrResult.prices.length > 0 ? (
-                    <View style={styles.ocrPriceRow}>
-                      {ocrResult.prices.map((p) => (
-                        <TouchableOpacity
-                          key={p}
-                          style={styles.ocrPriceBtn}
-                          onPress={() => handlePickPrice(p)}
-                          activeOpacity={0.75}>
-                          <ThemedText style={styles.ocrPriceBtnText}>
-                            {c.symbol}{p}
-                          </ThemedText>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  ) : (
+                {ocrResult.recommended.length === 0 && ocrResult.others.length === 0 ? (
+                  <View style={styles.ocrSection}>
+                    <ThemedText style={styles.ocrSectionLabel}>価格候補</ThemedText>
                     <ThemedText style={styles.ocrNoneText}>価格候補なし</ThemedText>
-                  )}
-                </View>
+                  </View>
+                ) : (
+                  <>
+                    {ocrResult.recommended.length > 0 && (
+                      <View style={styles.ocrSection}>
+                        <ThemedText style={styles.ocrSectionLabel}>おすすめ</ThemedText>
+                        <View style={styles.ocrPriceRow}>
+                          {ocrResult.recommended.map((p) => (
+                            <TouchableOpacity
+                              key={p}
+                              style={styles.ocrPriceBtn}
+                              onPress={() => handlePickPrice(p)}
+                              activeOpacity={0.75}>
+                              <ThemedText style={styles.ocrPriceBtnText}>
+                                {c.symbol}{p}
+                              </ThemedText>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+                    {ocrResult.others.length > 0 && (
+                      <View style={styles.ocrSection}>
+                        <ThemedText style={styles.ocrSectionLabel}>
+                          {ocrResult.recommended.length > 0 ? 'その他の候補' : '価格候補'}
+                        </ThemedText>
+                        <View style={styles.ocrPriceRow}>
+                          {ocrResult.others.map((p) => (
+                            <TouchableOpacity
+                              key={p}
+                              style={styles.ocrOtherPriceBtn}
+                              onPress={() => handlePickPrice(p)}
+                              activeOpacity={0.75}>
+                              <ThemedText style={styles.ocrOtherPriceBtnText}>
+                                {c.symbol}{p}
+                              </ThemedText>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+                  </>
+                )}
 
                 {/* OCR全文 */}
                 <View style={styles.ocrSection}>
@@ -469,6 +500,19 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: '700',
+    letterSpacing: -0.3,
+  },
+  ocrOtherPriceBtn: {
+    borderWidth: 1.5,
+    borderColor: C.brand,
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  ocrOtherPriceBtnText: {
+    color: C.brand,
+    fontSize: 16,
+    fontWeight: '600',
     letterSpacing: -0.3,
   },
   ocrNoneText: {
