@@ -15,6 +15,7 @@ import { ThemedView } from '@/components/themed-view';
 import type { CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES, CURRENCY_CODES, FOREIGN_CURRENCY_CODES } from '@/constants/currencies';
 import { Spacing } from '@/constants/theme';
+import type { TripRow } from '@/db/queries/trips';
 import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -37,7 +38,8 @@ export default function SettingsScreen() {
   const [newRate, setNewRate] = useState('');
 
   // 旅行編集フォームの状態
-  const [editing, setEditing] = useState(false);
+  const [editingTripId, setEditingTripId] = useState<number | null>(null);
+  const [originalEditCurrency, setOriginalEditCurrency] = useState<CurrencyCode>('USD');
   const [editName, setEditName] = useState('');
   const [editBudget, setEditBudget] = useState('');
   const [editCurrency, setEditCurrency] = useState<CurrencyCode>(selectedCurrency);
@@ -62,28 +64,45 @@ export default function SettingsScreen() {
   editCurrencyRef.current = editCurrency;
   editRateRef.current = editRate;
 
-  function handleStartEdit() {
-    if (!activeTrip) return;
-    setEditName(activeTrip.name);
-    setEditBudget(activeTrip.budget_jpy > 0 ? String(activeTrip.budget_jpy) : '');
-    setEditCurrency(activeTrip.base_currency);
-    setEditRate(activeTrip.manual_rate > 0 ? String(activeTrip.manual_rate) : '');
-    setEditing(true);
+  function handleStartEdit(trip: TripRow) {
+    setEditName(trip.name);
+    setEditBudget(trip.budget_jpy > 0 ? String(trip.budget_jpy) : '');
+    setEditCurrency(trip.base_currency);
+    setOriginalEditCurrency(trip.base_currency);
+    setEditRate(trip.manual_rate > 0 ? String(trip.manual_rate) : '');
+    setEditingTripId(trip.id);
     setCreating(false);
     setShowTripList(false);
   }
 
   async function handleSaveEdit() {
-    if (!activeTrip) return;
+    const id = editingTripId;
+    if (id === null) return;
     const name = editNameRef.current.trim();
     if (!name) return;
     const budget = parseFloat(editBudgetRef.current) || 0;
     const currency = editCurrencyRef.current;
-    const rate = parseFloat(editRateRef.current) || 0;
-    await editTrip(activeTrip.id, { name, budget_jpy: budget, base_currency: currency, manual_rate: rate });
-    // レート設定画面と同期（rate-setup.tsx と同じ動作）
-    if (rate > 0) await saveRate(currency, rate);
-    setEditing(false);
+    const rate = currency === 'JPY' ? 0 : (parseFloat(editRateRef.current) || 0);
+    if (currency !== 'JPY' && rate <= 0) return;
+
+    async function doSave() {
+      await editTrip(id!, { name, budget_jpy: budget, base_currency: currency, manual_rate: rate });
+      if (currency !== 'JPY' && rate > 0) await saveRate(currency, rate);
+      setEditingTripId(null);
+    }
+
+    if (currency !== originalEditCurrency) {
+      Alert.alert(
+        '通貨を変更しますか？',
+        '既存の履歴の金額表示が変わる場合があります。',
+        [
+          { text: 'キャンセル', style: 'cancel' },
+          { text: '変更する', onPress: doSave },
+        ],
+      );
+    } else {
+      await doSave();
+    }
   }
 
   async function handleShowTrips() {
@@ -114,14 +133,15 @@ export default function SettingsScreen() {
 
   function handleRemove(id: number, name: string) {
     Alert.alert(
-      '旅行を削除',
-      `「${name}」をアーカイブしますか？`,
+      '旅行をアーカイブ',
+      `「${name}」をアーカイブしますか？\n履歴データは削除されません。`,
       [
         { text: 'キャンセル', style: 'cancel' },
         {
-          text: '削除',
+          text: 'アーカイブ',
           style: 'destructive',
           onPress: async () => {
+            if (editingTripId === id) setEditingTripId(null);
             await removeTrip(id);
             const list = await loadTrips();
             setTrips(list);
@@ -155,7 +175,7 @@ export default function SettingsScreen() {
                 <View style={styles.activeTripActions}>
                   <TouchableOpacity
                     style={[styles.smallBtn, { borderColor: theme.backgroundSelected }]}
-                    onPress={handleStartEdit}>
+                    onPress={() => handleStartEdit(activeTrip)}>
                     <ThemedText type="small">編集</ThemedText>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -200,18 +220,25 @@ export default function SettingsScreen() {
                         予算 {t.budget_jpy > 0 ? `¥${t.budget_jpy.toLocaleString()}` : '未設定'}
                       </ThemedText>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      hitSlop={8}
-                      onPress={() => handleRemove(t.id, t.name)}>
-                      <ThemedText type="small" style={styles.removeBtn}>削除</ThemedText>
-                    </TouchableOpacity>
+                    <View style={styles.tripListActions}>
+                      <TouchableOpacity
+                        hitSlop={8}
+                        onPress={() => handleStartEdit(t)}>
+                        <ThemedText type="small" style={styles.editBtn}>編集</ThemedText>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        hitSlop={8}
+                        onPress={() => handleRemove(t.id, t.name)}>
+                        <ThemedText type="small" style={styles.removeBtn}>削除</ThemedText>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 ))}
               </View>
             )}
 
             {/* 旅行編集フォーム */}
-            {editing && (
+            {editingTripId !== null && (
               <View style={styles.createForm}>
                 <ThemedText type="smallBold" style={styles.editFormTitle}>旅行を編集</ThemedText>
                 <TextInput
@@ -262,13 +289,17 @@ export default function SettingsScreen() {
                 <View style={styles.formButtons}>
                   <TouchableOpacity
                     style={[styles.formBtn, styles.formBtnCancel, { borderColor: theme.backgroundSelected }]}
-                    onPress={() => setEditing(false)}>
+                    onPress={() => setEditingTripId(null)}>
                     <ThemedText type="small">キャンセル</ThemedText>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.formBtn, styles.formBtnCreate, !editName.trim() && styles.formBtnDisabled]}
+                    style={[
+                      styles.formBtn,
+                      styles.formBtnCreate,
+                      (!editName.trim() || (editCurrency !== 'JPY' && parseFloat(editRate) <= 0)) && styles.formBtnDisabled,
+                    ]}
                     onPress={handleSaveEdit}
-                    disabled={!editName.trim()}>
+                    disabled={!editName.trim() || (editCurrency !== 'JPY' && parseFloat(editRate) <= 0)}>
                     <ThemedText type="small" style={styles.formBtnCreateText}>保存</ThemedText>
                   </TouchableOpacity>
                 </View>
@@ -276,7 +307,7 @@ export default function SettingsScreen() {
             )}
 
             {/* 旅行作成フォーム */}
-            {!editing && creating ? (
+            {editingTripId === null && creating ? (
               <View style={styles.createForm}>
                 <TextInput
                   style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
@@ -337,7 +368,7 @@ export default function SettingsScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
-            ) : !editing && (
+            ) : editingTripId === null && (
               <TouchableOpacity
                 style={styles.addTripBtn}
                 onPress={() => { setCreating(true); setShowTripList(false); }}>
@@ -448,7 +479,9 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   selectedBadgeText: { fontSize: 10, fontWeight: '700', color: '#208AEF' },
-  removeBtn: { color: '#FF3B30', paddingTop: 2 },
+  tripListActions: { flexDirection: 'row', gap: Spacing.two, paddingTop: 2 },
+  editBtn: { color: '#208AEF' },
+  removeBtn: { color: '#FF3B30' },
 
   addTripBtn: {
     paddingVertical: Spacing.one,
