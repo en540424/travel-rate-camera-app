@@ -30,6 +30,7 @@ export default function CameraScreen() {
     raw: string;
     prices: string[];
   } | null>(null);
+  const [ocrRawExpanded, setOcrRawExpanded] = useState(false);
 
   const { rates } = useRates();
   const { selectedCurrency, setSelectedCurrency } = useSettingsStore();
@@ -88,6 +89,7 @@ export default function CameraScreen() {
     setNativeAmount(price);
     setInputMode('TO_JPY');
     setOcrResult(null);
+    setOcrRawExpanded(false);
   }
 
   function cycleCurrency() {
@@ -168,7 +170,9 @@ export default function CameraScreen() {
                 {/* ヘッダー */}
                 <View style={styles.ocrCardHeader}>
                   <ThemedText style={styles.ocrCardTitle}>読み取り結果</ThemedText>
-                  <TouchableOpacity onPress={() => setOcrResult(null)} hitSlop={8}>
+                  <TouchableOpacity
+                    onPress={() => { setOcrResult(null); setOcrRawExpanded(false); }}
+                    hitSlop={8}>
                     <ThemedText style={styles.ocrCardClose}>✕</ThemedText>
                   </TouchableOpacity>
                 </View>
@@ -177,7 +181,7 @@ export default function CameraScreen() {
                 <View style={styles.ocrSection}>
                   <ThemedText style={styles.ocrSectionLabel}>価格候補</ThemedText>
                   {ocrResult.prices.length === 0 ? (
-                    <ThemedText style={styles.ocrNoneText}>価格候補なし</ThemedText>
+                    <ThemedText style={styles.ocrNoneText}>認識できませんでした</ThemedText>
                   ) : (
                     <View style={styles.ocrPriceRow}>
                       {ocrResult.prices.map((p) => (
@@ -195,13 +199,20 @@ export default function CameraScreen() {
                   )}
                 </View>
 
-                {/* OCR全文 */}
-                <View style={styles.ocrSection}>
-                  <ThemedText style={styles.ocrSectionLabel}>OCR全文</ThemedText>
+                {/* 読み取った文字（折りたたみ） */}
+                <TouchableOpacity
+                  style={styles.ocrRawToggle}
+                  onPress={() => setOcrRawExpanded((v) => !v)}
+                  activeOpacity={0.7}>
+                  <ThemedText style={styles.ocrRawToggleText}>
+                    {ocrRawExpanded ? '▼ 読み取った文字' : '▶ 読み取った文字'}
+                  </ThemedText>
+                </TouchableOpacity>
+                {ocrRawExpanded && (
                   <ThemedText style={styles.ocrRawText} selectable>
                     {ocrResult.raw || 'テキストなし'}
                   </ThemedText>
-                </View>
+                )}
               </View>
             )}
 
@@ -477,6 +488,14 @@ const styles = StyleSheet.create({
   ocrNoneText: {
     fontSize: 13,
     color: C.textMuted,
+  },
+  ocrRawToggle: {
+    paddingVertical: 4,
+  },
+  ocrRawToggleText: {
+    fontSize: 12,
+    color: C.textMuted,
+    fontWeight: '600',
   },
   ocrRawText: {
     fontSize: 12,
