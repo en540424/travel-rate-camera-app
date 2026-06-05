@@ -82,7 +82,9 @@ export default function CameraScreen() {
   }
 
   function handleOcrResult(raw: string) {
-    setOcrResult({ raw, ...extractPriceCandidates(raw) });
+    const candidates = extractPriceCandidates(raw);
+    console.log('[OCR candidates] recommended:', candidates.recommended, 'others:', candidates.others);
+    setOcrResult({ raw, ...candidates });
   }
 
   function handlePickPrice(price: string) {
