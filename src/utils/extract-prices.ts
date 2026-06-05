@@ -31,8 +31,10 @@ const LOW_KEYWORDS = [
 type PriceScore = 'high' | 'normal' | 'low';
 
 function scorePrice(upperText: string, matchIndex: number): PriceScore {
-  // マッチ位置の前後テキストでキーワード検索
-  const context = upperText.slice(Math.max(0, matchIndex - 150), matchIndex + 60);
+  // OCR は単語・行ごとに分割されるため \n→スペースに正規化してからキーワード検索
+  const context = upperText
+    .slice(Math.max(0, matchIndex - 150), matchIndex + 60)
+    .replace(/\s+/g, ' ');
   for (const kw of HIGH_KEYWORDS) {
     if (context.includes(kw)) return 'high';
   }
