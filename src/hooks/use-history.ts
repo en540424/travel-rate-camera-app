@@ -14,6 +14,7 @@ import {
   insertHistory,
   markPurchased as markPurchasedQuery,
   updateAmount as updateAmountQuery,
+  updateEntryDate as updateEntryDateQuery,
   updateMemo as updateMemoQuery,
 } from '@/db/queries/history';
 import type { HistoryRow } from '@/db/queries/history';
@@ -95,6 +96,11 @@ export function useHistory() {
     await load();
   }
 
+  async function updateEntryDate(id: number, entryDate: string | null) {
+    await updateEntryDateQuery(db, id, entryDate);
+    await load();
+  }
+
   const isAtFreeLimit = !isPro && totalCount >= FREE_HISTORY_LIMIT;
 
   return {
@@ -107,6 +113,7 @@ export function useHistory() {
     togglePurchased,
     updateAmount,
     updateMemo,
+    updateEntryDate,
     reload: load,
   };
 }

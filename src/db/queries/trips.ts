@@ -24,6 +24,13 @@ export async function getActiveTrips(db: SQLiteDatabase): Promise<TripRow[]> {
   );
 }
 
+/** 全旅行（アーカイブ済み含む）を取得 — カレンダー等の横断表示用 */
+export async function getAllTrips(db: SQLiteDatabase): Promise<TripRow[]> {
+  return db.getAllAsync<TripRow>(
+    'SELECT * FROM trips ORDER BY is_active DESC, created_at DESC',
+  );
+}
+
 /** 旅行を1件取得 */
 export async function getTripById(
   db: SQLiteDatabase,

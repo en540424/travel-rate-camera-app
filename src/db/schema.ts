@@ -105,4 +105,9 @@ export async function migrateDatabase(db: SQLiteDatabase): Promise<void> {
     try { await db.runAsync('ALTER TABLE conversion_history ADD COLUMN image_uri TEXT'); } catch {}
     await db.runAsync('PRAGMA user_version = 5');
   }
+
+  if (currentVersion < 6) {
+    try { await db.runAsync('ALTER TABLE conversion_history ADD COLUMN entry_date TEXT'); } catch {}
+    await db.runAsync('PRAGMA user_version = 6');
+  }
 }

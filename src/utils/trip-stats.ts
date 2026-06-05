@@ -22,6 +22,7 @@ function loadAllFromWebStorage(): HistoryRow[] {
       created_at: r.created_at ?? '',
       memo: r.memo ?? null,
       image_uri: r.image_uri ?? null,
+      entry_date: r.entry_date ?? null,
     }));
   } catch {
     return [];

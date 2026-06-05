@@ -15,6 +15,7 @@ export interface HistoryRow {
   created_at: string;
   memo: string | null;
   image_uri: string | null;
+  entry_date: string | null;
 }
 
 /** 無料版の最大保存件数 */
@@ -78,7 +79,7 @@ export async function clearHistoryForTrip(
 /** 履歴を1件追加 */
 export async function insertHistory(
   db: SQLiteDatabase,
-  entry: Omit<HistoryRow, 'id' | 'created_at' | 'is_purchased' | 'purchased_at' | 'updated_at' | 'memo' | 'image_uri'>,
+  entry: Omit<HistoryRow, 'id' | 'created_at' | 'is_purchased' | 'purchased_at' | 'updated_at' | 'memo' | 'image_uri' | 'entry_date'>,
   memo?: string,
   imageUri?: string,
 ): Promise<void> {
@@ -151,4 +152,19 @@ export async function deleteHistory(db: SQLiteDatabase, id: number): Promise<voi
 /** 全履歴を削除 */
 export async function clearHistory(db: SQLiteDatabase): Promise<void> {
   await db.runAsync('DELETE FROM conversion_history');
+}
+
+/** カレンダー表示用の日付を更新（"YYYY-MM-DD" または null） */
+export async function updateEntryDate(
+  db: SQLiteDatabase,
+  id: number,
+  entryDate: string | null,
+): Promise<void> {
+  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  await db.runAsync(
+    `UPDATE conversion_history SET entry_date = ?, updated_at = ? WHERE id = ?`,
+    entryDate,
+    now,
+    id,
+  );
 }

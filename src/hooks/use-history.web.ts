@@ -31,6 +31,7 @@ function loadAll(): HistoryRow[] {
       created_at: r.created_at ?? '',
       memo: r.memo ?? null,
       image_uri: r.image_uri ?? null,
+      entry_date: r.entry_date ?? null,
     }));
   } catch {
     return [];
@@ -86,6 +87,7 @@ export function useHistory() {
       created_at: now,
       memo: memo ?? null,
       image_uri: imageUri ?? null,
+      entry_date: null,
     };
     persistAll([entry, ...loadAll()]);
     load();
@@ -145,6 +147,16 @@ export function useHistory() {
     load();
   }
 
+  async function updateEntryDate(id: number, entryDate: string | null) {
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    persistAll(
+      loadAll().map((r) =>
+        r.id === id ? { ...r, entry_date: entryDate, updated_at: now } : r,
+      ),
+    );
+    load();
+  }
+
   const isAtFreeLimit = !isPro && totalCount >= FREE_HISTORY_LIMIT;
 
   return {
@@ -157,6 +169,7 @@ export function useHistory() {
     togglePurchased,
     updateAmount,
     updateMemo,
+    updateEntryDate,
     reload: load,
   };
 }

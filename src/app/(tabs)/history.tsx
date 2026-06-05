@@ -1,7 +1,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { Image } from 'expo-image';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -38,11 +38,21 @@ const SORT_LABELS: Record<SortMode, string> = {
 const FILTER_MODES = Object.keys(FILTER_LABELS) as FilterMode[];
 const SORT_MODES   = Object.keys(SORT_LABELS)   as SortMode[];
 
+// ─── 日付ピッカー定数 ─────────────────────────────────────────────
+
+const _refYear = new Date().getFullYear();
+const YEARS = Array.from({ length: 7 }, (_, i) => _refYear - 3 + i);
+const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
+
+function getDays(year: number, month: number): number[] {
+  return Array.from({ length: new Date(year, month, 0).getDate() }, (_, i) => i + 1);
+}
+
+// ─── 日付ユーティリティ ──────────────────────────────────────────
+
 function formatSavedAt(createdAt: string): string {
-  const isoUtc = createdAt.includes('T')
-    ? createdAt
-    : `${createdAt.replace(' ', 'T')}Z`;
-  return new Date(isoUtc).toLocaleDateString('ja-JP', {
+  const iso = createdAt.includes('T') ? createdAt : `${createdAt.replace(' ', 'T')}Z`;
+  return new Date(iso).toLocaleDateString('ja-JP', {
     month: 'numeric',
     day: 'numeric',
     hour: '2-digit',
@@ -50,19 +60,137 @@ function formatSavedAt(createdAt: string): string {
   });
 }
 
-export default function HistoryScreen() {
-  const { history, totalCount, clearAll, reload, togglePurchased, removeEntry, updateAmount, updateMemo } = useHistory();
+function resolveDisplayDate(row: HistoryRow): string {
+  if (row.entry_date) {
+    const [, m, d] = row.entry_date.split('-');
+    return `${parseInt(m, 10)}月${parseInt(d, 10)}日`;
+  }
+  return formatSavedAt(row.created_at);
+}
 
-  // React Compiler のメモ化でクロージャが古くなるのを防ぐ ref
+function getInitialDateKey(row: HistoryRow): string {
+  if (row.entry_date) return row.entry_date;
+  const iso = row.created_at.includes('T')
+    ? row.created_at
+    : `${row.created_at.replace(' ', 'T')}Z`;
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// ─── WheelCol ─────────────────────────────────────────────────────
+
+const WHEEL_ITEM_H = 44;
+const WHEEL_VISIBLE = 5;
+
+function WheelCol({
+  items,
+  selected,
+  onSelect,
+  formatItem,
+}: {
+  items: number[];
+  selected: number;
+  onSelect: (v: number) => void;
+  formatItem?: (v: number) => string;
+}) {
+  const listRef = useRef<FlatList<number>>(null);
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+
+  useEffect(() => {
+    const idx = items.indexOf(selected);
+    if (idx < 0) return;
+    const t = setTimeout(() => {
+      listRef.current?.scrollToIndex({ index: idx, animated: false });
+    }, 60);
+    return () => clearTimeout(t);
+  }, []); // mount only — parent remounts via key when items list changes
+
+  return (
+    <View style={wheelStyles.col}>
+      {/* 中央固定ハイライト — FlatList より前に描画 = 背面に固定 */}
+      <View pointerEvents="none" style={wheelStyles.highlight} />
+      <FlatList
+        ref={listRef}
+        data={items}
+        extraData={selected}
+        keyExtractor={(v) => String(v)}
+        snapToInterval={WHEEL_ITEM_H}
+        decelerationRate="fast"
+        showsVerticalScrollIndicator={false}
+        getItemLayout={(_, i) => ({ length: WHEEL_ITEM_H, offset: WHEEL_ITEM_H * i, index: i })}
+        contentContainerStyle={{ paddingVertical: WHEEL_ITEM_H * Math.floor(WHEEL_VISIBLE / 2) }}
+        onScrollToIndexFailed={() => {}}
+        onMomentumScrollEnd={(e) => {
+          const idx = Math.round(e.nativeEvent.contentOffset.y / WHEEL_ITEM_H);
+          const clamped = Math.max(0, Math.min(itemsRef.current.length - 1, idx));
+          onSelectRef.current(itemsRef.current[clamped]);
+        }}
+        renderItem={({ item }) => (
+          <View style={wheelStyles.item}>
+            <ThemedText
+              style={[wheelStyles.itemText, item === selected && wheelStyles.itemTextSelected]}>
+              {formatItem ? formatItem(item) : String(item)}
+            </ThemedText>
+          </View>
+        )}
+      />
+    </View>
+  );
+}
+
+const wheelStyles = StyleSheet.create({
+  col: {
+    flex: 1,
+    height: WHEEL_ITEM_H * WHEEL_VISIBLE,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  highlight: {
+    position: 'absolute',
+    top: WHEEL_ITEM_H * Math.floor(WHEEL_VISIBLE / 2),
+    left: 4,
+    right: 4,
+    height: WHEEL_ITEM_H,
+    backgroundColor: C.brandSoft,
+    borderRadius: 8,
+  },
+  item: {
+    height: WHEEL_ITEM_H,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  itemText: {
+    fontSize: 17,
+    fontWeight: '400',
+    color: C.text,
+  },
+  itemTextSelected: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: C.text,
+  },
+});
+
+// ─── HistoryScreen ────────────────────────────────────────────────
+
+export default function HistoryScreen() {
+  const { history, totalCount, clearAll, reload, togglePurchased, removeEntry, updateAmount, updateMemo, updateEntryDate } = useHistory();
+
   const removeEntryRef = useRef(removeEntry);
   const togglePurchasedRef = useRef(togglePurchased);
   const updateAmountRef = useRef(updateAmount);
   const updateMemoRef = useRef(updateMemo);
+  const updateEntryDateRef = useRef(updateEntryDate);
   removeEntryRef.current = removeEntry;
   togglePurchasedRef.current = togglePurchased;
   updateAmountRef.current = updateAmount;
   updateMemoRef.current = updateMemo;
+  updateEntryDateRef.current = updateEntryDate;
 
+  // メモ編集
   const [editingMemoId, setEditingMemoId] = useState<number | null>(null);
   const [editingMemoText, setEditingMemoText] = useState('');
   const editingMemoIdRef = useRef(editingMemoId);
@@ -70,12 +198,28 @@ export default function HistoryScreen() {
   editingMemoIdRef.current = editingMemoId;
   editingMemoTextRef.current = editingMemoText;
 
+  // 価格編集
   const [editingPriceId, setEditingPriceId] = useState<number | null>(null);
   const [editingPriceText, setEditingPriceText] = useState('');
   const editingPriceIdRef = useRef(editingPriceId);
   const editingPriceTextRef = useRef(editingPriceText);
   editingPriceIdRef.current = editingPriceId;
   editingPriceTextRef.current = editingPriceText;
+
+  // 日付編集
+  const [editingDateId, setEditingDateId] = useState<number | null>(null);
+  const [pickerYear,  setPickerYear]  = useState(0);
+  const [pickerMonth, setPickerMonth] = useState(1);
+  const [pickerDay,   setPickerDay]   = useState(1);
+  const editingDateIdRef = useRef(editingDateId);
+  const pickerYearRef  = useRef(pickerYear);
+  const pickerMonthRef = useRef(pickerMonth);
+  const pickerDayRef   = useRef(pickerDay);
+  editingDateIdRef.current = editingDateId;
+  pickerYearRef.current  = pickerYear;
+  pickerMonthRef.current = pickerMonth;
+  pickerDayRef.current   = pickerDay;
+
   const [photoModalUri, setPhotoModalUri] = useState<string | null>(null);
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [sortMode,   setSortMode]   = useState<SortMode>('newest');
@@ -186,8 +330,46 @@ export default function HistoryScreen() {
     setEditingMemoText('');
   }
 
+  function startEditDate(item: HistoryRow) {
+    setEditingPriceId(null);
+    setEditingMemoId(null);
+    const dateKey = getInitialDateKey(item);
+    const [y, m, d] = dateKey.split('-').map(Number);
+    setPickerYear(y);
+    setPickerMonth(m);
+    setPickerDay(Math.min(d, new Date(y, m, 0).getDate()));
+    setEditingDateId(item.id);
+  }
+
+  async function saveDateEdit() {
+    const id = editingDateIdRef.current;
+    if (id === null) return;
+    const y = pickerYearRef.current;
+    const m = pickerMonthRef.current;
+    const d = pickerDayRef.current;
+    const dateKey = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    await updateEntryDateRef.current(id, dateKey);
+    setEditingDateId(null);
+  }
+
+  function cancelDateEdit() {
+    setEditingDateId(null);
+  }
+
+  function handleYearChange(y: number) {
+    setPickerYear(y);
+    const maxDay = new Date(y, pickerMonth, 0).getDate();
+    setPickerDay((prev) => Math.min(prev, maxDay));
+  }
+
+  function handleMonthChange(m: number) {
+    setPickerMonth(m);
+    const maxDay = new Date(pickerYear, m, 0).getDate();
+    setPickerDay((prev) => Math.min(prev, maxDay));
+  }
+
   function renderItem({ item }: { item: HistoryRow }) {
-    const dateStr = formatSavedAt(item.created_at);
+    const displayDate = resolveDisplayDate(item);
     const isPurchased = (item.is_purchased ?? 0) === 1;
 
     return (
@@ -296,7 +478,9 @@ export default function HistoryScreen() {
             {formatRate(item.rate_used, item.currency)}
           </ThemedText>
           <View style={styles.metaRight}>
-            <ThemedText style={styles.dateText}>{dateStr}</ThemedText>
+            <ThemedText style={[styles.dateText, !!item.entry_date && styles.dateTextModified]}>
+              {displayDate}
+            </ThemedText>
             {editingPriceId !== item.id && editingMemoId !== item.id && (
               <>
                 {item.currency === 'JPY' && (
@@ -312,6 +496,11 @@ export default function HistoryScreen() {
                   <ThemedText style={styles.memoEditLink}>
                     {item.memo ? 'メモ編集' : 'メモ追加'}
                   </ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => startEditDate(item)}
+                  hitSlop={8}>
+                  <ThemedText style={styles.dateEditLink}>日付変更</ThemedText>
                 </TouchableOpacity>
               </>
             )}
@@ -452,6 +641,65 @@ export default function HistoryScreen() {
               contentFit="contain"
             />
           </Pressable>
+        </Modal>
+      )}
+
+      {/* 日付ピッカーモーダル */}
+      {editingDateId != null && (
+        <Modal
+          visible
+          animationType="slide"
+          transparent
+          onRequestClose={cancelDateEdit}>
+          <View style={styles.dateModalBg}>
+            {/* 背景タップで閉じる — カードより先に描画されるため z 順が下 */}
+            <Pressable style={StyleSheet.absoluteFill} onPress={cancelDateEdit} />
+            <View style={styles.dateModalCard}>
+              <ThemedText style={styles.dateModalTitle}>買い物日を変更</ThemedText>
+
+              <View style={styles.wheelHeaders}>
+                <ThemedText style={styles.wheelHeader}>年</ThemedText>
+                <ThemedText style={styles.wheelHeader}>月</ThemedText>
+                <ThemedText style={styles.wheelHeader}>日</ThemedText>
+              </View>
+
+              <View style={styles.wheelsRow}>
+                <WheelCol
+                  items={YEARS}
+                  selected={pickerYear}
+                  onSelect={handleYearChange}
+                />
+                <WheelCol
+                  items={MONTHS}
+                  selected={pickerMonth}
+                  onSelect={handleMonthChange}
+                  formatItem={(v) => `${v}月`}
+                />
+                <WheelCol
+                  key={`day-${pickerYear}-${pickerMonth}`}
+                  items={getDays(pickerYear, pickerMonth)}
+                  selected={pickerDay}
+                  onSelect={setPickerDay}
+                  formatItem={(v) => `${v}日`}
+                />
+              </View>
+
+              <View style={styles.dateModalActions}>
+                <TouchableOpacity
+                  style={styles.dateModalCancelBtn}
+                  onPress={cancelDateEdit}
+                  activeOpacity={0.75}>
+                  <ThemedText style={styles.dateModalCancelText}>キャンセル</ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.dateModalSaveBtn}
+                  onPress={saveDateEdit}
+                  activeOpacity={0.75}>
+                  <ThemedText style={styles.dateModalSaveText}>決定</ThemedText>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
         </Modal>
       )}
     </View>
@@ -681,6 +929,11 @@ const styles = StyleSheet.create({
     color: C.brand,
     fontWeight: '500',
   },
+  dateEditLink: {
+    fontSize: 13,
+    color: C.brand,
+    fontWeight: '500',
+  },
   priceEditBlock: {
     gap: 8,
     marginTop: 2,
@@ -734,6 +987,8 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: C.border,
+    flexWrap: 'wrap',
+    gap: 6,
   },
   rateText: {
     fontSize: 13,
@@ -743,12 +998,18 @@ const styles = StyleSheet.create({
   metaRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
   },
   dateText: {
     fontSize: 13,
     color: C.textMuted,
     fontWeight: '500',
+  },
+  dateTextModified: {
+    color: C.brand,
+    fontWeight: '600',
   },
   deleteLink: {
     fontSize: 13,
@@ -845,5 +1106,76 @@ const styles = StyleSheet.create({
   photoModalImage: {
     width: '100%',
     height: '80%',
+  },
+
+  // ── 日付ピッカーモーダル ──
+  dateModalBg: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  dateModalCard: {
+    backgroundColor: C.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 36,
+    gap: 16,
+  },
+  dateModalTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: C.text,
+    textAlign: 'center',
+  },
+  wheelHeaders: {
+    flexDirection: 'row',
+  },
+  wheelHeader: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '600',
+    color: C.textMuted,
+    paddingBottom: 4,
+  },
+  wheelsRow: {
+    flexDirection: 'row',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: C.border,
+    overflow: 'hidden',
+  },
+  dateModalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 4,
+  },
+  dateModalCancelBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+    backgroundColor: C.bg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.border,
+  },
+  dateModalCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: C.textSecondary,
+  },
+  dateModalSaveBtn: {
+    flex: 2,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+    backgroundColor: C.brand,
+  },
+  dateModalSaveText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#fff',
   },
 });
