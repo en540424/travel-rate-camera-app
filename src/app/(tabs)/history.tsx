@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useRef } from 'react';
-import { Alert, FlatList, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Alert, FlatList, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -30,13 +30,22 @@ function formatSavedAt(createdAt: string): string {
 }
 
 export default function HistoryScreen() {
-  const { history, totalCount, clearAll, reload, togglePurchased, removeEntry } = useHistory();
+  const { history, totalCount, clearAll, reload, togglePurchased, removeEntry, updateMemo } = useHistory();
 
   // React Compiler のメモ化でクロージャが古くなるのを防ぐ ref
   const removeEntryRef = useRef(removeEntry);
   const togglePurchasedRef = useRef(togglePurchased);
+  const updateMemoRef = useRef(updateMemo);
   removeEntryRef.current = removeEntry;
   togglePurchasedRef.current = togglePurchased;
+  updateMemoRef.current = updateMemo;
+
+  const [editingMemoId, setEditingMemoId] = useState<number | null>(null);
+  const [editingMemoText, setEditingMemoText] = useState('');
+  const editingMemoIdRef = useRef(editingMemoId);
+  const editingMemoTextRef = useRef(editingMemoText);
+  editingMemoIdRef.current = editingMemoId;
+  editingMemoTextRef.current = editingMemoText;
   const isPro = useSettingsStore((s) => s.isPro);
   const isLimited = !isPro && totalCount >= FREE_HISTORY_LIMIT;
   const { activeTrip } = useTrips();
@@ -66,6 +75,25 @@ export default function HistoryScreen() {
     );
   }
 
+  function startEditMemo(id: number, currentMemo: string | null) {
+    setEditingMemoId(id);
+    setEditingMemoText(currentMemo ?? '');
+  }
+
+  async function saveEditMemo() {
+    const id = editingMemoIdRef.current;
+    const text = editingMemoTextRef.current;
+    if (id === null) return;
+    await updateMemoRef.current(id, text.trim() || null);
+    setEditingMemoId(null);
+    setEditingMemoText('');
+  }
+
+  function cancelEditMemo() {
+    setEditingMemoId(null);
+    setEditingMemoText('');
+  }
+
   function renderItem({ item }: { item: HistoryRow }) {
     const dateStr = formatSavedAt(item.created_at);
     const isPurchased = (item.is_purchased ?? 0) === 1;
@@ -91,12 +119,55 @@ export default function HistoryScreen() {
           約 {formatJpy(item.jpy_amount)}
         </ThemedText>
 
+        {/* メモ表示 / インライン編集 */}
+        {editingMemoId === item.id ? (
+          <View style={styles.memoEditBlock}>
+            <TextInput
+              style={styles.memoEditInput}
+              value={editingMemoText}
+              onChangeText={setEditingMemoText}
+              placeholder="商品メモを入力"
+              placeholderTextColor={C.textMuted}
+              returnKeyType="done"
+              onSubmitEditing={saveEditMemo}
+              autoFocus
+              maxLength={100}
+            />
+            <View style={styles.memoEditActions}>
+              <TouchableOpacity
+                style={styles.memoSaveBtn}
+                onPress={saveEditMemo}
+                activeOpacity={0.75}>
+                <ThemedText style={styles.memoSaveBtnText}>保存</ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={cancelEditMemo} hitSlop={8}>
+                <ThemedText style={styles.memoCancelText}>キャンセル</ThemedText>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          item.memo ? (
+            <View style={styles.memoChip}>
+              <ThemedText style={styles.memoChipText}>{item.memo}</ThemedText>
+            </View>
+          ) : null
+        )}
+
         <View style={styles.cardMeta}>
           <ThemedText style={styles.rateText}>
             {formatRate(item.rate_used, item.currency)}
           </ThemedText>
           <View style={styles.metaRight}>
             <ThemedText style={styles.dateText}>{dateStr}</ThemedText>
+            {editingMemoId !== item.id && (
+              <TouchableOpacity
+                onPress={() => startEditMemo(item.id, item.memo)}
+                hitSlop={8}>
+                <ThemedText style={styles.memoEditLink}>
+                  {item.memo ? 'メモ編集' : 'メモ追加'}
+                </ThemedText>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity onPress={() => handleDeleteItem(item.id)} hitSlop={8}>
               <ThemedText style={styles.deleteLink}>削除</ThemedText>
             </TouchableOpacity>
@@ -349,6 +420,57 @@ const styles = StyleSheet.create({
     letterSpacing: -0.6,
     lineHeight: 34,
     marginTop: 2,
+  },
+  memoChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: C.bg,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginTop: 4,
+  },
+  memoChipText: {
+    fontSize: 13,
+    color: C.textSecondary,
+    fontWeight: '500',
+  },
+  memoEditBlock: {
+    gap: 8,
+    marginTop: 4,
+  },
+  memoEditInput: {
+    backgroundColor: C.bg,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: 14,
+    color: C.text,
+  },
+  memoEditActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  memoSaveBtn: {
+    backgroundColor: C.brand,
+    borderRadius: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 7,
+  },
+  memoSaveBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  memoCancelText: {
+    fontSize: 13,
+    color: C.textMuted,
+    fontWeight: '600',
+  },
+  memoEditLink: {
+    fontSize: 13,
+    color: C.brand,
+    fontWeight: '500',
   },
   cardMeta: {
     flexDirection: 'row',

@@ -13,6 +13,7 @@ export interface HistoryRow {
   purchased_at: string | null;
   updated_at: string | null;
   created_at: string;
+  memo: string | null;
 }
 
 /** 無料版の最大保存件数 */
@@ -76,16 +77,18 @@ export async function clearHistoryForTrip(
 /** 履歴を1件追加 */
 export async function insertHistory(
   db: SQLiteDatabase,
-  entry: Omit<HistoryRow, 'id' | 'created_at' | 'is_purchased' | 'purchased_at' | 'updated_at'>,
+  entry: Omit<HistoryRow, 'id' | 'created_at' | 'is_purchased' | 'purchased_at' | 'updated_at' | 'memo'>,
+  memo?: string,
 ): Promise<void> {
   await db.runAsync(
-    `INSERT INTO conversion_history (currency, foreign_amount, jpy_amount, rate_used, trip_id)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO conversion_history (currency, foreign_amount, jpy_amount, rate_used, trip_id, memo)
+     VALUES (?, ?, ?, ?, ?, ?)`,
     entry.currency,
     entry.foreign_amount,
     entry.jpy_amount,
     entry.rate_used,
     entry.trip_id ?? null,
+    memo ?? null,
   );
 }
 
@@ -100,6 +103,21 @@ export async function markPurchased(
     `UPDATE conversion_history SET is_purchased = ?, purchased_at = ?, updated_at = ? WHERE id = ?`,
     isPurchased ? 1 : 0,
     isPurchased ? now : null,
+    now,
+    id,
+  );
+}
+
+/** メモを更新 */
+export async function updateMemo(
+  db: SQLiteDatabase,
+  id: number,
+  memo: string | null,
+): Promise<void> {
+  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  await db.runAsync(
+    `UPDATE conversion_history SET memo = ?, updated_at = ? WHERE id = ?`,
+    memo,
     now,
     id,
   );

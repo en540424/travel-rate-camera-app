@@ -18,6 +18,7 @@ import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { convert } from '@/utils/currency';
+import { extractMemoLines, extractPriceCandidates } from '@/utils/extract-prices';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
@@ -25,6 +26,13 @@ export default function CameraScreen() {
   const [nativeAmount, setNativeAmount] = useState('');
   const [scanKey, setScanKey] = useState(0);
   const [inputMode, setInputMode] = useState<ConversionDirection>('TO_JPY');
+  const [memo, setMemo] = useState('');
+  const [ocrResult, setOcrResult] = useState<{
+    raw: string;
+    prices: string[];
+    memoLines: string[];
+  } | null>(null);
+  const [ocrRawExpanded, setOcrRawExpanded] = useState(false);
 
   const { rates } = useRates();
   const { selectedCurrency, setSelectedCurrency } = useSettingsStore();
@@ -75,6 +83,36 @@ export default function CameraScreen() {
     setNativeAmount('');
   }
 
+  function handleOcrResult(raw: string) {
+    setOcrResult({
+      raw,
+      prices: extractPriceCandidates(raw),
+      memoLines: extractMemoLines(raw),
+    });
+  }
+
+  function handlePickPrice(price: string) {
+    setNativeAmount(price);
+    setInputMode('TO_JPY');
+    // OCRカードは閉じない（全文を見ながらメモを書けるようにする）
+  }
+
+  function handleAddMemoLine(line: string) {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    setMemo((prev) => {
+      const current = prev.trim();
+      if (!current) return trimmed.slice(0, 100);
+      return `${current} ${trimmed}`.slice(0, 100);
+    });
+  }
+
+  function handleCopyRawToMemo() {
+    if (!ocrResult) return;
+    const cleaned = ocrResult.raw.replace(/\s+/g, ' ').trim().slice(0, 100);
+    setMemo(cleaned);
+  }
+
   function cycleCurrency() {
     const idx = CURRENCY_CODES.indexOf(selectedCurrency);
     setSelectedCurrency(
@@ -89,8 +127,11 @@ export default function CameraScreen() {
 
   async function handleSaveCandidate() {
     if (!canSave) return;
-    await addEntry(selectedCurrency, foreignAmount, jpyAmount, rate);
+    await addEntry(selectedCurrency, foreignAmount, jpyAmount, rate, memo.trim() || undefined);
     setNativeAmount('');
+    setMemo('');
+    setOcrResult(null);
+    setOcrRawExpanded(false);
     if (Platform.OS !== 'web') {
       try {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -106,6 +147,7 @@ export default function CameraScreen() {
       currency={selectedCurrency}
       rate={rate}
       remainingIfSaved={remainingIfSaved}
+      onOcrResult={Platform.OS !== 'web' ? handleOcrResult : undefined}
     />
   );
 
@@ -145,6 +187,90 @@ export default function CameraScreen() {
             <View style={styles.cameraHero}>
               {cameraPreview}
             </View>
+
+            {/* OCR結果カード */}
+            {ocrResult != null && (
+              <View style={styles.ocrCard}>
+                {/* ヘッダー */}
+                <View style={styles.ocrCardHeader}>
+                  <ThemedText style={styles.ocrCardTitle}>読み取り結果</ThemedText>
+                  <TouchableOpacity
+                    onPress={() => { setOcrResult(null); setOcrRawExpanded(false); }}
+                    hitSlop={8}>
+                    <ThemedText style={styles.ocrCardClose}>✕</ThemedText>
+                  </TouchableOpacity>
+                </View>
+
+                {/* 価格候補 */}
+                <View style={styles.ocrSection}>
+                  <ThemedText style={styles.ocrSectionLabel}>価格候補</ThemedText>
+                  {ocrResult.prices.length === 0 ? (
+                    <ThemedText style={styles.ocrNoneText}>認識できませんでした</ThemedText>
+                  ) : (
+                    <View style={styles.ocrPriceRow}>
+                      {ocrResult.prices.map((p) => (
+                        <TouchableOpacity
+                          key={p}
+                          style={styles.ocrPriceBtn}
+                          onPress={() => handlePickPrice(p)}
+                          activeOpacity={0.75}>
+                          <ThemedText style={styles.ocrPriceBtnText}>
+                            {c.symbol}{p}
+                          </ThemedText>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </View>
+
+                {/* メモ候補 */}
+                {ocrResult.memoLines.length > 0 && (
+                  <View style={styles.ocrSection}>
+                    <ThemedText style={styles.ocrSectionLabel}>
+                      メモ候補（タップで追加）
+                    </ThemedText>
+                    {ocrResult.memoLines.map((line) => (
+                      <View key={line} style={styles.ocrMemoLineRow}>
+                        <ThemedText style={styles.ocrMemoLineText} numberOfLines={1}>
+                          {line}
+                        </ThemedText>
+                        <TouchableOpacity
+                          style={styles.ocrAddMemoBtn}
+                          onPress={() => handleAddMemoLine(line)}
+                          activeOpacity={0.75}>
+                          <ThemedText style={styles.ocrAddMemoBtnText}>＋メモ</ThemedText>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* 読み取った文字（折りたたみ・全文コピーはここに） */}
+                <TouchableOpacity
+                  style={styles.ocrRawToggle}
+                  onPress={() => setOcrRawExpanded((v) => !v)}
+                  activeOpacity={0.7}>
+                  <ThemedText style={styles.ocrRawToggleText}>
+                    {ocrRawExpanded ? '▼ 読み取った文字（全文）' : '▶ 読み取った文字（全文）'}
+                  </ThemedText>
+                </TouchableOpacity>
+                {ocrRawExpanded && (
+                  <View style={styles.ocrSection}>
+                    <ThemedText style={styles.ocrRawText} selectable>
+                      {ocrResult.raw || 'テキストなし'}
+                    </ThemedText>
+                    <TouchableOpacity
+                      style={styles.ocrCopyBtn}
+                      onPress={handleCopyRawToMemo}
+                      activeOpacity={0.75}>
+                      <ThemedText style={styles.ocrCopyBtnText}>
+                        全文をメモにコピー
+                      </ThemedText>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            )}
 
             {/* 金額入力カード（カメラ下）*/}
             <View style={styles.inputCard}>
@@ -193,6 +319,19 @@ export default function CameraScreen() {
                     ))
                 }
               </View>
+              <View style={styles.memoRow}>
+                <ThemedText style={styles.memoLabel}>メモ</ThemedText>
+                <TextInput
+                  style={styles.memoInput}
+                  value={memo}
+                  onChangeText={setMemo}
+                  placeholder="モッツァレラ / Tシャツ / お土産"
+                  placeholderTextColor={C.textMuted}
+                  returnKeyType="done"
+                  maxLength={100}
+                />
+              </View>
+
               <TouchableOpacity
                 style={[styles.candidateBtn, !canSave && styles.candidateBtnDisabled]}
                 onPress={handleSaveCandidate}
@@ -367,6 +506,110 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
 
+  ocrCard: {
+    backgroundColor: C.surface,
+    borderRadius: 16,
+    padding: 16,
+    gap: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.border,
+  },
+  ocrCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  ocrCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: C.text,
+  },
+  ocrCardClose: {
+    fontSize: 16,
+    color: C.textMuted,
+  },
+  ocrSection: {
+    gap: 8,
+  },
+  ocrSectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: C.textMuted,
+    letterSpacing: 0.5,
+  },
+  ocrPriceRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  ocrPriceBtn: {
+    backgroundColor: C.brand,
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  ocrPriceBtnText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+  },
+  ocrNoneText: {
+    fontSize: 13,
+    color: C.textMuted,
+  },
+  ocrMemoLineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 3,
+  },
+  ocrMemoLineText: {
+    flex: 1,
+    fontSize: 13,
+    color: C.text,
+    fontWeight: '500',
+  },
+  ocrAddMemoBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: C.brand,
+    borderRadius: 6,
+  },
+  ocrAddMemoBtnText: {
+    fontSize: 12,
+    color: C.brand,
+    fontWeight: '600',
+  },
+  ocrRawToggle: {
+    paddingVertical: 4,
+  },
+  ocrRawToggleText: {
+    fontSize: 12,
+    color: C.textMuted,
+    fontWeight: '600',
+  },
+  ocrRawText: {
+    fontSize: 12,
+    color: C.textSecondary,
+    lineHeight: 18,
+  },
+  ocrCopyBtn: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: C.brand,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginTop: 4,
+  },
+  ocrCopyBtnText: {
+    fontSize: 12,
+    color: C.brand,
+    fontWeight: '600',
+  },
+
   inputCard: {
     backgroundColor: C.surface,
     borderRadius: 16,
@@ -420,6 +663,28 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: C.textSecondary,
     flexShrink: 1,
+  },
+  memoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: C.bg,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 2,
+    gap: 8,
+  },
+  memoLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: C.textMuted,
+    letterSpacing: 0.4,
+    minWidth: 28,
+  },
+  memoInput: {
+    flex: 1,
+    fontSize: 14,
+    color: C.text,
+    paddingVertical: 10,
   },
 
   summaryCard: {

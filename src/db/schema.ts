@@ -95,4 +95,9 @@ export async function migrateDatabase(db: SQLiteDatabase): Promise<void> {
 
     await db.runAsync('PRAGMA user_version = 3');
   }
+
+  if (currentVersion < 4) {
+    try { await db.runAsync('ALTER TABLE conversion_history ADD COLUMN memo TEXT'); } catch {}
+    await db.runAsync('PRAGMA user_version = 4');
+  }
 }

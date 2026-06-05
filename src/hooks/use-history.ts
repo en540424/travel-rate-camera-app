@@ -13,6 +13,7 @@ import {
   getHistoryForTrip,
   insertHistory,
   markPurchased as markPurchasedQuery,
+  updateMemo as updateMemoQuery,
 } from '@/db/queries/history';
 import type { HistoryRow } from '@/db/queries/history';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -45,15 +46,20 @@ export function useHistory() {
     foreignAmount: number,
     jpyAmount: number,
     rateUsed: number,
+    memo?: string,
   ) {
     if (!activeTrip) return;
-    await insertHistory(db, {
-      currency,
-      foreign_amount: foreignAmount,
-      jpy_amount: jpyAmount,
-      rate_used: rateUsed,
-      trip_id: activeTrip.id,
-    });
+    await insertHistory(
+      db,
+      {
+        currency,
+        foreign_amount: foreignAmount,
+        jpy_amount: jpyAmount,
+        rate_used: rateUsed,
+        trip_id: activeTrip.id,
+      },
+      memo,
+    );
     await load();
   }
 
@@ -76,6 +82,11 @@ export function useHistory() {
     await load();
   }
 
+  async function updateMemo(id: number, memo: string | null) {
+    await updateMemoQuery(db, id, memo);
+    await load();
+  }
+
   const isAtFreeLimit = !isPro && totalCount >= FREE_HISTORY_LIMIT;
 
   return {
@@ -86,6 +97,7 @@ export function useHistory() {
     removeEntry,
     clearAll,
     togglePurchased,
+    updateMemo,
     reload: load,
   };
 }

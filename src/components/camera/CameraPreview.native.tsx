@@ -1,7 +1,8 @@
 // iOS / Android 用 カメラプレビュー
 // expo-camera を使用。金額入力は画面下のカードで行う。
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import type { CurrencyCode } from '@/constants/currencies';
@@ -13,10 +14,14 @@ export interface CameraPreviewProps {
   /** 将来の OCR 統合のために予約済み */
   amountText?: string;
   onAmountChange?: (text: string) => void;
+  /** OCR検証: 撮影結果テキストを呼び出し元へ渡す */
+  onOcrResult?: (rawText: string) => void;
 }
 
-export function CameraPreview(_props: CameraPreviewProps) {
+export function CameraPreview({ onOcrResult }: CameraPreviewProps) {
   const [permission, requestPermission] = useCameraPermissions();
+  const [scanning, setScanning] = useState(false);
+  const cameraRef = useRef<CameraView>(null);
 
   if (!permission) {
     return <View style={styles.placeholder} />;
@@ -35,10 +40,42 @@ export function CameraPreview(_props: CameraPreviewProps) {
     );
   }
 
+  async function handleScan() {
+    if (!cameraRef.current || scanning) return;
+    setScanning(true);
+    try {
+      const photo = await cameraRef.current.takePictureAsync({ base64: false });
+      if (!photo?.uri) {
+        onOcrResult?.('エラー: 撮影失敗（URIなし）');
+        return;
+      }
+      const { extractTextFromImage } = await import('expo-text-extractor');
+      const result = await extractTextFromImage(photo.uri);
+
+      let raw = '';
+      if (Array.isArray(result)) {
+        raw = result.join('\n');
+      } else if (typeof result === 'string') {
+        raw = result;
+      } else {
+        raw = JSON.stringify(result, null, 2);
+      }
+
+      console.log('[OCR raw]', raw);
+      onOcrResult?.(raw || 'テキストなし');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn('[OCR error]', e);
+      onOcrResult?.(`エラー: ${msg}`);
+    } finally {
+      setScanning(false);
+    }
+  }
+
   return (
     <View style={styles.wrapper}>
       {/* カメラフィード */}
-      <CameraView style={styles.camera} />
+      <CameraView ref={cameraRef} style={styles.camera} />
 
       {/* ビューファインダー四隅 */}
       <View style={[styles.corner, styles.cornerTL]} />
@@ -50,6 +87,18 @@ export function CameraPreview(_props: CameraPreviewProps) {
       <View style={styles.scanHint}>
         <ThemedText style={styles.scanHintText}>値札をここに合わせる</ThemedText>
       </View>
+
+      {/* 読み取りボタン（OCR検証用） */}
+      <TouchableOpacity
+        style={[styles.scanBtn, scanning && styles.scanBtnBusy]}
+        onPress={handleScan}
+        disabled={scanning}
+        activeOpacity={0.8}>
+        {scanning
+          ? <ActivityIndicator color="#fff" size="small" />
+          : <ThemedText style={styles.scanBtnText}>読み取る</ThemedText>
+        }
+      </TouchableOpacity>
     </View>
   );
 }
@@ -100,5 +149,25 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: 'rgba(255,255,255,0.45)',
     letterSpacing: 0.4,
+  },
+
+  scanBtn: {
+    position: 'absolute',
+    bottom: 14,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(32,138,239,0.92)',
+    borderRadius: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    minWidth: 100,
+    alignItems: 'center',
+  },
+  scanBtnBusy: {
+    backgroundColor: 'rgba(32,138,239,0.55)',
+  },
+  scanBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
