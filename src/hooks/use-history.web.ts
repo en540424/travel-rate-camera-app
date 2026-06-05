@@ -30,6 +30,7 @@ function loadAll(): HistoryRow[] {
       updated_at: r.updated_at ?? null,
       created_at: r.created_at ?? '',
       memo: r.memo ?? null,
+      image_uri: r.image_uri ?? null,
     }));
   } catch {
     return [];
@@ -68,6 +69,7 @@ export function useHistory() {
     jpyAmount: number,
     rateUsed: number,
     memo?: string,
+    imageUri?: string,
   ) {
     if (!activeTrip) return;
     const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
@@ -83,6 +85,7 @@ export function useHistory() {
       updated_at: now,
       created_at: now,
       memo: memo ?? null,
+      image_uri: imageUri ?? null,
     };
     persistAll([entry, ...loadAll()]);
     load();

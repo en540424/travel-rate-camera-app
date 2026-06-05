@@ -48,6 +48,7 @@ export function useHistory() {
     jpyAmount: number,
     rateUsed: number,
     memo?: string,
+    imageUri?: string,
   ) {
     if (!activeTrip) return;
     await insertHistory(
@@ -60,6 +61,7 @@ export function useHistory() {
         trip_id: activeTrip.id,
       },
       memo,
+      imageUri,
     );
     await load();
   }

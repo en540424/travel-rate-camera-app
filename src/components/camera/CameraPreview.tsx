@@ -12,6 +12,7 @@ export interface CameraPreviewProps {
   amountText?: string;
   onAmountChange?: (text: string) => void;
   onOcrResult?: (rawText: string) => void;
+  onPhotoCapture?: (uri: string) => void;
 }
 
 export function CameraPreview(_props: CameraPreviewProps) {

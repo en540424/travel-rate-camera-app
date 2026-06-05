@@ -1,6 +1,8 @@
+import * as FileSystem from 'expo-file-system/legacy';
+import { Image } from 'expo-image';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, Modal, Platform, Pressable, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -55,6 +57,7 @@ export default function HistoryScreen() {
   const editingPriceTextRef = useRef(editingPriceText);
   editingPriceIdRef.current = editingPriceId;
   editingPriceTextRef.current = editingPriceText;
+  const [photoModalUri, setPhotoModalUri] = useState<string | null>(null);
   const isPro = useSettingsStore((s) => s.isPro);
   const isLimited = !isPro && totalCount >= FREE_HISTORY_LIMIT;
   const { activeTrip } = useTrips();
@@ -73,15 +76,38 @@ export default function HistoryScreen() {
     }, [reload]),
   );
 
-  function handleDeleteItem(id: number) {
+  function handleDeleteItem(item: HistoryRow) {
     Alert.alert(
       '買い物候補を削除しますか？',
       'この候補を履歴から削除します。この操作は取り消せません。',
       [
         { text: 'キャンセル', style: 'cancel' },
-        { text: '削除', style: 'destructive', onPress: () => removeEntryRef.current(id) },
+        {
+          text: '削除',
+          style: 'destructive',
+          onPress: async () => {
+            if (item.image_uri && Platform.OS !== 'web') {
+              try {
+                await FileSystem.deleteAsync(item.image_uri, { idempotent: true });
+              } catch {}
+            }
+            removeEntryRef.current(item.id);
+          },
+        },
       ],
     );
+  }
+
+  async function handleClearAll() {
+    if (Platform.OS !== 'web') {
+      try {
+        const docsDir = FileSystem.documentDirectory;
+        if (docsDir) {
+          await FileSystem.deleteAsync(`${docsDir}photos/`, { idempotent: true });
+        }
+      } catch {}
+    }
+    clearAll();
   }
 
   function startEditPrice(id: number, currentAmount: number) {
@@ -186,6 +212,19 @@ export default function HistoryScreen() {
           </>
         )}
 
+        {/* 商品写真サムネイル */}
+        {editingPriceId !== item.id && item.image_uri && (
+          <TouchableOpacity
+            onPress={() => setPhotoModalUri(item.image_uri!)}
+            activeOpacity={0.8}>
+            <Image
+              source={{ uri: item.image_uri }}
+              style={styles.thumbnail}
+              contentFit="cover"
+            />
+          </TouchableOpacity>
+        )}
+
         {/* メモ表示 / インライン編集 */}
         {editingMemoId === item.id ? (
           <View style={styles.memoEditBlock}>
@@ -244,7 +283,7 @@ export default function HistoryScreen() {
                 </TouchableOpacity>
               </>
             )}
-            <TouchableOpacity onPress={() => handleDeleteItem(item.id)} hitSlop={8}>
+            <TouchableOpacity onPress={() => handleDeleteItem(item)} hitSlop={8}>
               <ThemedText style={styles.deleteLink}>削除</ThemedText>
             </TouchableOpacity>
           </View>
@@ -261,7 +300,7 @@ export default function HistoryScreen() {
           <ThemedText style={styles.subtitle}>保存した買い物候補</ThemedText>
         </View>
         {history.length > 0 && (
-          <TouchableOpacity onPress={clearAll} hitSlop={8}>
+          <TouchableOpacity onPress={handleClearAll} hitSlop={8}>
             <ThemedText style={styles.clearAll}>全削除</ThemedText>
           </TouchableOpacity>
         )}
@@ -326,6 +365,25 @@ export default function HistoryScreen() {
           }
         />
       </SafeAreaView>
+
+      {/* 写真フルスクリーンモーダル */}
+      {photoModalUri != null && (
+        <Modal
+          visible
+          animationType="fade"
+          transparent
+          onRequestClose={() => setPhotoModalUri(null)}>
+          <Pressable
+            style={styles.photoModalBg}
+            onPress={() => setPhotoModalUri(null)}>
+            <Image
+              source={{ uri: photoModalUri }}
+              style={styles.photoModalImage}
+              contentFit="contain"
+            />
+          </Pressable>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -645,5 +703,24 @@ const styles = StyleSheet.create({
     color: C.textMuted,
     textAlign: 'center',
     lineHeight: 22,
+  },
+
+  thumbnail: {
+    width: 80,
+    height: 60,
+    borderRadius: 8,
+    backgroundColor: C.bg,
+    marginTop: 4,
+  },
+
+  photoModalBg: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  photoModalImage: {
+    width: '100%',
+    height: '80%',
   },
 });

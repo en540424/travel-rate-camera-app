@@ -16,11 +16,18 @@ export interface CameraPreviewProps {
   onAmountChange?: (text: string) => void;
   /** OCR検証: 撮影結果テキストを呼び出し元へ渡す */
   onOcrResult?: (rawText: string) => void;
+  /** 撮影した写真のURIを呼び出し元へ渡す */
+  onPhotoCapture?: (uri: string) => void;
 }
 
-export function CameraPreview({ onOcrResult }: CameraPreviewProps) {
+const ZOOM_STEPS = [0, 0.25, 0.5] as const;
+type ZoomLevel = typeof ZOOM_STEPS[number];
+const ZOOM_LABELS: Record<ZoomLevel, string> = { 0: '1×', 0.25: '2×', 0.5: '3×' };
+
+export function CameraPreview({ onOcrResult, onPhotoCapture }: CameraPreviewProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanning, setScanning] = useState(false);
+  const [zoom, setZoom] = useState<ZoomLevel>(0);
   const cameraRef = useRef<CameraView>(null);
 
   if (!permission) {
@@ -40,6 +47,13 @@ export function CameraPreview({ onOcrResult }: CameraPreviewProps) {
     );
   }
 
+  function cycleZoom() {
+    setZoom((z) => {
+      const idx = ZOOM_STEPS.indexOf(z);
+      return ZOOM_STEPS[(idx + 1) % ZOOM_STEPS.length];
+    });
+  }
+
   async function handleScan() {
     if (!cameraRef.current || scanning) return;
     setScanning(true);
@@ -49,6 +63,8 @@ export function CameraPreview({ onOcrResult }: CameraPreviewProps) {
         onOcrResult?.('エラー: 撮影失敗（URIなし）');
         return;
       }
+      onPhotoCapture?.(photo.uri);
+
       const { extractTextFromImage } = await import('expo-text-extractor');
       const result = await extractTextFromImage(photo.uri);
 
@@ -75,7 +91,7 @@ export function CameraPreview({ onOcrResult }: CameraPreviewProps) {
   return (
     <View style={styles.wrapper}>
       {/* カメラフィード */}
-      <CameraView ref={cameraRef} style={styles.camera} />
+      <CameraView ref={cameraRef} style={styles.camera} zoom={zoom} />
 
       {/* ビューファインダー四隅 */}
       <View style={[styles.corner, styles.cornerTL]} />
@@ -88,7 +104,12 @@ export function CameraPreview({ onOcrResult }: CameraPreviewProps) {
         <ThemedText style={styles.scanHintText}>値札をここに合わせる</ThemedText>
       </View>
 
-      {/* 読み取りボタン（OCR検証用） */}
+      {/* ズームボタン（右上） */}
+      <TouchableOpacity style={styles.zoomBtn} onPress={cycleZoom} activeOpacity={0.75}>
+        <ThemedText style={styles.zoomBtnText}>{ZOOM_LABELS[zoom]}</ThemedText>
+      </TouchableOpacity>
+
+      {/* 読み取りボタン */}
       <TouchableOpacity
         style={[styles.scanBtn, scanning && styles.scanBtnBusy]}
         onPress={handleScan}
@@ -149,6 +170,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: 'rgba(255,255,255,0.45)',
     letterSpacing: 0.4,
+  },
+
+  zoomBtn: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    backgroundColor: 'rgba(0,0,0,0.52)',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  zoomBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
   },
 
   scanBtn: {

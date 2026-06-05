@@ -1,3 +1,5 @@
+import * as FileSystem from 'expo-file-system/legacy';
+import { Image } from 'expo-image';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
@@ -33,6 +35,7 @@ export default function CameraScreen() {
     memoLines: string[];
   } | null>(null);
   const [ocrRawExpanded, setOcrRawExpanded] = useState(false);
+  const [pendingPhotoUri, setPendingPhotoUri] = useState<string | null>(null);
 
   const { rates } = useRates();
   const { selectedCurrency, setSelectedCurrency } = useSettingsStore();
@@ -86,6 +89,10 @@ export default function CameraScreen() {
     setNativeAmount('');
   }
 
+  function handlePhotoCapture(uri: string) {
+    setPendingPhotoUri(uri);
+  }
+
   function handleOcrResult(raw: string) {
     setOcrResult({
       raw,
@@ -126,16 +133,33 @@ export default function CameraScreen() {
   function handleRescan() {
     setNativeAmount('');
     setScanKey((k) => k + 1);
+    setPendingPhotoUri(null);
   }
 
   async function handleSaveCandidate() {
     if (!canSave) return;
+    let savedPhotoUri: string | undefined;
+    if (pendingPhotoUri && Platform.OS !== 'web') {
+      try {
+        const docsDir = FileSystem.documentDirectory;
+        if (docsDir) {
+          const photosDir = `${docsDir}photos/`;
+          await FileSystem.makeDirectoryAsync(photosDir, { intermediates: true });
+          const destUri = `${photosDir}${Date.now()}.jpg`;
+          await FileSystem.copyAsync({ from: pendingPhotoUri, to: destUri });
+          savedPhotoUri = destUri;
+        }
+      } catch (e) {
+        console.warn('[photo save]', e);
+      }
+    }
     const currencyToSave: CurrencyCode = isJpyMode ? 'JPY' : selectedCurrency;
-    await addEntry(currencyToSave, foreignAmount, jpyAmount, rate, memo.trim() || undefined);
+    await addEntry(currencyToSave, foreignAmount, jpyAmount, rate, memo.trim() || undefined, savedPhotoUri);
     setNativeAmount('');
     setMemo('');
     setOcrResult(null);
     setOcrRawExpanded(false);
+    setPendingPhotoUri(null);
     if (Platform.OS !== 'web') {
       try {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -152,6 +176,7 @@ export default function CameraScreen() {
       rate={rate}
       remainingIfSaved={remainingIfSaved}
       onOcrResult={Platform.OS !== 'web' ? handleOcrResult : undefined}
+      onPhotoCapture={Platform.OS !== 'web' ? handlePhotoCapture : undefined}
     />
   );
 
@@ -345,6 +370,17 @@ export default function CameraScreen() {
                   maxLength={100}
                 />
               </View>
+
+              {pendingPhotoUri != null && Platform.OS !== 'web' && (
+                <View style={styles.pendingPhotoRow}>
+                  <Image
+                    source={{ uri: pendingPhotoUri }}
+                    style={styles.pendingPhotoThumb}
+                    contentFit="cover"
+                  />
+                  <ThemedText style={styles.pendingPhotoLabel}>写真が保存されます</ThemedText>
+                </View>
+              )}
 
               <TouchableOpacity
                 style={[styles.candidateBtn, !canSave && styles.candidateBtnDisabled]}
@@ -677,6 +713,23 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: C.textSecondary,
     flexShrink: 1,
+  },
+  pendingPhotoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  pendingPhotoThumb: {
+    width: 56,
+    height: 42,
+    borderRadius: 8,
+    backgroundColor: C.bg,
+  },
+  pendingPhotoLabel: {
+    fontSize: 12,
+    color: C.textSecondary,
+    fontWeight: '500',
+    flex: 1,
   },
   memoRow: {
     flexDirection: 'row',
