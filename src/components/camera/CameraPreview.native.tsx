@@ -45,17 +45,28 @@ export function CameraPreview({ onOcrResult }: CameraPreviewProps) {
     setScanning(true);
     try {
       const photo = await cameraRef.current.takePictureAsync({ base64: false });
-      if (photo?.uri && onOcrResult) {
-        // expo-text-extractor はネイティブモジュールなので動的 import
-        const { recognizeText } = await import('expo-text-extractor');
-        const blocks = await recognizeText(photo.uri);
-        // blocks は TextBlock[] — テキスト全文を結合して渡す
-        const raw = blocks.map((b: { text: string }) => b.text).join('\n');
-        console.log('[OCR raw]', raw);
-        onOcrResult(raw);
+      if (!photo?.uri) {
+        onOcrResult?.('エラー: 撮影失敗（URIなし）');
+        return;
       }
+      const { extractTextFromImage } = await import('expo-text-extractor');
+      const result = await extractTextFromImage(photo.uri);
+
+      let raw = '';
+      if (Array.isArray(result)) {
+        raw = result.join('\n');
+      } else if (typeof result === 'string') {
+        raw = result;
+      } else {
+        raw = JSON.stringify(result, null, 2);
+      }
+
+      console.log('[OCR raw]', raw);
+      onOcrResult?.(raw || 'テキストなし');
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
       console.warn('[OCR error]', e);
+      onOcrResult?.(`エラー: ${msg}`);
     } finally {
       setScanning(false);
     }

@@ -18,6 +18,7 @@ import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { convert } from '@/utils/currency';
+import { extractPriceCandidates } from '@/utils/extract-prices';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
@@ -25,8 +26,7 @@ export default function CameraScreen() {
   const [nativeAmount, setNativeAmount] = useState('');
   const [scanKey, setScanKey] = useState(0);
   const [inputMode, setInputMode] = useState<ConversionDirection>('TO_JPY');
-  // OCR検証用: 一時テキスト表示（金額抽出・保存連携はまだしない）
-  const [ocrDebugText, setOcrDebugText] = useState<string | null>(null);
+  const [ocrResult, setOcrResult] = useState<{ raw: string; prices: string[] } | null>(null);
 
   const { rates } = useRates();
   const { selectedCurrency, setSelectedCurrency } = useSettingsStore();
@@ -77,6 +77,16 @@ export default function CameraScreen() {
     setNativeAmount('');
   }
 
+  function handleOcrResult(raw: string) {
+    setOcrResult({ raw, prices: extractPriceCandidates(raw) });
+  }
+
+  function handlePickPrice(price: string) {
+    setNativeAmount(price);
+    setInputMode('TO_JPY');
+    setOcrResult(null);
+  }
+
   function cycleCurrency() {
     const idx = CURRENCY_CODES.indexOf(selectedCurrency);
     setSelectedCurrency(
@@ -108,7 +118,7 @@ export default function CameraScreen() {
       currency={selectedCurrency}
       rate={rate}
       remainingIfSaved={remainingIfSaved}
-      onOcrResult={Platform.OS !== 'web' ? setOcrDebugText : undefined}
+      onOcrResult={Platform.OS !== 'web' ? handleOcrResult : undefined}
     />
   );
 
@@ -149,18 +159,46 @@ export default function CameraScreen() {
               {cameraPreview}
             </View>
 
-            {/* OCR検証用デバッグ表示（開発確認専用・本番では削除） */}
-            {ocrDebugText != null && (
-              <View style={styles.ocrDebugCard}>
-                <View style={styles.ocrDebugHeader}>
-                  <ThemedText style={styles.ocrDebugLabel}>OCR 読み取り結果（開発確認）</ThemedText>
-                  <TouchableOpacity onPress={() => setOcrDebugText(null)} hitSlop={8}>
-                    <ThemedText style={styles.ocrDebugClose}>✕</ThemedText>
+            {/* OCR結果カード */}
+            {ocrResult != null && (
+              <View style={styles.ocrCard}>
+                {/* ヘッダー */}
+                <View style={styles.ocrCardHeader}>
+                  <ThemedText style={styles.ocrCardTitle}>読み取り結果</ThemedText>
+                  <TouchableOpacity onPress={() => setOcrResult(null)} hitSlop={8}>
+                    <ThemedText style={styles.ocrCardClose}>✕</ThemedText>
                   </TouchableOpacity>
                 </View>
-                <ThemedText style={styles.ocrDebugText} selectable>
-                  {ocrDebugText || '（テキストなし）'}
-                </ThemedText>
+
+                {/* 価格候補 */}
+                <View style={styles.ocrSection}>
+                  <ThemedText style={styles.ocrSectionLabel}>価格候補</ThemedText>
+                  {ocrResult.prices.length > 0 ? (
+                    <View style={styles.ocrPriceRow}>
+                      {ocrResult.prices.map((p) => (
+                        <TouchableOpacity
+                          key={p}
+                          style={styles.ocrPriceBtn}
+                          onPress={() => handlePickPrice(p)}
+                          activeOpacity={0.75}>
+                          <ThemedText style={styles.ocrPriceBtnText}>
+                            {c.symbol}{p}
+                          </ThemedText>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  ) : (
+                    <ThemedText style={styles.ocrNoneText}>価格候補なし</ThemedText>
+                  )}
+                </View>
+
+                {/* OCR全文 */}
+                <View style={styles.ocrSection}>
+                  <ThemedText style={styles.ocrSectionLabel}>OCR全文</ThemedText>
+                  <ThemedText style={styles.ocrRawText} selectable>
+                    {ocrResult.raw || 'テキストなし'}
+                  </ThemedText>
+                </View>
               </View>
             )}
 
@@ -385,33 +423,62 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
 
-  ocrDebugCard: {
-    backgroundColor: '#1a1a2e',
-    borderRadius: 12,
-    padding: 12,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#208AEF55',
+  ocrCard: {
+    backgroundColor: C.surface,
+    borderRadius: 16,
+    padding: 16,
+    gap: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.border,
   },
-  ocrDebugHeader: {
+  ocrCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  ocrDebugLabel: {
+  ocrCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: C.text,
+  },
+  ocrCardClose: {
+    fontSize: 16,
+    color: C.textMuted,
+  },
+  ocrSection: {
+    gap: 8,
+  },
+  ocrSectionLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#208AEF',
-    letterSpacing: 0.4,
+    color: C.textMuted,
+    letterSpacing: 0.5,
   },
-  ocrDebugClose: {
-    fontSize: 14,
-    color: '#888',
+  ocrPriceRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
-  ocrDebugText: {
+  ocrPriceBtn: {
+    backgroundColor: C.brand,
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  ocrPriceBtnText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+  },
+  ocrNoneText: {
     fontSize: 13,
-    color: '#e0e0e0',
-    lineHeight: 20,
+    color: C.textMuted,
+  },
+  ocrRawText: {
+    fontSize: 12,
+    color: C.textSecondary,
+    lineHeight: 19,
     fontFamily: 'monospace',
   },
 
