@@ -479,7 +479,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: C.textSecondary,
     lineHeight: 19,
-    fontFamily: 'monospace',
   },
 
   inputCard: {

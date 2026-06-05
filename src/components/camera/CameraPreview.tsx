@@ -11,6 +11,7 @@ export interface CameraPreviewProps {
   remainingIfSaved?: number | null;
   amountText?: string;
   onAmountChange?: (text: string) => void;
+  onOcrResult?: (rawText: string) => void;
 }
 
 export function CameraPreview(_props: CameraPreviewProps) {
