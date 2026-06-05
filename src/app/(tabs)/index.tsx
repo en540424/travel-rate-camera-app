@@ -25,6 +25,8 @@ export default function CameraScreen() {
   const [nativeAmount, setNativeAmount] = useState('');
   const [scanKey, setScanKey] = useState(0);
   const [inputMode, setInputMode] = useState<ConversionDirection>('TO_JPY');
+  // OCR検証用: 一時テキスト表示（金額抽出・保存連携はまだしない）
+  const [ocrDebugText, setOcrDebugText] = useState<string | null>(null);
 
   const { rates } = useRates();
   const { selectedCurrency, setSelectedCurrency } = useSettingsStore();
@@ -106,6 +108,7 @@ export default function CameraScreen() {
       currency={selectedCurrency}
       rate={rate}
       remainingIfSaved={remainingIfSaved}
+      onOcrResult={Platform.OS !== 'web' ? setOcrDebugText : undefined}
     />
   );
 
@@ -145,6 +148,21 @@ export default function CameraScreen() {
             <View style={styles.cameraHero}>
               {cameraPreview}
             </View>
+
+            {/* OCR検証用デバッグ表示（開発確認専用・本番では削除） */}
+            {ocrDebugText != null && (
+              <View style={styles.ocrDebugCard}>
+                <View style={styles.ocrDebugHeader}>
+                  <ThemedText style={styles.ocrDebugLabel}>OCR 読み取り結果（開発確認）</ThemedText>
+                  <TouchableOpacity onPress={() => setOcrDebugText(null)} hitSlop={8}>
+                    <ThemedText style={styles.ocrDebugClose}>✕</ThemedText>
+                  </TouchableOpacity>
+                </View>
+                <ThemedText style={styles.ocrDebugText} selectable>
+                  {ocrDebugText || '（テキストなし）'}
+                </ThemedText>
+              </View>
+            )}
 
             {/* 金額入力カード（カメラ下）*/}
             <View style={styles.inputCard}>
@@ -365,6 +383,36 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     shadowOffset: { width: 0, height: 8 },
     elevation: 10,
+  },
+
+  ocrDebugCard: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 12,
+    padding: 12,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#208AEF55',
+  },
+  ocrDebugHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  ocrDebugLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#208AEF',
+    letterSpacing: 0.4,
+  },
+  ocrDebugClose: {
+    fontSize: 14,
+    color: '#888',
+  },
+  ocrDebugText: {
+    fontSize: 13,
+    color: '#e0e0e0',
+    lineHeight: 20,
+    fontFamily: 'monospace',
   },
 
   inputCard: {
