@@ -20,6 +20,7 @@ function loadAllFromWebStorage(): HistoryRow[] {
       purchased_at: r.purchased_at ?? r.purchase_date ?? null,
       updated_at: r.updated_at ?? null,
       created_at: r.created_at ?? '',
+      memo: r.memo ?? null,
     }));
   } catch {
     return [];

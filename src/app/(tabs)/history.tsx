@@ -91,6 +91,10 @@ export default function HistoryScreen() {
           約 {formatJpy(item.jpy_amount)}
         </ThemedText>
 
+        {item.memo ? (
+          <ThemedText style={styles.memoText}>{item.memo}</ThemedText>
+        ) : null}
+
         <View style={styles.cardMeta}>
           <ThemedText style={styles.rateText}>
             {formatRate(item.rate_used, item.currency)}
@@ -348,6 +352,12 @@ const styles = StyleSheet.create({
     color: C.text,
     letterSpacing: -0.6,
     lineHeight: 34,
+    marginTop: 2,
+  },
+  memoText: {
+    fontSize: 14,
+    color: C.textSecondary,
+    fontWeight: '500',
     marginTop: 2,
   },
   cardMeta: {

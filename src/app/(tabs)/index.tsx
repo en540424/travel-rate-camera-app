@@ -26,6 +26,7 @@ export default function CameraScreen() {
   const [nativeAmount, setNativeAmount] = useState('');
   const [scanKey, setScanKey] = useState(0);
   const [inputMode, setInputMode] = useState<ConversionDirection>('TO_JPY');
+  const [memo, setMemo] = useState('');
   const [ocrResult, setOcrResult] = useState<{
     raw: string;
     prices: string[];
@@ -106,8 +107,9 @@ export default function CameraScreen() {
 
   async function handleSaveCandidate() {
     if (!canSave) return;
-    await addEntry(selectedCurrency, foreignAmount, jpyAmount, rate);
+    await addEntry(selectedCurrency, foreignAmount, jpyAmount, rate, memo.trim() || undefined);
     setNativeAmount('');
+    setMemo('');
     if (Platform.OS !== 'web') {
       try {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -263,6 +265,16 @@ export default function CameraScreen() {
                     ))
                 }
               </View>
+              <TextInput
+                style={styles.memoInput}
+                value={memo}
+                onChangeText={setMemo}
+                placeholder="商品メモ（例: モッツァレラ）"
+                placeholderTextColor={C.textMuted}
+                returnKeyType="done"
+                maxLength={60}
+              />
+
               <TouchableOpacity
                 style={[styles.candidateBtn, !canSave && styles.candidateBtnDisabled]}
                 onPress={handleSaveCandidate}
@@ -556,6 +568,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: C.textSecondary,
     flexShrink: 1,
+  },
+  memoInput: {
+    fontSize: 14,
+    color: C.text,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: C.border,
   },
 
   summaryCard: {

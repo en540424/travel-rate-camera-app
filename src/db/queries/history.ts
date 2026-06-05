@@ -13,6 +13,7 @@ export interface HistoryRow {
   purchased_at: string | null;
   updated_at: string | null;
   created_at: string;
+  memo: string | null;
 }
 
 /** 無料版の最大保存件数 */
@@ -76,16 +77,18 @@ export async function clearHistoryForTrip(
 /** 履歴を1件追加 */
 export async function insertHistory(
   db: SQLiteDatabase,
-  entry: Omit<HistoryRow, 'id' | 'created_at' | 'is_purchased' | 'purchased_at' | 'updated_at'>,
+  entry: Omit<HistoryRow, 'id' | 'created_at' | 'is_purchased' | 'purchased_at' | 'updated_at' | 'memo'>,
+  memo?: string,
 ): Promise<void> {
   await db.runAsync(
-    `INSERT INTO conversion_history (currency, foreign_amount, jpy_amount, rate_used, trip_id)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO conversion_history (currency, foreign_amount, jpy_amount, rate_used, trip_id, memo)
+     VALUES (?, ?, ?, ?, ?, ?)`,
     entry.currency,
     entry.foreign_amount,
     entry.jpy_amount,
     entry.rate_used,
     entry.trip_id ?? null,
+    memo ?? null,
   );
 }
 

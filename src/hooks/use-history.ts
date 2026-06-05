@@ -45,15 +45,20 @@ export function useHistory() {
     foreignAmount: number,
     jpyAmount: number,
     rateUsed: number,
+    memo?: string,
   ) {
     if (!activeTrip) return;
-    await insertHistory(db, {
-      currency,
-      foreign_amount: foreignAmount,
-      jpy_amount: jpyAmount,
-      rate_used: rateUsed,
-      trip_id: activeTrip.id,
-    });
+    await insertHistory(
+      db,
+      {
+        currency,
+        foreign_amount: foreignAmount,
+        jpy_amount: jpyAmount,
+        rate_used: rateUsed,
+        trip_id: activeTrip.id,
+      },
+      memo,
+    );
     await load();
   }
 
