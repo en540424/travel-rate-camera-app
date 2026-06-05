@@ -265,15 +265,18 @@ export default function CameraScreen() {
                     ))
                 }
               </View>
-              <TextInput
-                style={styles.memoInput}
-                value={memo}
-                onChangeText={setMemo}
-                placeholder="商品メモ（例: モッツァレラ）"
-                placeholderTextColor={C.textMuted}
-                returnKeyType="done"
-                maxLength={60}
-              />
+              <View style={styles.memoRow}>
+                <ThemedText style={styles.memoLabel}>メモ</ThemedText>
+                <TextInput
+                  style={styles.memoInput}
+                  value={memo}
+                  onChangeText={setMemo}
+                  placeholder="モッツァレラ / Tシャツ / お土産"
+                  placeholderTextColor={C.textMuted}
+                  returnKeyType="done"
+                  maxLength={60}
+                />
+              </View>
 
               <TouchableOpacity
                 style={[styles.candidateBtn, !canSave && styles.candidateBtnDisabled]}
@@ -569,12 +572,27 @@ const styles = StyleSheet.create({
     color: C.textSecondary,
     flexShrink: 1,
   },
+  memoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: C.bg,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 2,
+    gap: 8,
+  },
+  memoLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: C.textMuted,
+    letterSpacing: 0.4,
+    minWidth: 28,
+  },
   memoInput: {
+    flex: 1,
     fontSize: 14,
     color: C.text,
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: C.border,
+    paddingVertical: 10,
   },
 
   summaryCard: {

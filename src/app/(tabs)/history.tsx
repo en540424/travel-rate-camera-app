@@ -92,7 +92,9 @@ export default function HistoryScreen() {
         </ThemedText>
 
         {item.memo ? (
-          <ThemedText style={styles.memoText}>{item.memo}</ThemedText>
+          <View style={styles.memoChip}>
+            <ThemedText style={styles.memoChipText}>{item.memo}</ThemedText>
+          </View>
         ) : null}
 
         <View style={styles.cardMeta}>
@@ -354,11 +356,18 @@ const styles = StyleSheet.create({
     lineHeight: 34,
     marginTop: 2,
   },
-  memoText: {
-    fontSize: 14,
+  memoChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: C.bg,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginTop: 4,
+  },
+  memoChipText: {
+    fontSize: 13,
     color: C.textSecondary,
     fontWeight: '500',
-    marginTop: 2,
   },
   cardMeta: {
     flexDirection: 'row',
