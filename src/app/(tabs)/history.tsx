@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { PhotoModal } from '@/components/photo-modal';
+
 import { ThemedText } from '@/components/themed-text';
 import {
   CAMERA_UI as C,
@@ -277,16 +279,29 @@ export default function HistoryScreen() {
     );
   }
 
-  async function handleClearAll() {
-    if (Platform.OS !== 'web') {
-      try {
-        const docsDir = FileSystem.documentDirectory;
-        if (docsDir) {
-          await FileSystem.deleteAsync(`${docsDir}photos/`, { idempotent: true });
-        }
-      } catch {}
-    }
-    clearAll();
+  function handleClearAll() {
+    const isFiltered = filterMode !== 'all';
+    const message = isFiltered
+      ? 'この操作は取り消せません。表示中だけでなく全履歴が削除されます。'
+      : 'この操作は取り消せません。';
+    Alert.alert('すべての履歴を削除しますか？', message, [
+      { text: 'キャンセル', style: 'cancel' },
+      {
+        text: 'すべて削除',
+        style: 'destructive',
+        onPress: async () => {
+          if (Platform.OS !== 'web') {
+            try {
+              const docsDir = FileSystem.documentDirectory;
+              if (docsDir) {
+                await FileSystem.deleteAsync(`${docsDir}photos/`, { idempotent: true });
+              }
+            } catch {}
+          }
+          clearAll();
+        },
+      },
+    ]);
   }
 
   async function handleAddImage(item: HistoryRow) {
@@ -700,23 +715,7 @@ export default function HistoryScreen() {
       </SafeAreaView>
 
       {/* 写真フルスクリーンモーダル */}
-      {photoModalUri != null && (
-        <Modal
-          visible
-          animationType="fade"
-          transparent
-          onRequestClose={() => setPhotoModalUri(null)}>
-          <Pressable
-            style={styles.photoModalBg}
-            onPress={() => setPhotoModalUri(null)}>
-            <Image
-              source={{ uri: photoModalUri }}
-              style={styles.photoModalImage}
-              contentFit="contain"
-            />
-          </Pressable>
-        </Modal>
-      )}
+      <PhotoModal uri={photoModalUri} onClose={() => setPhotoModalUri(null)} />
 
       {/* 日付ピッカーモーダル */}
       {editingDateId != null && (
@@ -1179,17 +1178,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: C.bg,
     marginTop: 4,
-  },
-
-  photoModalBg: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.92)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  photoModalImage: {
-    width: '100%',
-    height: '80%',
   },
 
   // ── 日付ピッカーモーダル ──

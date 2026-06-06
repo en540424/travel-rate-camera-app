@@ -4,6 +4,9 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { Image } from 'expo-image';
+
+import { PhotoModal } from '@/components/photo-modal';
 import { ThemedText } from '@/components/themed-text';
 import { CAMERA_UI as C } from '@/constants/camera-screen';
 import type { CurrencyCode } from '@/constants/currencies';
@@ -86,6 +89,7 @@ export default function CalendarScreen() {
   const { history, tripMap, togglePurchased, removeEntry, reload } = useAllHistory();
   const togglePurchasedRef = useRef(togglePurchased);
   const removeEntryRef = useRef(removeEntry);
+  const [photoModalUri, setPhotoModalUri] = useState<string | null>(null);
   togglePurchasedRef.current = togglePurchased;
   removeEntryRef.current = removeEntry;
 
@@ -375,6 +379,18 @@ export default function CalendarScreen() {
                                 </View>
                               ) : null}
 
+                              {item.image_uri ? (
+                                <TouchableOpacity
+                                  onPress={() => setPhotoModalUri(item.image_uri!)}
+                                  activeOpacity={0.8}>
+                                  <Image
+                                    source={{ uri: item.image_uri }}
+                                    style={styles.calThumb}
+                                    contentFit="cover"
+                                  />
+                                </TouchableOpacity>
+                              ) : null}
+
                               <View style={styles.cardFooter}>
                                 <ThemedText style={styles.cardRate}>
                                   {formatRate(item.rate_used, item.currency)}
@@ -398,6 +414,9 @@ export default function CalendarScreen() {
 
         </ScrollView>
       </SafeAreaView>
+
+      {/* 写真フルスクリーンモーダル */}
+      <PhotoModal uri={photoModalUri} onClose={() => setPhotoModalUri(null)} />
     </View>
   );
 }
@@ -662,4 +681,10 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
+  calThumb: {
+    width: 72,
+    height: 54,
+    borderRadius: 8,
+    backgroundColor: C.bg,
+  },
 });

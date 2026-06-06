@@ -33,13 +33,14 @@ export default function ConverterScreen() {
   const { addEntry } = useHistory();
   const { activeTrip } = useTrips();
 
+  const isJpyMode = selectedCurrency === 'JPY';
   const tripRate = activeTrip?.manual_rate ?? 0;
-  const rate = tripRate > 0 ? tripRate : (rates[selectedCurrency] ?? 0);
+  const effectiveRate = isJpyMode ? 1 : (tripRate > 0 ? tripRate : (rates[selectedCurrency] ?? 0));
   const amount = parseFloat(amountText) || 0;
-  const isReverse = direction === 'FROM_JPY';
-  const result = convert(amount, rate, direction);
-  const hasRate = rate > 0;
-  const hasResult = !!activeTrip && hasRate && amount > 0;
+  const isReverse = !isJpyMode && direction === 'FROM_JPY';
+  const result = isJpyMode ? amount : convert(amount, effectiveRate, direction);
+  const hasRate = isJpyMode || effectiveRate > 0;
+  const hasResult = !!activeTrip && amount > 0 && hasRate;
 
   function switchDirection(next: ConversionDirection) {
     setDirection(next);
@@ -68,10 +69,10 @@ export default function ConverterScreen() {
       await FileSystem.copyAsync({ from: selectedImageUri, to: destUri });
       savedUri = destUri;
     }
-    await addEntry(selectedCurrency, amount, result, rate, undefined, savedUri);
+    await addEntry(selectedCurrency, amount, result, effectiveRate, undefined, savedUri);
     if (Platform.OS !== 'web') {
-      const { default: Haptics } = await import('expo-haptics');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const { notificationAsync, NotificationFeedbackType } = await import('expo-haptics');
+      await notificationAsync(NotificationFeedbackType.Success);
     }
     setAmountText('');
     setSelectedImageUri(null);
@@ -93,25 +94,27 @@ export default function ConverterScreen() {
               </ThemedText>
             </View>
 
-            {/* 換算方向切り替え */}
-            <View style={styles.dirRow}>
-              <TouchableOpacity
-                style={[styles.dirBtn, !isReverse && styles.dirBtnActive]}
-                onPress={() => switchDirection('TO_JPY')}
-                activeOpacity={0.75}>
-                <ThemedText style={[styles.dirBtnText, !isReverse && styles.dirBtnTextActive]}>
-                  {selectedCurrency} → 円
-                </ThemedText>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.dirBtn, isReverse && styles.dirBtnActive]}
-                onPress={() => switchDirection('FROM_JPY')}
-                activeOpacity={0.75}>
-                <ThemedText style={[styles.dirBtnText, isReverse && styles.dirBtnTextActive]}>
-                  円 → {selectedCurrency}
-                </ThemedText>
-              </TouchableOpacity>
-            </View>
+            {/* 換算方向切り替え（JPY国内モードでは非表示） */}
+            {!isJpyMode && (
+              <View style={styles.dirRow}>
+                <TouchableOpacity
+                  style={[styles.dirBtn, !isReverse && styles.dirBtnActive]}
+                  onPress={() => switchDirection('TO_JPY')}
+                  activeOpacity={0.75}>
+                  <ThemedText style={[styles.dirBtnText, !isReverse && styles.dirBtnTextActive]}>
+                    {selectedCurrency} → 円
+                  </ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.dirBtn, isReverse && styles.dirBtnActive]}
+                  onPress={() => switchDirection('FROM_JPY')}
+                  activeOpacity={0.75}>
+                  <ThemedText style={[styles.dirBtnText, isReverse && styles.dirBtnTextActive]}>
+                    円 → {selectedCurrency}
+                  </ThemedText>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* 通貨セレクター */}
             <ThemedText type="small" themeColor="textSecondary">通貨を選択</ThemedText>
@@ -135,24 +138,31 @@ export default function ConverterScreen() {
             </View>
 
             {/* レート行 */}
-            <TouchableOpacity
-              style={[styles.rateRow, { borderColor: theme.backgroundElement }]}
-              onPress={() => router.push(activeTrip ? '/rate-setup' : '/settings')}>
-              <ThemedText type="small">
-                {hasRate
-                  ? formatRate(rate, selectedCurrency)
-                  : activeTrip
-                    ? '旅行フォルダにレートが未登録です'
-                    : '旅行フォルダがありません'}
-              </ThemedText>
-              <ThemedText type="small" style={styles.editLink}>
-                {hasRate
-                  ? '変更 →'
-                  : activeTrip
-                    ? 'レートを設定する →'
-                    : '設定タブで作成する →'}
-              </ThemedText>
-            </TouchableOpacity>
+            {isJpyMode ? (
+              <View style={[styles.rateRow, { borderColor: theme.backgroundElement }]}>
+                <ThemedText type="small">🇯🇵 JPY 国内モード</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">変換なし</ThemedText>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={[styles.rateRow, { borderColor: theme.backgroundElement }]}
+                onPress={() => router.push(activeTrip ? '/rate-setup' : '/settings')}>
+                <ThemedText type="small">
+                  {hasRate
+                    ? formatRate(effectiveRate, selectedCurrency)
+                    : activeTrip
+                      ? '旅行フォルダにレートが未登録です'
+                      : '旅行フォルダがありません'}
+                </ThemedText>
+                <ThemedText type="small" style={styles.editLink}>
+                  {hasRate
+                    ? '変更 →'
+                    : activeTrip
+                      ? 'レートを設定する →'
+                      : '設定タブで作成する →'}
+                </ThemedText>
+              </TouchableOpacity>
+            )}
 
             {/* 金額入力 */}
             <ThemedText type="small" themeColor="textSecondary">
@@ -184,23 +194,29 @@ export default function ConverterScreen() {
               {hasResult ? (
                 <>
                   <ThemedText type="small" themeColor="textSecondary">
-                    {isReverse ? '外貨換算' : '日本円換算'}
+                    {isJpyMode ? 'そのまま保存' : isReverse ? '外貨換算' : '日本円換算'}
                   </ThemedText>
                   <ThemedText style={styles.jpyAmount}>
                     {isReverse
                       ? `${CURRENCIES[selectedCurrency].symbol} ${result.toFixed(2)}`
                       : formatJpy(result)}
                   </ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {formatRate(rate, selectedCurrency)}
-                  </ThemedText>
+                  {!isJpyMode && (
+                    <ThemedText type="small" themeColor="textSecondary">
+                      {formatRate(effectiveRate, selectedCurrency)}
+                    </ThemedText>
+                  )}
                 </>
               ) : (
                 <ThemedText
                   type="small"
                   themeColor="textSecondary"
                   style={styles.resultPlaceholder}>
-                  {!hasRate ? 'レートを設定してください' : '金額を入力してください'}
+                  {!activeTrip
+                    ? '旅行フォルダがありません'
+                    : !hasRate
+                      ? 'レートを設定してください'
+                      : '金額を入力してください'}
                 </ThemedText>
               )}
             </ThemedView>
