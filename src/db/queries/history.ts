@@ -82,10 +82,12 @@ export async function insertHistory(
   entry: Omit<HistoryRow, 'id' | 'created_at' | 'is_purchased' | 'purchased_at' | 'updated_at' | 'memo' | 'image_uri' | 'entry_date'>,
   memo?: string,
   imageUri?: string,
+  isPurchased?: boolean,
 ): Promise<void> {
+  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
   await db.runAsync(
-    `INSERT INTO conversion_history (currency, foreign_amount, jpy_amount, rate_used, trip_id, memo, image_uri)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO conversion_history (currency, foreign_amount, jpy_amount, rate_used, trip_id, memo, image_uri, is_purchased, purchased_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     entry.currency,
     entry.foreign_amount,
     entry.jpy_amount,
@@ -93,6 +95,8 @@ export async function insertHistory(
     entry.trip_id ?? null,
     memo ?? null,
     imageUri ?? null,
+    isPurchased ? 1 : 0,
+    isPurchased ? now : null,
   );
 }
 

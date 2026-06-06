@@ -71,6 +71,7 @@ export function useHistory() {
     rateUsed: number,
     memo?: string,
     imageUri?: string,
+    isPurchased?: boolean,
   ) {
     if (!activeTrip) return;
     const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
@@ -81,8 +82,8 @@ export function useHistory() {
       jpy_amount: jpyAmount,
       rate_used: rateUsed,
       trip_id: activeTrip.id,
-      is_purchased: 0,
-      purchased_at: null,
+      is_purchased: isPurchased ? 1 : 0,
+      purchased_at: isPurchased ? now : null,
       updated_at: now,
       created_at: now,
       memo: memo ?? null,

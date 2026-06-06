@@ -27,6 +27,7 @@ export default function ConverterScreen() {
   const [amountText, setAmountText] = useState('');
   const [direction, setDirection] = useState<ConversionDirection>('TO_JPY');
   const [selectedImageUri, setSelectedImageUri] = useState<string | null>(null);
+  const [saveAsPurchased, setSaveAsPurchased] = useState(false);
   const { rates } = useRates();
   const theme = useTheme();
   const { selectedCurrency, setSelectedCurrency, setPendingCameraAmount } = useSettingsStore();
@@ -69,13 +70,14 @@ export default function ConverterScreen() {
       await FileSystem.copyAsync({ from: selectedImageUri, to: destUri });
       savedUri = destUri;
     }
-    await addEntry(selectedCurrency, amount, result, effectiveRate, undefined, savedUri);
+    await addEntry(selectedCurrency, amount, result, effectiveRate, undefined, savedUri, saveAsPurchased);
     if (Platform.OS !== 'web') {
       const { notificationAsync, NotificationFeedbackType } = await import('expo-haptics');
       await notificationAsync(NotificationFeedbackType.Success);
     }
     setAmountText('');
     setSelectedImageUri(null);
+    setSaveAsPurchased(false);
   }
 
   return (
@@ -256,14 +258,36 @@ export default function ConverterScreen() {
               )
             )}
 
-            {/* 保存ボタン（外貨→円 モードのみ） */}
+            {/* 保存状態 + 保存ボタン（外貨→円 モードのみ） */}
             {!isReverse && (
-              <TouchableOpacity
-                style={[styles.saveBtn, !hasResult && styles.saveBtnDisabled]}
-                onPress={handleSave}
-                disabled={!hasResult}>
-                <ThemedText style={styles.saveBtnText}>💾 履歴に保存する</ThemedText>
-              </TouchableOpacity>
+              <>
+                <View style={styles.dirRow}>
+                  <TouchableOpacity
+                    style={[styles.dirBtn, !saveAsPurchased && styles.dirBtnActive]}
+                    onPress={() => setSaveAsPurchased(false)}
+                    activeOpacity={0.75}>
+                    <ThemedText style={[styles.dirBtnText, !saveAsPurchased && styles.dirBtnTextActive]}>
+                      候補
+                    </ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.dirBtn, saveAsPurchased && styles.dirBtnActive]}
+                    onPress={() => setSaveAsPurchased(true)}
+                    activeOpacity={0.75}>
+                    <ThemedText style={[styles.dirBtnText, saveAsPurchased && styles.dirBtnTextActive]}>
+                      購入済み
+                    </ThemedText>
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity
+                  style={[styles.saveBtn, !hasResult && styles.saveBtnDisabled]}
+                  onPress={handleSave}
+                  disabled={!hasResult}>
+                  <ThemedText style={styles.saveBtnText}>
+                    {saveAsPurchased ? '💾 購入済みとして保存' : '💾 履歴に保存する'}
+                  </ThemedText>
+                </TouchableOpacity>
+              </>
             )}
 
           </View>

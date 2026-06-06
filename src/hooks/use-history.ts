@@ -51,6 +51,7 @@ export function useHistory() {
     rateUsed: number,
     memo?: string,
     imageUri?: string,
+    isPurchased?: boolean,
   ) {
     if (!activeTrip) return;
     await insertHistory(
@@ -64,6 +65,7 @@ export function useHistory() {
       },
       memo,
       imageUri,
+      isPurchased,
     );
     await load();
   }

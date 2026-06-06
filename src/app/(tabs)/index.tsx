@@ -34,6 +34,7 @@ export default function CameraScreen() {
   } | null>(null);
   const [ocrRawExpanded, setOcrRawExpanded] = useState(false);
   const [pendingPhotoUri, setPendingPhotoUri] = useState<string | null>(null);
+  const [saveAsPurchased, setSaveAsPurchased] = useState(false);
 
   const { rates } = useRates();
   const { selectedCurrency, setSelectedCurrency } = useSettingsStore();
@@ -154,12 +155,13 @@ export default function CameraScreen() {
       }
     }
     const currencyToSave: CurrencyCode = isJpyMode ? 'JPY' : selectedCurrency;
-    await addEntry(currencyToSave, foreignAmount, jpyAmount, rate, memo.trim() || undefined, savedPhotoUri);
+    await addEntry(currencyToSave, foreignAmount, jpyAmount, rate, memo.trim() || undefined, savedPhotoUri, saveAsPurchased);
     setNativeAmount('');
     setMemo('');
     setOcrResult(null);
     setOcrRawExpanded(false);
     setPendingPhotoUri(null);
+    setSaveAsPurchased(false);
     if (Platform.OS !== 'web') {
       try {
         const { notificationAsync, NotificationFeedbackType } = await import('expo-haptics');
@@ -383,8 +385,31 @@ export default function CameraScreen() {
                 </View>
               )}
 
+              <View style={styles.inputModeRow}>
+                <TouchableOpacity
+                  style={[styles.inputModeBtn, !saveAsPurchased && styles.inputModeBtnActive]}
+                  onPress={() => setSaveAsPurchased(false)}
+                  activeOpacity={0.75}>
+                  <ThemedText style={[styles.inputModeBtnText, !saveAsPurchased && styles.inputModeBtnTextActive]}>
+                    候補
+                  </ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.inputModeBtn, saveAsPurchased && styles.inputModeBtnActive]}
+                  onPress={() => setSaveAsPurchased(true)}
+                  activeOpacity={0.75}>
+                  <ThemedText style={[styles.inputModeBtnText, saveAsPurchased && styles.inputModeBtnTextActive]}>
+                    購入済み
+                  </ThemedText>
+                </TouchableOpacity>
+              </View>
+
               <TouchableOpacity
-                style={[styles.candidateBtn, !canSave && styles.candidateBtnDisabled]}
+                style={[
+                  styles.candidateBtn,
+                  !canSave && styles.candidateBtnDisabled,
+                  saveAsPurchased && styles.candidateBtnPurchased,
+                ]}
                 onPress={handleSaveCandidate}
                 disabled={!canSave}
                 activeOpacity={0.75}>
@@ -392,8 +417,9 @@ export default function CameraScreen() {
                   style={[
                     styles.candidateBtnText,
                     !canSave && styles.candidateBtnTextDisabled,
+                    saveAsPurchased && styles.candidateBtnTextPurchased,
                   ]}>
-                  買い物候補に保存
+                  {saveAsPurchased ? '購入済みとして保存' : '買い物候補に保存'}
                 </ThemedText>
               </TouchableOpacity>
             </View>
@@ -855,6 +881,10 @@ const styles = StyleSheet.create({
     borderColor: C.border,
     opacity: 0.55,
   },
+  candidateBtnPurchased: {
+    backgroundColor: C.brand,
+    borderColor: C.brand,
+  },
   candidateBtnText: {
     fontSize: 15,
     fontWeight: '600',
@@ -862,6 +892,9 @@ const styles = StyleSheet.create({
   },
   candidateBtnTextDisabled: {
     color: C.textMuted,
+  },
+  candidateBtnTextPurchased: {
+    color: '#fff',
   },
   rescanBtn: {
     backgroundColor: C.surface,
