@@ -157,6 +157,16 @@ export function useHistory() {
     load();
   }
 
+  async function updateImageUri(id: number, imageUri: string | null) {
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    persistAll(
+      loadAll().map((r) =>
+        r.id === id ? { ...r, image_uri: imageUri, updated_at: now } : r,
+      ),
+    );
+    load();
+  }
+
   const isAtFreeLimit = !isPro && totalCount >= FREE_HISTORY_LIMIT;
 
   return {
@@ -170,6 +180,7 @@ export function useHistory() {
     updateAmount,
     updateMemo,
     updateEntryDate,
+    updateImageUri,
     reload: load,
   };
 }

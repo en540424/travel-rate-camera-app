@@ -95,5 +95,10 @@ export function useAllHistory() {
     load();
   }
 
-  return { history, tripMap, reload: load, togglePurchased };
+  async function removeEntry(id: number) {
+    persistHistory(loadAllHistory().filter((r) => r.id !== id));
+    load();
+  }
+
+  return { history, tripMap, reload: load, togglePurchased, removeEntry };
 }

@@ -49,6 +49,12 @@
         {
           "cameraPermission": "カメラで価格タグを撮影して円換算します"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "カメラロールの画像を買い物候補に紐付けます"
+        }
       ]
     ],
     "experiments": {

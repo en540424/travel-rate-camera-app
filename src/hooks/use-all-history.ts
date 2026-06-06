@@ -2,7 +2,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useState } from 'react';
 
 import type { HistoryRow } from '@/db/queries/history';
-import { getHistory, markPurchased } from '@/db/queries/history';
+import { deleteHistory, getHistory, markPurchased } from '@/db/queries/history';
 import type { TripRow } from '@/db/queries/trips';
 import { getAllTrips } from '@/db/queries/trips';
 
@@ -29,5 +29,10 @@ export function useAllHistory() {
     await load();
   }
 
-  return { history, tripMap, reload: load, togglePurchased };
+  async function removeEntry(id: number) {
+    await deleteHistory(db, id);
+    await load();
+  }
+
+  return { history, tripMap, reload: load, togglePurchased, removeEntry };
 }

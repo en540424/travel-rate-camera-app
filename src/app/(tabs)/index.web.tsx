@@ -1,4 +1,3 @@
-import { Image } from 'expo-image';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
@@ -18,7 +17,6 @@ import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { convert } from '@/utils/currency';
-import { extractMemoLines, extractPriceCandidates } from '@/utils/extract-prices';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
@@ -27,13 +25,6 @@ export default function CameraScreen() {
   const [scanKey, setScanKey] = useState(0);
   const [inputMode, setInputMode] = useState<ConversionDirection>('TO_JPY');
   const [memo, setMemo] = useState('');
-  const [ocrResult, setOcrResult] = useState<{
-    raw: string;
-    prices: string[];
-    memoLines: string[];
-  } | null>(null);
-  const [ocrRawExpanded, setOcrRawExpanded] = useState(false);
-  const [pendingPhotoUri, setPendingPhotoUri] = useState<string | null>(null);
 
   const { rates } = useRates();
   const { selectedCurrency, setSelectedCurrency } = useSettingsStore();
@@ -80,46 +71,9 @@ export default function CameraScreen() {
     ? Math.min(1, stats.purchasedTotalJpy / tripBudgetJpy)
     : 0;
 
-  const isWeb = Platform.OS === 'web';
-
   function switchInputMode(mode: ConversionDirection) {
     setInputMode(mode);
     setNativeAmount('');
-  }
-
-  function handlePhotoCapture(uri: string) {
-    setPendingPhotoUri(uri);
-  }
-
-  function handleOcrResult(raw: string) {
-    if (isWeb) return;
-    setOcrResult({
-      raw,
-      prices: extractPriceCandidates(raw, isJpyMode),
-      memoLines: extractMemoLines(raw),
-    });
-  }
-
-  function handlePickPrice(price: string) {
-    setNativeAmount(price);
-    setInputMode('TO_JPY');
-    // OCRカードは閉じない（全文を見ながらメモを書けるようにする）
-  }
-
-  function handleAddMemoLine(line: string) {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-    setMemo((prev) => {
-      const current = prev.trim();
-      if (!current) return trimmed.slice(0, 100);
-      return `${current} ${trimmed}`.slice(0, 100);
-    });
-  }
-
-  function handleCopyRawToMemo() {
-    if (!ocrResult) return;
-    const cleaned = ocrResult.raw.replace(/\s+/g, ' ').trim().slice(0, 100);
-    setMemo(cleaned);
   }
 
   function cycleCurrency() {
@@ -132,42 +86,14 @@ export default function CameraScreen() {
   function handleRescan() {
     setNativeAmount('');
     setScanKey((k) => k + 1);
-    setPendingPhotoUri(null);
   }
 
   async function handleSaveCandidate() {
     if (!canSave) return;
-    let savedPhotoUri: string | undefined;
-    if (pendingPhotoUri && Platform.OS !== 'web') {
-      try {
-        const FileSystem = await import('expo-file-system/legacy');
-        const docsDir = FileSystem.documentDirectory;
-        if (docsDir) {
-          const photosDir = `${docsDir}photos/`;
-          await FileSystem.makeDirectoryAsync(photosDir, { intermediates: true });
-          const destUri = `${photosDir}${Date.now()}.jpg`;
-          await FileSystem.copyAsync({ from: pendingPhotoUri, to: destUri });
-          savedPhotoUri = destUri;
-        }
-      } catch (e) {
-        console.warn('[photo save]', e);
-      }
-    }
     const currencyToSave: CurrencyCode = isJpyMode ? 'JPY' : selectedCurrency;
-    await addEntry(currencyToSave, foreignAmount, jpyAmount, rate, memo.trim() || undefined, savedPhotoUri);
+    await addEntry(currencyToSave, foreignAmount, jpyAmount, rate, memo.trim() || undefined);
     setNativeAmount('');
     setMemo('');
-    setOcrResult(null);
-    setOcrRawExpanded(false);
-    setPendingPhotoUri(null);
-    if (Platform.OS !== 'web') {
-      try {
-        const { notificationAsync, NotificationFeedbackType } = await import('expo-haptics');
-        await notificationAsync(NotificationFeedbackType.Success);
-      } catch (e) {
-        console.warn('Haptics not available:', e);
-      }
-    }
   }
 
   const cameraPreview = (
@@ -176,8 +102,6 @@ export default function CameraScreen() {
       currency={selectedCurrency}
       rate={rate}
       remainingIfSaved={remainingIfSaved}
-      onOcrResult={Platform.OS !== 'web' ? handleOcrResult : undefined}
-      onPhotoCapture={Platform.OS !== 'web' ? handlePhotoCapture : undefined}
     />
   );
 
@@ -219,96 +143,12 @@ export default function CameraScreen() {
               </View>
             </View>
 
-            {/* 中央：カメラ（主役） */}
+            {/* 中央：カメラプレビュー（Web ではモック表示） */}
             <View style={styles.cameraHero}>
               {cameraPreview}
             </View>
 
-            {/* OCR結果カード（Web では表示しない） */}
-            {!isWeb && ocrResult != null && (
-              <View style={styles.ocrCard}>
-                {/* ヘッダー */}
-                <View style={styles.ocrCardHeader}>
-                  <ThemedText style={styles.ocrCardTitle}>読み取り結果</ThemedText>
-                  <TouchableOpacity
-                    onPress={() => { setOcrResult(null); setOcrRawExpanded(false); }}
-                    hitSlop={8}>
-                    <ThemedText style={styles.ocrCardClose}>✕</ThemedText>
-                  </TouchableOpacity>
-                </View>
-
-                {/* 価格候補 */}
-                <View style={styles.ocrSection}>
-                  <ThemedText style={styles.ocrSectionLabel}>価格候補</ThemedText>
-                  {ocrResult.prices.length === 0 ? (
-                    <ThemedText style={styles.ocrNoneText}>認識できませんでした</ThemedText>
-                  ) : (
-                    <View style={styles.ocrPriceRow}>
-                      {ocrResult.prices.map((p) => (
-                        <TouchableOpacity
-                          key={p}
-                          style={styles.ocrPriceBtn}
-                          onPress={() => handlePickPrice(p)}
-                          activeOpacity={0.75}>
-                          <ThemedText style={styles.ocrPriceBtnText}>
-                            {c.symbol}{p}
-                          </ThemedText>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-                </View>
-
-                {/* メモ候補 */}
-                {ocrResult.memoLines.length > 0 && (
-                  <View style={styles.ocrSection}>
-                    <ThemedText style={styles.ocrSectionLabel}>
-                      メモ候補（タップで追加）
-                    </ThemedText>
-                    {ocrResult.memoLines.map((line) => (
-                      <View key={line} style={styles.ocrMemoLineRow}>
-                        <ThemedText style={styles.ocrMemoLineText} numberOfLines={1}>
-                          {line}
-                        </ThemedText>
-                        <TouchableOpacity
-                          style={styles.ocrAddMemoBtn}
-                          onPress={() => handleAddMemoLine(line)}
-                          activeOpacity={0.75}>
-                          <ThemedText style={styles.ocrAddMemoBtnText}>＋メモ</ThemedText>
-                        </TouchableOpacity>
-                      </View>
-                    ))}
-                  </View>
-                )}
-
-                {/* 読み取った文字（折りたたみ・全文コピーはここに） */}
-                <TouchableOpacity
-                  style={styles.ocrRawToggle}
-                  onPress={() => setOcrRawExpanded((v) => !v)}
-                  activeOpacity={0.7}>
-                  <ThemedText style={styles.ocrRawToggleText}>
-                    {ocrRawExpanded ? '▼ 読み取った文字（全文）' : '▶ 読み取った文字（全文）'}
-                  </ThemedText>
-                </TouchableOpacity>
-                {ocrRawExpanded && (
-                  <View style={styles.ocrSection}>
-                    <ThemedText style={styles.ocrRawText} selectable>
-                      {ocrResult.raw || 'テキストなし'}
-                    </ThemedText>
-                    <TouchableOpacity
-                      style={styles.ocrCopyBtn}
-                      onPress={handleCopyRawToMemo}
-                      activeOpacity={0.75}>
-                      <ThemedText style={styles.ocrCopyBtnText}>
-                        全文をメモにコピー
-                      </ThemedText>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-            )}
-
-            {/* 金額入力カード（カメラ下）*/}
+            {/* 金額入力カード */}
             <View style={styles.inputCard}>
               {/* 入力モード切り替え（JPY モードでは非表示） */}
               {!isJpyMode && (
@@ -337,7 +177,7 @@ export default function CameraScreen() {
                   {isReverse ? '¥' : c.symbol}
                 </ThemedText>
                 <TextInput
-                  style={styles.inputAmountField}
+                  style={[styles.inputAmountField, Platform.OS === 'web' && ({ outlineStyle: 'none' } as object)]}
                   value={nativeAmount}
                   onChangeText={setNativeAmount}
                   placeholder="0"
@@ -362,7 +202,7 @@ export default function CameraScreen() {
               <View style={styles.memoRow}>
                 <ThemedText style={styles.memoLabel}>メモ</ThemedText>
                 <TextInput
-                  style={styles.memoInput}
+                  style={[styles.memoInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as object)]}
                   value={memo}
                   onChangeText={setMemo}
                   placeholder="モッツァレラ / Tシャツ / お土産"
@@ -371,17 +211,6 @@ export default function CameraScreen() {
                   maxLength={100}
                 />
               </View>
-
-              {pendingPhotoUri != null && Platform.OS !== 'web' && (
-                <View style={styles.pendingPhotoRow}>
-                  <Image
-                    source={{ uri: pendingPhotoUri }}
-                    style={styles.pendingPhotoThumb}
-                    contentFit="cover"
-                  />
-                  <ThemedText style={styles.pendingPhotoLabel}>写真が保存されます</ThemedText>
-                </View>
-              )}
 
               <TouchableOpacity
                 style={[styles.candidateBtn, !canSave && styles.candidateBtnDisabled]}
@@ -398,7 +227,7 @@ export default function CameraScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* 買い物サマリー（判断の文脈） */}
+            {/* 買い物サマリー */}
             {activeTrip ? (
               <View style={styles.summaryCard}>
                 <ThemedText style={styles.summaryTitle}>買い物サマリー</ThemedText>
@@ -557,110 +386,6 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
 
-  ocrCard: {
-    backgroundColor: C.surface,
-    borderRadius: 16,
-    padding: 16,
-    gap: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.border,
-  },
-  ocrCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  ocrCardTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: C.text,
-  },
-  ocrCardClose: {
-    fontSize: 16,
-    color: C.textMuted,
-  },
-  ocrSection: {
-    gap: 8,
-  },
-  ocrSectionLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: C.textMuted,
-    letterSpacing: 0.5,
-  },
-  ocrPriceRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  ocrPriceBtn: {
-    backgroundColor: C.brand,
-    borderRadius: 20,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-  },
-  ocrPriceBtnText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-  },
-  ocrNoneText: {
-    fontSize: 13,
-    color: C.textMuted,
-  },
-  ocrMemoLineRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 3,
-  },
-  ocrMemoLineText: {
-    flex: 1,
-    fontSize: 13,
-    color: C.text,
-    fontWeight: '500',
-  },
-  ocrAddMemoBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: C.brand,
-    borderRadius: 6,
-  },
-  ocrAddMemoBtnText: {
-    fontSize: 12,
-    color: C.brand,
-    fontWeight: '600',
-  },
-  ocrRawToggle: {
-    paddingVertical: 4,
-  },
-  ocrRawToggleText: {
-    fontSize: 12,
-    color: C.textMuted,
-    fontWeight: '600',
-  },
-  ocrRawText: {
-    fontSize: 12,
-    color: C.textSecondary,
-    lineHeight: 18,
-  },
-  ocrCopyBtn: {
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderColor: C.brand,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginTop: 4,
-  },
-  ocrCopyBtnText: {
-    fontSize: 12,
-    color: C.brand,
-    fontWeight: '600',
-  },
-
   inputCard: {
     backgroundColor: C.surface,
     borderRadius: 16,
@@ -714,23 +439,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: C.textSecondary,
     flexShrink: 1,
-  },
-  pendingPhotoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  pendingPhotoThumb: {
-    width: 56,
-    height: 42,
-    borderRadius: 8,
-    backgroundColor: C.bg,
-  },
-  pendingPhotoLabel: {
-    fontSize: 12,
-    color: C.textSecondary,
-    fontWeight: '500',
-    flex: 1,
   },
   memoRow: {
     flexDirection: 'row',
@@ -835,13 +543,6 @@ const styles = StyleSheet.create({
   judgmentSection: {
     gap: 10,
     alignItems: 'stretch',
-  },
-  judgmentLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: C.textMuted,
-    textAlign: 'center',
-    letterSpacing: 0.2,
   },
   candidateBtn: {
     backgroundColor: C.surface,

@@ -2,7 +2,7 @@
 // expo-camera を使用。金額入力は画面下のカードで行う。
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import type { CurrencyCode } from '@/constants/currencies';
@@ -55,7 +55,7 @@ export function CameraPreview({ onOcrResult, onPhotoCapture }: CameraPreviewProp
   }
 
   async function handleScan() {
-    if (!cameraRef.current || scanning) return;
+    if (Platform.OS === 'web' || !cameraRef.current || scanning) return;
     setScanning(true);
     try {
       const photo = await cameraRef.current.takePictureAsync({ base64: false });

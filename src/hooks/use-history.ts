@@ -15,6 +15,7 @@ import {
   markPurchased as markPurchasedQuery,
   updateAmount as updateAmountQuery,
   updateEntryDate as updateEntryDateQuery,
+  updateImageUri as updateImageUriQuery,
   updateMemo as updateMemoQuery,
 } from '@/db/queries/history';
 import type { HistoryRow } from '@/db/queries/history';
@@ -101,6 +102,11 @@ export function useHistory() {
     await load();
   }
 
+  async function updateImageUri(id: number, imageUri: string | null) {
+    await updateImageUriQuery(db, id, imageUri);
+    await load();
+  }
+
   const isAtFreeLimit = !isPro && totalCount >= FREE_HISTORY_LIMIT;
 
   return {
@@ -114,6 +120,7 @@ export function useHistory() {
     updateAmount,
     updateMemo,
     updateEntryDate,
+    updateImageUri,
     reload: load,
   };
 }

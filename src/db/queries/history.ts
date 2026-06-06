@@ -154,6 +154,21 @@ export async function clearHistory(db: SQLiteDatabase): Promise<void> {
   await db.runAsync('DELETE FROM conversion_history');
 }
 
+/** 画像URIを更新（null で画像削除） */
+export async function updateImageUri(
+  db: SQLiteDatabase,
+  id: number,
+  imageUri: string | null,
+): Promise<void> {
+  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  await db.runAsync(
+    `UPDATE conversion_history SET image_uri = ?, updated_at = ? WHERE id = ?`,
+    imageUri,
+    now,
+    id,
+  );
+}
+
 /** カレンダー表示用の日付を更新（"YYYY-MM-DD" または null） */
 export async function updateEntryDate(
   db: SQLiteDatabase,

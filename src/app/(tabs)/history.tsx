@@ -1,5 +1,6 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
@@ -177,18 +178,20 @@ const wheelStyles = StyleSheet.create({
 // ─── HistoryScreen ────────────────────────────────────────────────
 
 export default function HistoryScreen() {
-  const { history, totalCount, clearAll, reload, togglePurchased, removeEntry, updateAmount, updateMemo, updateEntryDate } = useHistory();
+  const { history, totalCount, clearAll, reload, togglePurchased, removeEntry, updateAmount, updateMemo, updateEntryDate, updateImageUri } = useHistory();
 
   const removeEntryRef = useRef(removeEntry);
   const togglePurchasedRef = useRef(togglePurchased);
   const updateAmountRef = useRef(updateAmount);
   const updateMemoRef = useRef(updateMemo);
   const updateEntryDateRef = useRef(updateEntryDate);
+  const updateImageUriRef = useRef(updateImageUri);
   removeEntryRef.current = removeEntry;
   togglePurchasedRef.current = togglePurchased;
   updateAmountRef.current = updateAmount;
   updateMemoRef.current = updateMemo;
   updateEntryDateRef.current = updateEntryDate;
+  updateImageUriRef.current = updateImageUri;
 
   // メモ編集
   const [editingMemoId, setEditingMemoId] = useState<number | null>(null);
@@ -284,6 +287,61 @@ export default function HistoryScreen() {
       } catch {}
     }
     clearAll();
+  }
+
+  async function handleAddImage(item: HistoryRow) {
+    if (Platform.OS === 'web') return;
+    const picked = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+      allowsEditing: false,
+    });
+    if (picked.canceled || !picked.assets[0]) return;
+    const docsDir = FileSystem.documentDirectory;
+    const photosDir = `${docsDir}photos/`;
+    await FileSystem.makeDirectoryAsync(photosDir, { intermediates: true });
+    const destUri = `${photosDir}${Date.now()}.jpg`;
+    await FileSystem.copyAsync({ from: picked.assets[0].uri, to: destUri });
+    await updateImageUriRef.current(item.id, destUri);
+  }
+
+  async function handleChangeImage(item: HistoryRow) {
+    if (Platform.OS === 'web') return;
+    const picked = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+      allowsEditing: false,
+    });
+    if (picked.canceled || !picked.assets[0]) return;
+    if (item.image_uri) {
+      try { await FileSystem.deleteAsync(item.image_uri, { idempotent: true }); } catch {}
+    }
+    const docsDir = FileSystem.documentDirectory;
+    const photosDir = `${docsDir}photos/`;
+    await FileSystem.makeDirectoryAsync(photosDir, { intermediates: true });
+    const destUri = `${photosDir}${Date.now()}.jpg`;
+    await FileSystem.copyAsync({ from: picked.assets[0].uri, to: destUri });
+    await updateImageUriRef.current(item.id, destUri);
+  }
+
+  function handleDeleteImage(item: HistoryRow) {
+    Alert.alert(
+      '画像を削除しますか？',
+      'この記録から画像を削除します。この操作は取り消せません。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '削除',
+          style: 'destructive',
+          onPress: async () => {
+            if (item.image_uri && Platform.OS !== 'web') {
+              try { await FileSystem.deleteAsync(item.image_uri, { idempotent: true }); } catch {}
+            }
+            updateImageUriRef.current(item.id, null);
+          },
+        },
+      ],
+    );
   }
 
   function startEditPrice(id: number, currentAmount: number) {
@@ -502,6 +560,22 @@ export default function HistoryScreen() {
                   hitSlop={8}>
                   <ThemedText style={styles.dateEditLink}>日付変更</ThemedText>
                 </TouchableOpacity>
+                {Platform.OS !== 'web' && (
+                  item.image_uri ? (
+                    <>
+                      <TouchableOpacity onPress={() => handleChangeImage(item)} hitSlop={8}>
+                        <ThemedText style={styles.imageEditLink}>画像変更</ThemedText>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => handleDeleteImage(item)} hitSlop={8}>
+                        <ThemedText style={styles.imageDeleteLink}>画像削除</ThemedText>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <TouchableOpacity onPress={() => handleAddImage(item)} hitSlop={8}>
+                      <ThemedText style={styles.imageEditLink}>画像追加</ThemedText>
+                    </TouchableOpacity>
+                  )
+                )}
               </>
             )}
             <TouchableOpacity onPress={() => handleDeleteItem(item)} hitSlop={8}>
@@ -1012,6 +1086,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   deleteLink: {
+    fontSize: 13,
+    color: '#FF3B30',
+    fontWeight: '500',
+  },
+  imageEditLink: {
+    fontSize: 13,
+    color: C.brand,
+    fontWeight: '500',
+  },
+  imageDeleteLink: {
     fontSize: 13,
     color: '#FF3B30',
     fontWeight: '500',

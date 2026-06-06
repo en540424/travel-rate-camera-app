@@ -1,5 +1,8 @@
 // 手入力換算画面（補助機能）
 // カメラで読み取れない場合や、正確な金額を計算したい場合に使う。
+import * as FileSystem from 'expo-file-system/legacy';
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,6 +26,7 @@ const CARD_MAX_WIDTH = 430;
 export default function ConverterScreen() {
   const [amountText, setAmountText] = useState('');
   const [direction, setDirection] = useState<ConversionDirection>('TO_JPY');
+  const [selectedImageUri, setSelectedImageUri] = useState<string | null>(null);
   const { rates } = useRates();
   const theme = useTheme();
   const { selectedCurrency, setSelectedCurrency, setPendingCameraAmount } = useSettingsStore();
@@ -42,14 +46,35 @@ export default function ConverterScreen() {
     setAmountText('');
   }
 
+  async function pickImage() {
+    const picked = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+      allowsEditing: false,
+    });
+    if (!picked.canceled && picked.assets[0]) {
+      setSelectedImageUri(picked.assets[0].uri);
+    }
+  }
+
   async function handleSave() {
     if (!hasResult || isReverse) return;
-    await addEntry(selectedCurrency, amount, result, rate);
+    let savedUri: string | undefined;
+    if (selectedImageUri && Platform.OS !== 'web') {
+      const docsDir = FileSystem.documentDirectory;
+      const photosDir = `${docsDir}photos/`;
+      await FileSystem.makeDirectoryAsync(photosDir, { intermediates: true });
+      const destUri = `${photosDir}${Date.now()}.jpg`;
+      await FileSystem.copyAsync({ from: selectedImageUri, to: destUri });
+      savedUri = destUri;
+    }
+    await addEntry(selectedCurrency, amount, result, rate, undefined, savedUri);
     if (Platform.OS !== 'web') {
       const { default: Haptics } = await import('expo-haptics');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
     setAmountText('');
+    setSelectedImageUri(null);
   }
 
   return (
@@ -195,6 +220,26 @@ export default function ConverterScreen() {
               </TouchableOpacity>
             )}
 
+            {/* 画像追加（外貨→円 モードのみ、Web以外） */}
+            {!isReverse && Platform.OS !== 'web' && (
+              selectedImageUri ? (
+                <View style={[styles.imagePreviewRow, { backgroundColor: theme.backgroundElement }]}>
+                  <Image
+                    source={{ uri: selectedImageUri }}
+                    style={styles.converterThumb}
+                    contentFit="cover"
+                  />
+                  <TouchableOpacity onPress={() => setSelectedImageUri(null)} hitSlop={8} style={styles.removeImageBtn}>
+                    <ThemedText style={styles.removeImageText}>✕ 画像を外す</ThemedText>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity style={styles.imagePickerBtn} onPress={pickImage} activeOpacity={0.75}>
+                  <ThemedText style={styles.imagePickerBtnText}>📷 カメラロールから画像を追加</ThemedText>
+                </TouchableOpacity>
+              )
+            )}
+
             {/* 保存ボタン（外貨→円 モードのみ） */}
             {!isReverse && (
               <TouchableOpacity
@@ -317,5 +362,41 @@ const styles = StyleSheet.create({
     color: '#208AEF',
     fontSize: 15,
     fontWeight: '600',
+  },
+
+  imagePickerBtn: {
+    borderRadius: Spacing.two,
+    padding: Spacing.three,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#208AEF55',
+    backgroundColor: '#208AEF08',
+  },
+  imagePickerBtnText: {
+    color: '#208AEF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  imagePreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: Spacing.two,
+    padding: Spacing.two,
+  },
+  converterThumb: {
+    width: 64,
+    height: 48,
+    borderRadius: 8,
+    backgroundColor: '#00000010',
+  },
+  removeImageBtn: {
+    flex: 1,
+  },
+  removeImageText: {
+    fontSize: 14,
+    color: '#FF3B30',
+    fontWeight: '500',
   },
 });

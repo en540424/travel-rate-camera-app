@@ -1,6 +1,7 @@
+import * as FileSystem from 'expo-file-system/legacy';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -82,9 +83,33 @@ export default function CalendarScreen() {
   const [displayMonth, setDisplayMonth] = useState(today.getMonth());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
-  const { history, tripMap, togglePurchased, reload } = useAllHistory();
+  const { history, tripMap, togglePurchased, removeEntry, reload } = useAllHistory();
   const togglePurchasedRef = useRef(togglePurchased);
+  const removeEntryRef = useRef(removeEntry);
   togglePurchasedRef.current = togglePurchased;
+  removeEntryRef.current = removeEntry;
+
+  function handleDeleteItem(item: HistoryRow) {
+    Alert.alert(
+      '記録を削除しますか？',
+      'この記録を削除します。この操作は取り消せません。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '削除',
+          style: 'destructive',
+          onPress: async () => {
+            if (item.image_uri && Platform.OS !== 'web') {
+              try {
+                await FileSystem.deleteAsync(item.image_uri, { idempotent: true });
+              } catch {}
+            }
+            removeEntryRef.current(item.id);
+          },
+        },
+      ],
+    );
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -350,9 +375,16 @@ export default function CalendarScreen() {
                                 </View>
                               ) : null}
 
-                              <ThemedText style={styles.cardRate}>
-                                {formatRate(item.rate_used, item.currency)}
-                              </ThemedText>
+                              <View style={styles.cardFooter}>
+                                <ThemedText style={styles.cardRate}>
+                                  {formatRate(item.rate_used, item.currency)}
+                                </ThemedText>
+                                <TouchableOpacity
+                                  onPress={() => handleDeleteItem(item)}
+                                  hitSlop={8}>
+                                  <ThemedText style={styles.deleteLink}>削除</ThemedText>
+                                </TouchableOpacity>
+                              </View>
                             </View>
                           );
                         })}
@@ -363,6 +395,7 @@ export default function CalendarScreen() {
               )}
             </View>
           )}
+
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -613,9 +646,20 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
+  cardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   cardRate: {
     fontSize: 11,
     color: C.textMuted,
     fontWeight: '500',
   },
+  deleteLink: {
+    fontSize: 12,
+    color: '#FF3B30',
+    fontWeight: '500',
+  },
+
 });

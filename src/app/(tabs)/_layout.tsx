@@ -22,6 +22,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="converter" options={{ title: '換算' }} />
       <Tabs.Screen name="history"   options={{ title: '履歴' }} />
       <Tabs.Screen name="calendar"  options={{ title: 'カレンダー' }} />
+      <Tabs.Screen name="analytics" options={{ title: '分析' }} />
       <Tabs.Screen name="settings"  options={{ title: '設定' }} />
     </Tabs>
   );
