@@ -14,6 +14,7 @@ import {
   FALLBACK_BUDGET_JPY,
   FALLBACK_TRIP_NAME,
 } from '@/constants/camera-screen';
+import { CURRENCIES } from '@/constants/currencies';
 import { FREE_HISTORY_LIMIT } from '@/db/queries/history';
 import type { HistoryRow } from '@/db/queries/history';
 import { useHistory } from '@/hooks/use-history';
@@ -83,7 +84,7 @@ function getInitialDateKey(row: HistoryRow): string {
 // ─── WheelCol ─────────────────────────────────────────────────────
 
 const WHEEL_ITEM_H = 44;
-const WHEEL_VISIBLE = 5;
+const WHEEL_VISIBLE = 3;
 
 function WheelCol({
   items,
@@ -195,35 +196,15 @@ export default function HistoryScreen() {
   updateEntryDateRef.current = updateEntryDate;
   updateImageUriRef.current = updateImageUri;
 
-  // メモ編集
-  const [editingMemoId, setEditingMemoId] = useState<number | null>(null);
-  const [editingMemoText, setEditingMemoText] = useState('');
-  const editingMemoIdRef = useRef(editingMemoId);
-  const editingMemoTextRef = useRef(editingMemoText);
-  editingMemoIdRef.current = editingMemoId;
-  editingMemoTextRef.current = editingMemoText;
-
-  // 価格編集
-  const [editingPriceId, setEditingPriceId] = useState<number | null>(null);
-  const [editingPriceText, setEditingPriceText] = useState('');
-  const editingPriceIdRef = useRef(editingPriceId);
-  const editingPriceTextRef = useRef(editingPriceText);
-  editingPriceIdRef.current = editingPriceId;
-  editingPriceTextRef.current = editingPriceText;
-
-  // 日付編集
-  const [editingDateId, setEditingDateId] = useState<number | null>(null);
-  const [pickerYear,  setPickerYear]  = useState(0);
-  const [pickerMonth, setPickerMonth] = useState(1);
-  const [pickerDay,   setPickerDay]   = useState(1);
-  const editingDateIdRef = useRef(editingDateId);
-  const pickerYearRef  = useRef(pickerYear);
-  const pickerMonthRef = useRef(pickerMonth);
-  const pickerDayRef   = useRef(pickerDay);
-  editingDateIdRef.current = editingDateId;
-  pickerYearRef.current  = pickerYear;
-  pickerMonthRef.current = pickerMonth;
-  pickerDayRef.current   = pickerDay;
+  // 編集シート
+  const [editingItem, setEditingItem] = useState<HistoryRow | null>(null);
+  const [sheetAmount, setSheetAmount] = useState('');
+  const [sheetMemo, setSheetMemo] = useState('');
+  const [sheetYear, setSheetYear] = useState(0);
+  const [sheetMonth, setSheetMonth] = useState(1);
+  const [sheetDay, setSheetDay] = useState(1);
+  const [sheetIsPurchased, setSheetIsPurchased] = useState(false);
+  const [sheetOriginalDateKey, setSheetOriginalDateKey] = useState('');
 
   const [photoModalUri, setPhotoModalUri] = useState<string | null>(null);
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
@@ -359,86 +340,80 @@ export default function HistoryScreen() {
     );
   }
 
-  function startEditPrice(id: number, currentAmount: number) {
-    setEditingPriceId(id);
-    setEditingPriceText(String(currentAmount));
-    setEditingMemoId(null);
-    setEditingMemoText('');
-  }
-
-  async function saveEditPrice() {
-    const id = editingPriceIdRef.current;
-    const text = editingPriceTextRef.current;
-    if (id === null) return;
-    const amount = parseInt(text.trim(), 10);
-    if (!isFinite(amount) || amount <= 0) return;
-    await updateAmountRef.current(id, amount);
-    setEditingPriceId(null);
-    setEditingPriceText('');
-  }
-
-  function cancelEditPrice() {
-    setEditingPriceId(null);
-    setEditingPriceText('');
-  }
-
-  function startEditMemo(id: number, currentMemo: string | null) {
-    setEditingMemoId(id);
-    setEditingMemoText(currentMemo ?? '');
-    setEditingPriceId(null);
-    setEditingPriceText('');
-  }
-
-  async function saveEditMemo() {
-    const id = editingMemoIdRef.current;
-    const text = editingMemoTextRef.current;
-    if (id === null) return;
-    await updateMemoRef.current(id, text.trim() || null);
-    setEditingMemoId(null);
-    setEditingMemoText('');
-  }
-
-  function cancelEditMemo() {
-    setEditingMemoId(null);
-    setEditingMemoText('');
-  }
-
-  function startEditDate(item: HistoryRow) {
-    setEditingPriceId(null);
-    setEditingMemoId(null);
+  function openEditSheet(item: HistoryRow) {
     const dateKey = getInitialDateKey(item);
     const [y, m, d] = dateKey.split('-').map(Number);
-    setPickerYear(y);
-    setPickerMonth(m);
-    setPickerDay(Math.min(d, new Date(y, m, 0).getDate()));
-    setEditingDateId(item.id);
+    setEditingItem(item);
+    setSheetAmount(item.currency === 'JPY' ? String(item.jpy_amount) : String(item.foreign_amount));
+    setSheetMemo(item.memo ?? '');
+    setSheetYear(y);
+    setSheetMonth(m);
+    setSheetDay(Math.min(d, new Date(y, m, 0).getDate()));
+    setSheetIsPurchased((item.is_purchased ?? 0) === 1);
+    setSheetOriginalDateKey(dateKey);
   }
 
-  async function saveDateEdit() {
-    const id = editingDateIdRef.current;
-    if (id === null) return;
-    const y = pickerYearRef.current;
-    const m = pickerMonthRef.current;
-    const d = pickerDayRef.current;
-    const dateKey = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    await updateEntryDateRef.current(id, dateKey);
-    setEditingDateId(null);
+  function closeEditSheet() {
+    setEditingItem(null);
   }
 
-  function cancelDateEdit() {
-    setEditingDateId(null);
+  function handleSheetYearChange(y: number) {
+    setSheetYear(y);
+    const maxDay = new Date(y, sheetMonth, 0).getDate();
+    setSheetDay((prev) => Math.min(prev, maxDay));
   }
 
-  function handleYearChange(y: number) {
-    setPickerYear(y);
-    const maxDay = new Date(y, pickerMonth, 0).getDate();
-    setPickerDay((prev) => Math.min(prev, maxDay));
+  function handleSheetMonthChange(m: number) {
+    setSheetMonth(m);
+    const maxDay = new Date(sheetYear, m, 0).getDate();
+    setSheetDay((prev) => Math.min(prev, maxDay));
   }
 
-  function handleMonthChange(m: number) {
-    setPickerMonth(m);
-    const maxDay = new Date(pickerYear, m, 0).getDate();
-    setPickerDay((prev) => Math.min(prev, maxDay));
+  async function handleSaveSheet() {
+    if (!editingItem) return;
+    const id = editingItem.id;
+    const updates: Promise<void>[] = [];
+
+    if (editingItem.currency === 'JPY') {
+      const amount = parseInt(sheetAmount.trim(), 10);
+      if (isFinite(amount) && amount > 0 && amount !== editingItem.jpy_amount) {
+        updates.push(updateAmountRef.current(id, amount, amount));
+      }
+    } else {
+      const foreign = parseFloat(sheetAmount.trim());
+      if (isFinite(foreign) && foreign > 0 && foreign !== editingItem.foreign_amount) {
+        const jpy = Math.round(foreign * editingItem.rate_used);
+        updates.push(updateAmountRef.current(id, foreign, jpy));
+      }
+    }
+
+    updates.push(updateMemoRef.current(id, sheetMemo.trim() || null));
+
+    const newDateKey = `${sheetYear}-${String(sheetMonth).padStart(2, '0')}-${String(sheetDay).padStart(2, '0')}`;
+    if (newDateKey !== sheetOriginalDateKey) {
+      updates.push(updateEntryDateRef.current(id, newDateKey));
+    }
+
+    const wasPurchased = (editingItem.is_purchased ?? 0) === 1;
+    if (sheetIsPurchased !== wasPurchased) {
+      updates.push(togglePurchasedRef.current(id, editingItem.is_purchased ?? 0));
+    }
+
+    if (updates.length > 0) await Promise.all(updates);
+    setEditingItem(null);
+  }
+
+  function handleImageButton(item: HistoryRow) {
+    if (Platform.OS === 'web') return;
+    if (item.image_uri) {
+      Alert.alert('画像', '', [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '変更', onPress: () => handleChangeImage(item) },
+        { text: '削除', style: 'destructive', onPress: () => handleDeleteImage(item) },
+      ]);
+    } else {
+      handleAddImage(item);
+    }
   }
 
   function renderItem({ item }: { item: HistoryRow }) {
@@ -459,35 +434,21 @@ export default function HistoryScreen() {
           </TouchableOpacity>
         </View>
 
-        {editingPriceId === item.id ? (
-          <View style={styles.priceEditBlock}>
-            <View style={styles.priceEditRow}>
-              <ThemedText style={styles.priceEditSymbol}>¥</ThemedText>
-              <TextInput
-                style={styles.priceEditInput}
-                value={editingPriceText}
-                onChangeText={setEditingPriceText}
-                keyboardType="number-pad"
-                returnKeyType="done"
-                onSubmitEditing={saveEditPrice}
-                autoFocus
-                selectTextOnFocus
+        <View style={item.image_uri ? styles.cardRow : undefined}>
+          {item.image_uri && (
+            <TouchableOpacity
+              onPress={() => setPhotoModalUri(item.image_uri!)}
+              activeOpacity={0.8}
+              style={styles.thumbCol}>
+              <Image
+                source={{ uri: item.image_uri! }}
+                style={styles.thumbnail}
+                contentFit="cover"
               />
-            </View>
-            <View style={styles.priceEditActions}>
-              <TouchableOpacity
-                style={styles.priceSaveBtn}
-                onPress={saveEditPrice}
-                activeOpacity={0.75}>
-                <ThemedText style={styles.priceSaveBtnText}>保存</ThemedText>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={cancelEditPrice} hitSlop={8}>
-                <ThemedText style={styles.priceCancelText}>キャンセル</ThemedText>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          <>
+            </TouchableOpacity>
+          )}
+
+          <View style={item.image_uri ? styles.cardRight : undefined}>
             {item.currency !== 'JPY' && (
               <ThemedText style={styles.foreignPrice}>
                 {formatForeign(item.foreign_amount, item.currency)}
@@ -496,107 +457,44 @@ export default function HistoryScreen() {
             <ThemedText style={[styles.jpyPrice, isPurchased && styles.jpyPricePurchased]}>
               {item.currency === 'JPY' ? formatJpy(item.jpy_amount) : `約 ${formatJpy(item.jpy_amount)}`}
             </ThemedText>
-          </>
-        )}
-
-        {/* 商品写真サムネイル */}
-        {editingPriceId !== item.id && item.image_uri && (
-          <TouchableOpacity
-            onPress={() => setPhotoModalUri(item.image_uri!)}
-            activeOpacity={0.8}>
-            <Image
-              source={{ uri: item.image_uri }}
-              style={styles.thumbnail}
-              contentFit="cover"
-            />
-          </TouchableOpacity>
-        )}
-
-        {/* メモ表示 / インライン編集 */}
-        {editingMemoId === item.id ? (
-          <View style={styles.memoEditBlock}>
-            <TextInput
-              style={styles.memoEditInput}
-              value={editingMemoText}
-              onChangeText={setEditingMemoText}
-              placeholder="商品メモを入力"
-              placeholderTextColor={C.textMuted}
-              returnKeyType="done"
-              onSubmitEditing={saveEditMemo}
-              autoFocus
-              maxLength={100}
-            />
-            <View style={styles.memoEditActions}>
-              <TouchableOpacity
-                style={styles.memoSaveBtn}
-                onPress={saveEditMemo}
-                activeOpacity={0.75}>
-                <ThemedText style={styles.memoSaveBtnText}>保存</ThemedText>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={cancelEditMemo} hitSlop={8}>
-                <ThemedText style={styles.memoCancelText}>キャンセル</ThemedText>
-              </TouchableOpacity>
-            </View>
+            {item.memo && (
+              <View style={styles.memoChip}>
+                <ThemedText style={styles.memoChipText}>{item.memo}</ThemedText>
+              </View>
+            )}
           </View>
-        ) : (
-          item.memo ? (
-            <View style={styles.memoChip}>
-              <ThemedText style={styles.memoChipText}>{item.memo}</ThemedText>
-            </View>
-          ) : null
-        )}
+        </View>
 
         <View style={styles.cardMeta}>
           <ThemedText style={styles.rateText}>
             {formatRate(item.rate_used, item.currency)}
           </ThemedText>
-          <View style={styles.metaRight}>
-            <ThemedText style={[styles.dateText, !!item.entry_date && styles.dateTextModified]}>
-              {displayDate}
-            </ThemedText>
-            {editingPriceId !== item.id && editingMemoId !== item.id && (
-              <>
-                {item.currency === 'JPY' && (
-                  <TouchableOpacity
-                    onPress={() => startEditPrice(item.id, item.jpy_amount)}
-                    hitSlop={8}>
-                    <ThemedText style={styles.priceEditLink}>価格編集</ThemedText>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  onPress={() => startEditMemo(item.id, item.memo)}
-                  hitSlop={8}>
-                  <ThemedText style={styles.memoEditLink}>
-                    {item.memo ? 'メモ編集' : 'メモ追加'}
-                  </ThemedText>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => startEditDate(item)}
-                  hitSlop={8}>
-                  <ThemedText style={styles.dateEditLink}>日付変更</ThemedText>
-                </TouchableOpacity>
-                {Platform.OS !== 'web' && (
-                  item.image_uri ? (
-                    <>
-                      <TouchableOpacity onPress={() => handleChangeImage(item)} hitSlop={8}>
-                        <ThemedText style={styles.imageEditLink}>画像変更</ThemedText>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => handleDeleteImage(item)} hitSlop={8}>
-                        <ThemedText style={styles.imageDeleteLink}>画像削除</ThemedText>
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <TouchableOpacity onPress={() => handleAddImage(item)} hitSlop={8}>
-                      <ThemedText style={styles.imageEditLink}>画像追加</ThemedText>
-                    </TouchableOpacity>
-                  )
-                )}
-              </>
-            )}
-            <TouchableOpacity onPress={() => handleDeleteItem(item)} hitSlop={8}>
-              <ThemedText style={styles.deleteLink}>削除</ThemedText>
+          <ThemedText style={[styles.dateText, !!item.entry_date && styles.dateTextModified]}>
+            {displayDate}
+          </ThemedText>
+        </View>
+
+        <View style={styles.cardActions}>
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => openEditSheet(item)}
+            activeOpacity={0.75}>
+            <ThemedText style={styles.actionBtnText}>編集</ThemedText>
+          </TouchableOpacity>
+          {Platform.OS !== 'web' && (
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => handleImageButton(item)}
+              activeOpacity={0.75}>
+              <ThemedText style={styles.actionBtnText}>画像</ThemedText>
             </TouchableOpacity>
-          </View>
+          )}
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.actionBtnDelete]}
+            onPress={() => handleDeleteItem(item)}
+            activeOpacity={0.75}>
+            <ThemedText style={styles.actionBtnTextDelete}>削除</ThemedText>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -717,58 +615,127 @@ export default function HistoryScreen() {
       {/* 写真フルスクリーンモーダル */}
       <PhotoModal uri={photoModalUri} onClose={() => setPhotoModalUri(null)} />
 
-      {/* 日付ピッカーモーダル */}
-      {editingDateId != null && (
+      {/* 編集シート */}
+      {editingItem && (
         <Modal
           visible
           animationType="slide"
           transparent
-          onRequestClose={cancelDateEdit}>
-          <View style={styles.dateModalBg}>
-            {/* 背景タップで閉じる — カードより先に描画されるため z 順が下 */}
-            <Pressable style={StyleSheet.absoluteFill} onPress={cancelDateEdit} />
-            <View style={styles.dateModalCard}>
-              <ThemedText style={styles.dateModalTitle}>買い物日を変更</ThemedText>
+          onRequestClose={closeEditSheet}>
+          <View style={styles.sheetBg}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={closeEditSheet} />
+            <View style={styles.sheetCard}>
+              <ThemedText style={styles.sheetTitle}>記録を編集</ThemedText>
 
-              <View style={styles.wheelHeaders}>
-                <ThemedText style={styles.wheelHeader}>年</ThemedText>
-                <ThemedText style={styles.wheelHeader}>月</ThemedText>
-                <ThemedText style={styles.wheelHeader}>日</ThemedText>
+              {/* 金額 */}
+              <View style={styles.sheetField}>
+                <ThemedText style={styles.sheetLabel}>
+                  {editingItem.currency === 'JPY' ? '金額' : '外貨金額'}
+                </ThemedText>
+                <View style={styles.sheetPriceRow}>
+                  <ThemedText style={styles.sheetPriceSymbol}>
+                    {editingItem.currency === 'JPY' ? '¥' : CURRENCIES[editingItem.currency].symbol}
+                  </ThemedText>
+                  <TextInput
+                    style={styles.sheetPriceInput}
+                    value={sheetAmount}
+                    onChangeText={setSheetAmount}
+                    keyboardType={editingItem.currency === 'JPY' ? 'number-pad' : 'decimal-pad'}
+                    returnKeyType="done"
+                    selectTextOnFocus
+                  />
+                </View>
+                {editingItem.currency !== 'JPY' && (
+                  <ThemedText style={styles.sheetRateHint}>
+                    {(() => {
+                      const f = parseFloat(sheetAmount);
+                      const jpy = isFinite(f) && f > 0 ? Math.round(f * editingItem.rate_used) : null;
+                      return `${jpy != null ? `約 ${formatJpy(jpy)}` : '—'}　（${formatRate(editingItem.rate_used, editingItem.currency)}）`;
+                    })()}
+                  </ThemedText>
+                )}
               </View>
 
-              <View style={styles.wheelsRow}>
-                <WheelCol
-                  items={YEARS}
-                  selected={pickerYear}
-                  onSelect={handleYearChange}
-                />
-                <WheelCol
-                  items={MONTHS}
-                  selected={pickerMonth}
-                  onSelect={handleMonthChange}
-                  formatItem={(v) => `${v}月`}
-                />
-                <WheelCol
-                  key={`day-${pickerYear}-${pickerMonth}`}
-                  items={getDays(pickerYear, pickerMonth)}
-                  selected={pickerDay}
-                  onSelect={setPickerDay}
-                  formatItem={(v) => `${v}日`}
+              {/* メモ */}
+              <View style={styles.sheetField}>
+                <ThemedText style={styles.sheetLabel}>メモ</ThemedText>
+                <TextInput
+                  style={styles.sheetMemoInput}
+                  value={sheetMemo}
+                  onChangeText={setSheetMemo}
+                  placeholder="メモを入力（省略可）"
+                  placeholderTextColor={C.textMuted}
+                  maxLength={100}
+                  returnKeyType="done"
                 />
               </View>
 
-              <View style={styles.dateModalActions}>
+              {/* 日付 */}
+              <View style={styles.sheetField}>
+                <ThemedText style={styles.sheetLabel}>買い物日</ThemedText>
+                <View style={styles.wheelHeaders}>
+                  <ThemedText style={styles.wheelHeader}>年</ThemedText>
+                  <ThemedText style={styles.wheelHeader}>月</ThemedText>
+                  <ThemedText style={styles.wheelHeader}>日</ThemedText>
+                </View>
+                <View style={styles.wheelsRow}>
+                  <WheelCol
+                    items={YEARS}
+                    selected={sheetYear}
+                    onSelect={handleSheetYearChange}
+                  />
+                  <WheelCol
+                    items={MONTHS}
+                    selected={sheetMonth}
+                    onSelect={handleSheetMonthChange}
+                    formatItem={(v) => `${v}月`}
+                  />
+                  <WheelCol
+                    key={`sheet-day-${sheetYear}-${sheetMonth}`}
+                    items={getDays(sheetYear, sheetMonth)}
+                    selected={sheetDay}
+                    onSelect={setSheetDay}
+                    formatItem={(v) => `${v}日`}
+                  />
+                </View>
+              </View>
+
+              {/* 状態 */}
+              <View style={styles.sheetField}>
+                <ThemedText style={styles.sheetLabel}>状態</ThemedText>
+                <View style={styles.sheetToggle}>
+                  <TouchableOpacity
+                    style={[styles.sheetToggleBtn, !sheetIsPurchased && styles.sheetToggleBtnActive]}
+                    onPress={() => setSheetIsPurchased(false)}
+                    activeOpacity={0.75}>
+                    <ThemedText style={[styles.sheetToggleBtnText, !sheetIsPurchased && styles.sheetToggleBtnTextActive]}>
+                      候補
+                    </ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.sheetToggleBtn, sheetIsPurchased && styles.sheetToggleBtnActive]}
+                    onPress={() => setSheetIsPurchased(true)}
+                    activeOpacity={0.75}>
+                    <ThemedText style={[styles.sheetToggleBtnText, sheetIsPurchased && styles.sheetToggleBtnTextActive]}>
+                      購入済み
+                    </ThemedText>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* アクション */}
+              <View style={styles.sheetActions}>
                 <TouchableOpacity
-                  style={styles.dateModalCancelBtn}
-                  onPress={cancelDateEdit}
+                  style={styles.sheetCancelBtn}
+                  onPress={closeEditSheet}
                   activeOpacity={0.75}>
-                  <ThemedText style={styles.dateModalCancelText}>キャンセル</ThemedText>
+                  <ThemedText style={styles.sheetCancelText}>キャンセル</ThemedText>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={styles.dateModalSaveBtn}
-                  onPress={saveDateEdit}
+                  style={styles.sheetSaveBtn}
+                  onPress={handleSaveSheet}
                   activeOpacity={0.75}>
-                  <ThemedText style={styles.dateModalSaveText}>決定</ThemedText>
+                  <ThemedText style={styles.sheetSaveText}>保存</ThemedText>
                 </TouchableOpacity>
               </View>
             </View>
@@ -889,8 +856,8 @@ const styles = StyleSheet.create({
   candidateCard: {
     backgroundColor: C.surface,
     borderRadius: 16,
-    padding: 18,
-    gap: 6,
+    padding: 14,
+    gap: 4,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.border,
     shadowColor: '#000',
@@ -903,7 +870,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    marginBottom: 2,
+  },
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  thumbCol: {
+    flexShrink: 0,
+  },
+  cardRight: {
+    flex: 1,
+    gap: 4,
   },
   tripLabel: {
     fontSize: 14,
@@ -944,7 +923,6 @@ const styles = StyleSheet.create({
     color: C.text,
     letterSpacing: -0.6,
     lineHeight: 34,
-    marginTop: 2,
   },
   memoChip: {
     alignSelf: 'flex-start',
@@ -952,128 +930,25 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    marginTop: 4,
   },
   memoChipText: {
     fontSize: 13,
     color: C.textSecondary,
     fontWeight: '500',
   },
-  memoEditBlock: {
-    gap: 8,
-    marginTop: 4,
-  },
-  memoEditInput: {
-    backgroundColor: C.bg,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    fontSize: 14,
-    color: C.text,
-  },
-  memoEditActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  memoSaveBtn: {
-    backgroundColor: C.brand,
-    borderRadius: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 7,
-  },
-  memoSaveBtnText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  memoCancelText: {
-    fontSize: 13,
-    color: C.textMuted,
-    fontWeight: '600',
-  },
-  memoEditLink: {
-    fontSize: 13,
-    color: C.brand,
-    fontWeight: '500',
-  },
-  priceEditLink: {
-    fontSize: 13,
-    color: C.brand,
-    fontWeight: '500',
-  },
-  dateEditLink: {
-    fontSize: 13,
-    color: C.brand,
-    fontWeight: '500',
-  },
-  priceEditBlock: {
-    gap: 8,
-    marginTop: 2,
-  },
-  priceEditRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  priceEditSymbol: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: C.text,
-  },
-  priceEditInput: {
-    flex: 1,
-    backgroundColor: C.bg,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    fontSize: 22,
-    fontWeight: '700',
-    color: C.text,
-  },
-  priceEditActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  priceSaveBtn: {
-    backgroundColor: C.brand,
-    borderRadius: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 7,
-  },
-  priceSaveBtnText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  priceCancelText: {
-    fontSize: 13,
-    color: C.textMuted,
-    fontWeight: '600',
-  },
   cardMeta: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 8,
-    paddingTop: 10,
+    marginTop: 6,
+    paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: C.border,
-    flexWrap: 'wrap',
-    gap: 6,
   },
   rateText: {
     fontSize: 13,
     color: C.textMuted,
     fontWeight: '500',
-  },
-  metaRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flexWrap: 'wrap',
-    justifyContent: 'flex-end',
   },
   dateText: {
     fontSize: 13,
@@ -1084,20 +959,33 @@ const styles = StyleSheet.create({
     color: C.brand,
     fontWeight: '600',
   },
-  deleteLink: {
-    fontSize: 13,
-    color: '#FF3B30',
-    fontWeight: '500',
+  cardActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 2,
   },
-  imageEditLink: {
+  actionBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 10,
+    backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.border,
+  },
+  actionBtnDelete: {
+    borderColor: '#FF3B3022',
+    backgroundColor: '#FF3B3008',
+  },
+  actionBtnText: {
     fontSize: 13,
+    fontWeight: '600',
     color: C.brand,
-    fontWeight: '500',
   },
-  imageDeleteLink: {
+  actionBtnTextDelete: {
     fontSize: 13,
+    fontWeight: '600',
     color: '#FF3B30',
-    fontWeight: '500',
   },
 
   empty: {
@@ -1177,30 +1065,9 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 8,
     backgroundColor: C.bg,
-    marginTop: 4,
   },
 
-  // ── 日付ピッカーモーダル ──
-  dateModalBg: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-  },
-  dateModalCard: {
-    backgroundColor: C.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 36,
-    gap: 16,
-  },
-  dateModalTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: C.text,
-    textAlign: 'center',
-  },
+  // ── ホイールピッカー（編集シート内で使用） ──
   wheelHeaders: {
     flexDirection: 'row',
   },
@@ -1219,12 +1086,98 @@ const styles = StyleSheet.create({
     borderColor: C.border,
     overflow: 'hidden',
   },
-  dateModalActions: {
+
+  // ── 編集シート ──
+  sheetBg: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  sheetCard: {
+    backgroundColor: C.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 36,
+    gap: 20,
+  },
+  sheetTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: C.text,
+    textAlign: 'center',
+  },
+  sheetField: {
+    gap: 8,
+  },
+  sheetLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: C.textSecondary,
+  },
+  sheetPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: C.bg,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+  },
+  sheetPriceSymbol: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: C.text,
+  },
+  sheetPriceInput: {
+    flex: 1,
+    fontSize: 22,
+    fontWeight: '700',
+    color: C.text,
+    paddingVertical: 10,
+  },
+  sheetRateHint: {
+    fontSize: 13,
+    color: C.textSecondary,
+    fontWeight: '500',
+  },
+  sheetMemoInput: {
+    backgroundColor: C.bg,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: C.text,
+  },
+  sheetToggle: {
+    flexDirection: 'row',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#cccccc55',
+    overflow: 'hidden',
+  },
+  sheetToggleBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  sheetToggleBtnActive: {
+    backgroundColor: C.brand,
+  },
+  sheetToggleBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: C.textMuted,
+  },
+  sheetToggleBtnTextActive: {
+    color: '#fff',
+  },
+  sheetActions: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 4,
   },
-  dateModalCancelBtn: {
+  sheetCancelBtn: {
     flex: 1,
     paddingVertical: 14,
     borderRadius: 14,
@@ -1233,19 +1186,19 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.border,
   },
-  dateModalCancelText: {
+  sheetCancelText: {
     fontSize: 16,
     fontWeight: '600',
     color: C.textSecondary,
   },
-  dateModalSaveBtn: {
+  sheetSaveBtn: {
     flex: 2,
     paddingVertical: 14,
     borderRadius: 14,
     alignItems: 'center',
     backgroundColor: C.brand,
   },
-  dateModalSaveText: {
+  sheetSaveText: {
     fontSize: 16,
     fontWeight: '700',
     color: '#fff',

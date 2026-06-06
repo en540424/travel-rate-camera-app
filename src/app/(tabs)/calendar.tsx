@@ -340,56 +340,60 @@ export default function CalendarScreen() {
                           const c = CURRENCIES[item.currency];
                           return (
                             <View key={item.id} style={styles.historyCard}>
-                              <View style={styles.cardTop}>
-                                <View style={styles.cardLeft}>
-                                  <ThemedText style={styles.cardFlag}>{c.flag}</ThemedText>
-                                  <View style={styles.cardAmounts}>
-                                    {item.currency !== 'JPY' && (
-                                      <ThemedText style={styles.cardForeign}>
-                                        {c.symbol}{item.foreign_amount.toLocaleString()}
+                              <View style={item.image_uri ? styles.calCardRow : undefined}>
+                                {item.image_uri && (
+                                  <TouchableOpacity
+                                    onPress={() => setPhotoModalUri(item.image_uri!)}
+                                    activeOpacity={0.8}
+                                    style={styles.calThumbCol}>
+                                    <Image
+                                      source={{ uri: item.image_uri }}
+                                      style={styles.calThumb}
+                                      contentFit="cover"
+                                    />
+                                  </TouchableOpacity>
+                                )}
+                                <View style={item.image_uri ? styles.calCardRight : undefined}>
+                                  <View style={styles.cardTop}>
+                                    <View style={styles.cardLeft}>
+                                      <ThemedText style={styles.cardFlag}>{c.flag}</ThemedText>
+                                      <View style={styles.cardAmounts}>
+                                        {item.currency !== 'JPY' && (
+                                          <ThemedText style={styles.cardForeign}>
+                                            {c.symbol}{item.foreign_amount.toLocaleString()}
+                                          </ThemedText>
+                                        )}
+                                        <ThemedText
+                                          style={[styles.cardJpy, isPurchased && styles.cardJpyDim]}>
+                                          {item.currency === 'JPY'
+                                            ? formatJpy(item.jpy_amount)
+                                            : `約 ${formatJpy(item.jpy_amount)}`}
+                                        </ThemedText>
+                                      </View>
+                                    </View>
+                                    <TouchableOpacity
+                                      style={[styles.badge, isPurchased && styles.badgePurchased]}
+                                      onPress={() =>
+                                        togglePurchasedRef.current(item.id, item.is_purchased ?? 0)
+                                      }
+                                      hitSlop={8}>
+                                      <ThemedText
+                                        style={[
+                                          styles.badgeText,
+                                          isPurchased && styles.badgeTextPurchased,
+                                        ]}>
+                                        {isPurchased ? '✓ 購入済み' : '候補'}
                                       </ThemedText>
-                                    )}
-                                    <ThemedText
-                                      style={[styles.cardJpy, isPurchased && styles.cardJpyDim]}>
-                                      {item.currency === 'JPY'
-                                        ? formatJpy(item.jpy_amount)
-                                        : `約 ${formatJpy(item.jpy_amount)}`}
-                                    </ThemedText>
+                                    </TouchableOpacity>
                                   </View>
+
+                                  {item.memo ? (
+                                    <View style={styles.memoChip}>
+                                      <ThemedText style={styles.memoChipText}>{item.memo}</ThemedText>
+                                    </View>
+                                  ) : null}
                                 </View>
-                                <TouchableOpacity
-                                  style={[styles.badge, isPurchased && styles.badgePurchased]}
-                                  onPress={() =>
-                                    togglePurchasedRef.current(item.id, item.is_purchased ?? 0)
-                                  }
-                                  hitSlop={8}>
-                                  <ThemedText
-                                    style={[
-                                      styles.badgeText,
-                                      isPurchased && styles.badgeTextPurchased,
-                                    ]}>
-                                    {isPurchased ? '✓ 購入済み' : '候補'}
-                                  </ThemedText>
-                                </TouchableOpacity>
                               </View>
-
-                              {item.memo ? (
-                                <View style={styles.memoChip}>
-                                  <ThemedText style={styles.memoChipText}>{item.memo}</ThemedText>
-                                </View>
-                              ) : null}
-
-                              {item.image_uri ? (
-                                <TouchableOpacity
-                                  onPress={() => setPhotoModalUri(item.image_uri!)}
-                                  activeOpacity={0.8}>
-                                  <Image
-                                    source={{ uri: item.image_uri }}
-                                    style={styles.calThumb}
-                                    contentFit="cover"
-                                  />
-                                </TouchableOpacity>
-                              ) : null}
 
                               <View style={styles.cardFooter}>
                                 <ThemedText style={styles.cardRate}>
@@ -602,10 +606,22 @@ const styles = StyleSheet.create({
   historyCard: {
     backgroundColor: C.bg,
     borderRadius: 12,
-    padding: 12,
+    padding: 10,
     gap: 6,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.border,
+  },
+  calCardRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  calThumbCol: {
+    flexShrink: 0,
+  },
+  calCardRight: {
+    flex: 1,
+    gap: 4,
   },
   cardTop: {
     flexDirection: 'row',

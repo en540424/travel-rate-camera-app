@@ -126,12 +126,12 @@ export function useHistory() {
     load();
   }
 
-  async function updateAmount(id: number, amount: number) {
+  async function updateAmount(id: number, foreignAmount: number, jpyAmount: number) {
     const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
     persistAll(
       loadAll().map((r) =>
         r.id === id
-          ? { ...r, foreign_amount: amount, jpy_amount: amount, updated_at: now }
+          ? { ...r, foreign_amount: foreignAmount, jpy_amount: jpyAmount, updated_at: now }
           : r,
       ),
     );

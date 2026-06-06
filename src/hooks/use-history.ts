@@ -89,8 +89,8 @@ export function useHistory() {
     await load();
   }
 
-  async function updateAmount(id: number, amount: number) {
-    await updateAmountQuery(db, id, amount, amount);
+  async function updateAmount(id: number, foreignAmount: number, jpyAmount: number) {
+    await updateAmountQuery(db, id, foreignAmount, jpyAmount);
     await load();
   }
 
