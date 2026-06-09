@@ -12,6 +12,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import type { ConversionDirection, CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES, CURRENCY_CODES } from '@/constants/currencies';
+import { DT } from '@/constants/designTokens';
 import { Spacing } from '@/constants/theme';
 import { useHistory } from '@/hooks/use-history';
 import { useRates } from '@/hooks/use-rates';
@@ -312,9 +313,9 @@ const styles = StyleSheet.create({
   title: { fontSize: 20, fontWeight: '700' },
   dirRow: {
     flexDirection: 'row',
-    borderRadius: 10,
+    borderRadius: DT.radius.sm,
     borderWidth: 1,
-    borderColor: '#cccccc55',
+    borderColor: DT.colors.border,
     overflow: 'hidden',
   },
   dirBtn: {
@@ -323,12 +324,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dirBtnActive: {
-    backgroundColor: '#208AEF',
+    backgroundColor: DT.colors.primary,
   },
   dirBtnText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#888',
+    color: DT.colors.textSecondary,
   },
   dirBtnTextActive: {
     color: '#fff',
@@ -338,27 +339,27 @@ const styles = StyleSheet.create({
   chip: {
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
-    borderRadius: 20,
+    borderRadius: DT.radius.pill,
     borderWidth: 1,
-    borderColor: '#cccccc55',
+    borderColor: DT.colors.border,
   },
-  chipSelected: { borderColor: '#208AEF', backgroundColor: '#208AEF22' },
-  chipTextSelected: { color: '#208AEF', fontWeight: '700' },
+  chipSelected: { borderColor: DT.colors.primary, backgroundColor: DT.colors.primarySoft },
+  chipTextSelected: { color: DT.colors.primary, fontWeight: '700' },
   rateRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.two,
-    borderRadius: 8,
+    borderRadius: DT.radius.sm,
     borderWidth: 1,
   },
-  editLink: { color: '#208AEF' },
+  editLink: { color: DT.colors.primary },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderRadius: Spacing.two,
+    borderRadius: DT.radius.md,
     paddingHorizontal: Spacing.three,
     overflow: 'hidden',
   },
@@ -381,8 +382,8 @@ const styles = StyleSheet.create({
   jpyAmount: { fontSize: 48, fontWeight: '700', lineHeight: 56 },
   resultPlaceholder: { textAlign: 'center' },
   saveBtn: {
-    backgroundColor: '#208AEF',
-    borderRadius: Spacing.two,
+    backgroundColor: DT.colors.primary,
+    borderRadius: DT.radius.md,
     padding: Spacing.three,
     alignItems: 'center',
     marginTop: Spacing.one,
@@ -391,30 +392,30 @@ const styles = StyleSheet.create({
   saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 
   useToCameraBtn: {
-    borderRadius: Spacing.two,
+    borderRadius: DT.radius.md,
     padding: Spacing.three,
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: '#208AEF',
+    borderColor: DT.colors.primary,
     marginTop: Spacing.one,
   },
   useToCameraBtnText: {
-    color: '#208AEF',
+    color: DT.colors.primary,
     fontSize: 15,
     fontWeight: '600',
   },
 
   imagePickerBtn: {
-    borderRadius: Spacing.two,
+    borderRadius: DT.radius.md,
     padding: Spacing.three,
     alignItems: 'center',
     borderWidth: 1.5,
     borderStyle: 'dashed',
-    borderColor: '#208AEF55',
-    backgroundColor: '#208AEF08',
+    borderColor: DT.colors.border,
+    backgroundColor: DT.colors.surfaceSoft,
   },
   imagePickerBtnText: {
-    color: '#208AEF',
+    color: DT.colors.primary,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -422,21 +423,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    borderRadius: Spacing.two,
+    borderRadius: DT.radius.md,
     padding: Spacing.two,
   },
   converterThumb: {
     width: 64,
     height: 48,
-    borderRadius: 8,
-    backgroundColor: '#00000010',
+    borderRadius: DT.radius.sm,
+    backgroundColor: DT.colors.borderSoft,
   },
   removeImageBtn: {
     flex: 1,
   },
   removeImageText: {
     fontSize: 14,
-    color: '#FF3B30',
+    color: DT.colors.danger,
     fontWeight: '500',
   },
 });

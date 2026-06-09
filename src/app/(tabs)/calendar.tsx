@@ -8,7 +8,7 @@ import { Image } from 'expo-image';
 
 import { PhotoModal } from '@/components/photo-modal';
 import { ThemedText } from '@/components/themed-text';
-import { CAMERA_UI as C } from '@/constants/camera-screen';
+import { DT } from '@/constants/designTokens';
 import type { CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES } from '@/constants/currencies';
 import type { HistoryRow } from '@/db/queries/history';
@@ -427,12 +427,14 @@ export default function CalendarScreen() {
 
 // ─── スタイル ────────────────────────────────────────────────────
 
+const { colors: C, radius: R, spacing: S } = DT;
+
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: C.bg },
+  screen: { flex: 1, backgroundColor: C.background },
   safe: { flex: 1 },
   scroll: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingHorizontal: S.lg,
+    paddingTop: S.md,
     paddingBottom: 96,
     gap: 14,
   },
@@ -441,14 +443,14 @@ const styles = StyleSheet.create({
   screenTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: C.text,
+    color: C.textPrimary,
     letterSpacing: -0.3,
   },
 
   // ── カレンダーカード ──
   calCard: {
     backgroundColor: C.surface,
-    borderRadius: 16,
+    borderRadius: R.lg,
     padding: 14,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.border,
@@ -469,13 +471,13 @@ const styles = StyleSheet.create({
   navArrow: {
     fontSize: 26,
     fontWeight: '300',
-    color: C.brand,
+    color: C.primary,
     lineHeight: 32,
   },
   monthLabel: {
     fontSize: 17,
     fontWeight: '700',
-    color: C.text,
+    color: C.textPrimary,
     letterSpacing: -0.2,
   },
 
@@ -497,24 +499,24 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: R.sm,
     minHeight: 44,
     gap: 2,
   },
   dayCellSelected: {
-    backgroundColor: C.brand,
+    backgroundColor: C.primary,
   },
   dayCellToday: {
-    backgroundColor: C.brandSoft,
+    backgroundColor: C.primarySoft,
   },
   dayNum: {
     fontSize: 14,
     fontWeight: '500',
-    color: C.text,
+    color: C.textPrimary,
     lineHeight: 18,
   },
   dayNumOther:    { color: C.textMuted, fontWeight: '400' },
-  dayNumToday:    { color: C.brand, fontWeight: '700' },
+  dayNumToday:    { color: C.primary, fontWeight: '700' },
   dayNumSelected: { color: '#fff', fontWeight: '700' },
 
   dayFlags: {
@@ -528,14 +530,14 @@ const styles = StyleSheet.create({
     backgroundColor: C.textMuted,
   },
   dotPurchased: {
-    backgroundColor: C.brand,
+    backgroundColor: C.primary,
   },
 
   // ── 詳細パネル ──
   detailCard: {
     backgroundColor: C.surface,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: R.lg,
+    padding: S.lg,
     gap: 14,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.border,
@@ -543,7 +545,7 @@ const styles = StyleSheet.create({
   detailTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: C.text,
+    color: C.textPrimary,
   },
   detailEmpty: {
     fontSize: 14,
@@ -573,7 +575,7 @@ const styles = StyleSheet.create({
   tripGroupName: {
     fontSize: 15,
     fontWeight: '700',
-    color: C.text,
+    color: C.textPrimary,
   },
 
   summaryRow: {
@@ -597,15 +599,15 @@ const styles = StyleSheet.create({
   summaryItemValue: {
     fontSize: 13,
     fontWeight: '700',
-    color: C.text,
+    color: C.textPrimary,
     textAlign: 'center',
   },
 
   cardList: { gap: 10 },
 
   historyCard: {
-    backgroundColor: C.bg,
-    borderRadius: 12,
+    backgroundColor: C.background,
+    borderRadius: R.md,
     padding: 10,
     gap: 6,
     borderWidth: StyleSheet.hairlineWidth,
@@ -648,30 +650,30 @@ const styles = StyleSheet.create({
   cardJpy: {
     fontSize: 20,
     fontWeight: '700',
-    color: C.text,
+    color: C.textPrimary,
     letterSpacing: -0.4,
   },
   cardJpyDim: { opacity: 0.45 },
 
   badge: {
-    backgroundColor: C.brandSoft,
-    borderRadius: 8,
+    backgroundColor: C.candidateBg,
+    borderRadius: R.sm,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
-  badgePurchased: { backgroundColor: '#E6F9EE' },
+  badgePurchased: { backgroundColor: C.purchasedBg },
   badgeText: {
     fontSize: 11,
     fontWeight: '700',
-    color: C.brand,
+    color: C.candidate,
     letterSpacing: 0.3,
   },
-  badgeTextPurchased: { color: '#22A45D' },
+  badgeTextPurchased: { color: C.purchased },
 
   memoChip: {
     alignSelf: 'flex-start',
     backgroundColor: C.surface,
-    borderRadius: 6,
+    borderRadius: DT.radius.sm,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
@@ -693,14 +695,14 @@ const styles = StyleSheet.create({
   },
   deleteLink: {
     fontSize: 12,
-    color: '#FF3B30',
+    color: C.danger,
     fontWeight: '500',
   },
 
   calThumb: {
     width: 72,
     height: 54,
-    borderRadius: 8,
-    backgroundColor: C.bg,
+    borderRadius: R.sm,
+    backgroundColor: C.background,
   },
 });

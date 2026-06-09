@@ -9,10 +9,10 @@ import { ThemedText } from '@/components/themed-text';
 import type { ConversionDirection, CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES, FOREIGN_CURRENCY_CODES } from '@/constants/currencies';
 import {
-  CAMERA_UI as C,
   FALLBACK_BUDGET_JPY,
   FALLBACK_TRIP_NAME,
 } from '@/constants/camera-screen';
+import { DT } from '@/constants/designTokens';
 import { useHistory } from '@/hooks/use-history';
 import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
@@ -21,6 +21,8 @@ import { convert } from '@/utils/currency';
 import { extractMemoLines, extractPriceCandidates } from '@/utils/extract-prices';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
+
+const C = DT.colors;
 
 export default function CameraScreen() {
   const [nativeAmount, setNativeAmount] = useState('');
@@ -354,7 +356,7 @@ export default function CameraScreen() {
                   value={nativeAmount}
                   onChangeText={setNativeAmount}
                   placeholder="0"
-                  placeholderTextColor={C.textMuted}
+                  placeholderTextColor={DT.colors.textMuted}
                   keyboardType="decimal-pad"
                   inputMode="decimal"
                   selectTextOnFocus
@@ -379,7 +381,7 @@ export default function CameraScreen() {
                   value={memo}
                   onChangeText={setMemo}
                   placeholder="モッツァレラ / Tシャツ / お土産"
-                  placeholderTextColor={C.textMuted}
+                  placeholderTextColor={DT.colors.textMuted}
                   returnKeyType="done"
                   maxLength={100}
                 />
@@ -521,7 +523,7 @@ export default function CameraScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: C.bg,
+    backgroundColor: C.background,
   },
   safe: { flex: 1 },
   scroll: {
@@ -546,13 +548,13 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontWeight: '700',
     letterSpacing: -0.4,
-    color: C.text,
+    color: C.textPrimary,
     lineHeight: 32,
   },
   tripName: {
     fontSize: 20,
     fontWeight: '700',
-    color: C.text,
+    color: C.textPrimary,
     letterSpacing: -0.3,
     marginTop: 2,
   },
@@ -565,7 +567,7 @@ const styles = StyleSheet.create({
   },
   modeChip: {
     backgroundColor: C.surface,
-    borderRadius: 20,
+    borderRadius: DT.radius.pill,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderWidth: StyleSheet.hairlineWidth,
@@ -574,7 +576,7 @@ const styles = StyleSheet.create({
   modeChipText: {
     fontSize: 15,
     fontWeight: '700',
-    color: C.text,
+    color: C.textPrimary,
   },
   rateInline: {
     flex: 1,
@@ -585,7 +587,7 @@ const styles = StyleSheet.create({
   },
 
   cameraHero: {
-    borderRadius: 16,
+    borderRadius: DT.radius.lg,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOpacity: 0.16,
@@ -596,8 +598,8 @@ const styles = StyleSheet.create({
 
   ocrCard: {
     backgroundColor: C.surface,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: DT.radius.lg,
+    padding: DT.spacing.lg,
     gap: 14,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.border,
@@ -610,7 +612,7 @@ const styles = StyleSheet.create({
   ocrCardTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: C.text,
+    color: C.textPrimary,
   },
   ocrCardClose: {
     fontSize: 16,
@@ -631,8 +633,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   ocrPriceBtn: {
-    backgroundColor: C.brand,
-    borderRadius: 20,
+    backgroundColor: C.primary,
+    borderRadius: DT.radius.pill,
     paddingHorizontal: 18,
     paddingVertical: 10,
   },
@@ -655,19 +657,19 @@ const styles = StyleSheet.create({
   ocrMemoLineText: {
     flex: 1,
     fontSize: 13,
-    color: C.text,
+    color: C.textPrimary,
     fontWeight: '500',
   },
   ocrAddMemoBtn: {
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderWidth: 1,
-    borderColor: C.brand,
-    borderRadius: 6,
+    borderColor: C.primary,
+    borderRadius: DT.radius.sm,
   },
   ocrAddMemoBtnText: {
     fontSize: 12,
-    color: C.brand,
+    color: C.primary,
     fontWeight: '600',
   },
   ocrRawToggle: {
@@ -686,29 +688,29 @@ const styles = StyleSheet.create({
   ocrCopyBtn: {
     alignSelf: 'flex-start',
     borderWidth: 1,
-    borderColor: C.brand,
-    borderRadius: 8,
+    borderColor: C.primary,
+    borderRadius: DT.radius.sm,
     paddingHorizontal: 12,
     paddingVertical: 6,
     marginTop: 4,
   },
   ocrCopyBtnText: {
     fontSize: 12,
-    color: C.brand,
+    color: C.primary,
     fontWeight: '600',
   },
 
   inputCard: {
     backgroundColor: C.surface,
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
+    borderRadius: DT.radius.lg,
+    padding: DT.spacing.lg,
+    gap: DT.spacing.md,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.border,
   },
   inputModeRow: {
     flexDirection: 'row',
-    borderRadius: 10,
+    borderRadius: DT.radius.sm,
     borderWidth: 1,
     borderColor: C.border,
     overflow: 'hidden',
@@ -719,7 +721,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   inputModeBtnActive: {
-    backgroundColor: C.brand,
+    backgroundColor: C.primary,
   },
   inputModeBtnText: {
     fontSize: 13,
@@ -737,13 +739,13 @@ const styles = StyleSheet.create({
   inputCurrencySymbol: {
     fontSize: 28,
     fontWeight: '700',
-    color: C.text,
+    color: C.textPrimary,
   },
   inputAmountField: {
     flex: 1,
     fontSize: 36,
     fontWeight: '800',
-    color: C.text,
+    color: C.textPrimary,
     paddingVertical: 0,
   },
   inputJpy: {
@@ -760,8 +762,8 @@ const styles = StyleSheet.create({
   pendingPhotoThumb: {
     width: 56,
     height: 42,
-    borderRadius: 8,
-    backgroundColor: C.bg,
+    borderRadius: DT.radius.sm,
+    backgroundColor: C.background,
   },
   pendingPhotoLabel: {
     fontSize: 12,
@@ -772,8 +774,8 @@ const styles = StyleSheet.create({
   memoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: C.bg,
-    borderRadius: 10,
+    backgroundColor: C.background,
+    borderRadius: DT.radius.sm,
     paddingHorizontal: 12,
     paddingVertical: 2,
     gap: 8,
@@ -788,14 +790,14 @@ const styles = StyleSheet.create({
   memoInput: {
     flex: 1,
     fontSize: 14,
-    color: C.text,
+    color: C.textPrimary,
     paddingVertical: 10,
   },
 
   summaryCard: {
     backgroundColor: C.surface,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: DT.radius.lg,
+    padding: DT.spacing.lg,
     gap: 10,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.border,
@@ -820,42 +822,42 @@ const styles = StyleSheet.create({
   summaryValue: {
     fontSize: 15,
     fontWeight: '600',
-    color: C.text,
+    color: C.textPrimary,
   },
   summaryValueAccent: {
     fontSize: 16,
     fontWeight: '700',
-    color: C.brand,
+    color: C.primary,
     letterSpacing: -0.3,
   },
   summaryRemaining: {
     fontSize: 18,
     fontWeight: '700',
-    color: C.brand,
+    color: C.primary,
     letterSpacing: -0.4,
   },
   budgetBarTrack: {
     height: 6,
     borderRadius: 3,
-    backgroundColor: C.budgetBarTrack,
+    backgroundColor: C.borderSoft,
     marginTop: 6,
     overflow: 'hidden',
   },
   budgetBarFill: {
     height: '100%',
     borderRadius: 3,
-    backgroundColor: C.budgetBar,
+    backgroundColor: C.primary,
     minWidth: 0,
   },
 
   noTripBanner: {
     backgroundColor: C.surface,
-    borderRadius: 16,
+    borderRadius: DT.radius.lg,
     padding: 20,
     alignItems: 'center',
     gap: 6,
     borderWidth: 1.5,
-    borderColor: C.brand,
+    borderColor: C.primary,
     borderStyle: 'dashed',
   },
   noTripBannerText: {
@@ -866,7 +868,7 @@ const styles = StyleSheet.create({
   noTripBannerLink: {
     fontSize: 14,
     fontWeight: '700',
-    color: C.brand,
+    color: C.primary,
   },
 
   judgmentSection: {
@@ -882,24 +884,24 @@ const styles = StyleSheet.create({
   },
   candidateBtn: {
     backgroundColor: C.surface,
-    borderRadius: 14,
+    borderRadius: DT.radius.md,
     paddingVertical: 14,
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: C.brand,
+    borderColor: C.primary,
   },
   candidateBtnDisabled: {
     borderColor: C.border,
     opacity: 0.55,
   },
   candidateBtnPurchased: {
-    backgroundColor: C.brand,
-    borderColor: C.brand,
+    backgroundColor: C.primary,
+    borderColor: C.primary,
   },
   candidateBtnText: {
     fontSize: 15,
     fontWeight: '600',
-    color: C.brand,
+    color: C.primary,
   },
   candidateBtnTextDisabled: {
     color: C.textMuted,
@@ -909,7 +911,7 @@ const styles = StyleSheet.create({
   },
   rescanBtn: {
     backgroundColor: C.surface,
-    borderRadius: 14,
+    borderRadius: DT.radius.md,
     paddingVertical: 13,
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth,
@@ -918,7 +920,7 @@ const styles = StyleSheet.create({
   rescanBtnText: {
     fontSize: 15,
     fontWeight: '600',
-    color: C.text,
+    color: C.textPrimary,
   },
 
   auxLinks: {
@@ -932,7 +934,7 @@ const styles = StyleSheet.create({
   auxLink: {
     fontSize: 14,
     fontWeight: '600',
-    color: C.brand,
+    color: C.primary,
   },
   auxDot: {
     fontSize: 14,
