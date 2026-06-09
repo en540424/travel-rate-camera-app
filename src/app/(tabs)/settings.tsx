@@ -229,7 +229,7 @@ export default function SettingsScreen() {
                       <TouchableOpacity
                         hitSlop={8}
                         onPress={() => handleRemove(t.id, t.name)}>
-                        <ThemedText type="small" style={styles.removeBtn}>削除</ThemedText>
+                        <ThemedText type="small" style={styles.removeBtn}>アーカイブ</ThemedText>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -361,9 +361,13 @@ export default function SettingsScreen() {
                     <ThemedText type="small">キャンセル</ThemedText>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.formBtn, styles.formBtnCreate, !newName.trim() && styles.formBtnDisabled]}
+                    style={[
+                      styles.formBtn,
+                      styles.formBtnCreate,
+                      (!newName.trim() || (newCurrency !== 'JPY' && parseFloat(newRate) <= 0)) && styles.formBtnDisabled,
+                    ]}
                     onPress={handleCreate}
-                    disabled={!newName.trim()}>
+                    disabled={!newName.trim() || (newCurrency !== 'JPY' && parseFloat(newRate) <= 0)}>
                     <ThemedText type="small" style={styles.formBtnCreateText}>作成</ThemedText>
                   </TouchableOpacity>
                 </View>

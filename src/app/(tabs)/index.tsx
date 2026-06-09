@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CameraPreview } from '@/components/camera/CameraPreview';
@@ -155,7 +155,18 @@ export default function CameraScreen() {
       }
     }
     const currencyToSave: CurrencyCode = isJpyMode ? 'JPY' : selectedCurrency;
-    await addEntry(currencyToSave, foreignAmount, jpyAmount, rate, memo.trim() || undefined, savedPhotoUri, saveAsPurchased);
+    try {
+      await addEntry(currencyToSave, foreignAmount, jpyAmount, rate, memo.trim() || undefined, savedPhotoUri, saveAsPurchased);
+    } catch (e) {
+      console.warn('[save error]', e);
+      Alert.alert(
+        '保存できませんでした',
+        '記録の保存中にエラーが発生しました。もう一度お試しください。',
+        [{ text: 'OK' }],
+      );
+      return; // 入力値を保持したまま終了
+    }
+    // 保存成功時のみリセット
     setNativeAmount('');
     setMemo('');
     setOcrResult(null);

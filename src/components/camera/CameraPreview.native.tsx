@@ -2,7 +2,7 @@
 // expo-camera を使用。金額入力は画面下のカードで行う。
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRef, useState } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import type { CurrencyCode } from '@/constants/currencies';
@@ -35,14 +35,22 @@ export function CameraPreview({ onOcrResult, onPhotoCapture }: CameraPreviewProp
   }
 
   if (!permission.granted) {
+    // canAskAgain=false のとき（一度拒否済み）は設定アプリへ誘導する
+    const alreadyDenied = !permission.canAskAgain;
     return (
       <View style={[styles.permissionBox, { backgroundColor: '#1a1a1a' }]}>
         <ThemedText style={styles.permissionText}>
           カメラへのアクセスが必要です
         </ThemedText>
-        <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission}>
-          <ThemedText style={styles.permissionBtnText}>許可する</ThemedText>
-        </TouchableOpacity>
+        {alreadyDenied ? (
+          <TouchableOpacity style={styles.permissionBtn} onPress={() => Linking.openSettings()}>
+            <ThemedText style={styles.permissionBtnText}>設定アプリで許可する</ThemedText>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission}>
+            <ThemedText style={styles.permissionBtnText}>許可する</ThemedText>
+          </TouchableOpacity>
+        )}
       </View>
     );
   }
