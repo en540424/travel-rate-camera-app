@@ -10,10 +10,10 @@ import { PhotoModal } from '@/components/photo-modal';
 
 import { ThemedText } from '@/components/themed-text';
 import {
-  CAMERA_UI as C,
   FALLBACK_BUDGET_JPY,
   FALLBACK_TRIP_NAME,
 } from '@/constants/camera-screen';
+import { DT } from '@/constants/designTokens';
 import { CURRENCIES } from '@/constants/currencies';
 import { FREE_HISTORY_LIMIT } from '@/db/queries/history';
 import type { HistoryRow } from '@/db/queries/history';
@@ -158,7 +158,7 @@ const wheelStyles = StyleSheet.create({
     left: 4,
     right: 4,
     height: WHEEL_ITEM_H,
-    backgroundColor: C.brandSoft,
+    backgroundColor: DT.colors.primarySoft,
     borderRadius: 8,
   },
   item: {
@@ -169,12 +169,12 @@ const wheelStyles = StyleSheet.create({
   itemText: {
     fontSize: 17,
     fontWeight: '400',
-    color: C.text,
+    color: DT.colors.textPrimary,
   },
   itemTextSelected: {
     fontSize: 18,
     fontWeight: '700',
-    color: C.text,
+    color: DT.colors.textPrimary,
   },
 });
 
@@ -664,7 +664,7 @@ export default function HistoryScreen() {
                   value={sheetMemo}
                   onChangeText={setSheetMemo}
                   placeholder="メモを入力（省略可）"
-                  placeholderTextColor={C.textMuted}
+                  placeholderTextColor={DT.colors.textMuted}
                   maxLength={100}
                   returnKeyType="done"
                 />
@@ -749,7 +749,7 @@ export default function HistoryScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: C.bg,
+    backgroundColor: DT.colors.background,
   },
   safe: { flex: 1 },
   listContent: {
@@ -774,35 +774,31 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '700',
-    color: C.text,
+    color: DT.colors.textPrimary,
     letterSpacing: -0.4,
     lineHeight: 34,
   },
   subtitle: {
     fontSize: 14,
-    color: C.textSecondary,
+    color: DT.colors.textSecondary,
     marginTop: 4,
     fontWeight: '500',
   },
   clearAll: {
     fontSize: 15,
     fontWeight: '600',
-    color: C.brand,
+    color: DT.colors.primary,
     paddingTop: 6,
   },
 
   summaryCard: {
-    backgroundColor: C.surface,
-    borderRadius: 16,
-    padding: 16,
+    backgroundColor: DT.colors.surface,
+    borderRadius: DT.radius.lg,
+    padding: DT.spacing.lg,
     gap: 10,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.border,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    borderColor: DT.colors.border,
+    ...DT.shadow.card,
   },
   summaryRow: {
     flexDirection: 'row',
@@ -812,59 +808,55 @@ const styles = StyleSheet.create({
   summaryRowLast: {
     paddingTop: 4,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.border,
+    borderTopColor: DT.colors.border,
     marginTop: 2,
   },
   summaryLabel: {
     fontSize: 14,
-    color: C.textSecondary,
+    color: DT.colors.textSecondary,
     fontWeight: '500',
   },
   summaryValue: {
     fontSize: 15,
     fontWeight: '600',
-    color: C.text,
+    color: DT.colors.textPrimary,
   },
   summaryAccent: {
     fontSize: 16,
     fontWeight: '700',
-    color: C.brand,
+    color: DT.colors.candidate,
     letterSpacing: -0.3,
   },
   summaryRemaining: {
     fontSize: 18,
     fontWeight: '700',
-    color: C.brand,
+    color: DT.colors.primary,
     letterSpacing: -0.4,
   },
 
   proBanner: {
-    backgroundColor: C.brandSoft,
-    borderRadius: 12,
-    padding: 12,
+    backgroundColor: DT.colors.primarySoft,
+    borderRadius: DT.radius.md,
+    padding: DT.spacing.md,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: `${C.brand}33`,
+    borderColor: `${DT.colors.primary}33`,
   },
   proBannerText: {
-    color: C.brand,
+    color: DT.colors.primary,
     textAlign: 'center',
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: DT.fontSize.xs,
+    fontWeight: DT.fontWeight.semibold,
   },
 
   cardGap: { height: 12 },
   candidateCard: {
-    backgroundColor: C.surface,
-    borderRadius: 16,
+    backgroundColor: DT.colors.surface,
+    borderRadius: DT.radius.lg,
     padding: 14,
     gap: 4,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.border,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
+    borderColor: DT.colors.border,
+    ...DT.shadow.card,
   },
   cardTop: {
     flexDirection: 'row',
@@ -885,28 +877,28 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   tripLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: C.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+    color: DT.colors.textMuted,
     letterSpacing: 0.1,
   },
   badge: {
-    backgroundColor: C.brandSoft,
-    borderRadius: 8,
+    backgroundColor: DT.colors.candidateBg,
+    borderRadius: DT.radius.pill,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
   badgePurchased: {
-    backgroundColor: '#E6F9EE',
+    backgroundColor: DT.colors.purchasedBg,
   },
   badgeText: {
     fontSize: 11,
     fontWeight: '700',
-    color: C.brand,
+    color: DT.colors.candidate,
     letterSpacing: 0.3,
   },
   badgeTextPurchased: {
-    color: '#22A45D',
+    color: DT.colors.purchased,
   },
   jpyPricePurchased: {
     opacity: 0.45,
@@ -914,26 +906,26 @@ const styles = StyleSheet.create({
   foreignPrice: {
     fontSize: 22,
     fontWeight: '700',
-    color: C.text,
+    color: DT.colors.textPrimary,
     letterSpacing: -0.4,
   },
   jpyPrice: {
     fontSize: 28,
     fontWeight: '700',
-    color: C.text,
+    color: DT.colors.textPrimary,
     letterSpacing: -0.6,
     lineHeight: 34,
   },
   memoChip: {
     alignSelf: 'flex-start',
-    backgroundColor: C.bg,
-    borderRadius: 8,
+    backgroundColor: DT.colors.background,
+    borderRadius: DT.radius.sm,
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
   memoChipText: {
     fontSize: 13,
-    color: C.textSecondary,
+    color: DT.colors.textSecondary,
     fontWeight: '500',
   },
   cardMeta: {
@@ -943,20 +935,20 @@ const styles = StyleSheet.create({
     marginTop: 6,
     paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.border,
+    borderTopColor: DT.colors.border,
   },
   rateText: {
     fontSize: 13,
-    color: C.textMuted,
+    color: DT.colors.textMuted,
     fontWeight: '500',
   },
   dateText: {
     fontSize: 13,
-    color: C.textMuted,
+    color: DT.colors.textMuted,
     fontWeight: '500',
   },
   dateTextModified: {
-    color: C.brand,
+    color: DT.colors.primary,
     fontWeight: '600',
   },
   cardActions: {
@@ -968,24 +960,24 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 8,
     alignItems: 'center',
-    borderRadius: 10,
-    backgroundColor: C.surface,
+    borderRadius: DT.radius.sm,
+    backgroundColor: DT.colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.border,
+    borderColor: DT.colors.border,
   },
   actionBtnDelete: {
-    borderColor: '#FF3B3022',
-    backgroundColor: '#FF3B3008',
+    borderColor: '#E35D5B22',
+    backgroundColor: '#E35D5B08',
   },
   actionBtnText: {
     fontSize: 13,
     fontWeight: '600',
-    color: C.brand,
+    color: DT.colors.primary,
   },
   actionBtnTextDelete: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#FF3B30',
+    color: DT.colors.danger,
   },
 
   empty: {
@@ -997,12 +989,12 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: C.textSecondary,
+    color: DT.colors.textSecondary,
     textAlign: 'center',
   },
   emptyBody: {
     fontSize: 14,
-    color: C.textMuted,
+    color: DT.colors.textMuted,
     textAlign: 'center',
     lineHeight: 22,
   },
@@ -1015,19 +1007,19 @@ const styles = StyleSheet.create({
   filterChip: {
     paddingHorizontal: 14,
     paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: C.surface,
+    borderRadius: DT.radius.pill,
+    backgroundColor: DT.colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.border,
+    borderColor: DT.colors.border,
   },
   filterChipActive: {
-    backgroundColor: C.brand,
-    borderColor: C.brand,
+    backgroundColor: DT.colors.primary,
+    borderColor: DT.colors.primary,
   },
   filterChipText: {
     fontSize: 13,
     fontWeight: '600',
-    color: C.textSecondary,
+    color: DT.colors.textSecondary,
   },
   filterChipTextActive: {
     color: '#fff',
@@ -1035,11 +1027,11 @@ const styles = StyleSheet.create({
 
   sortRow: {
     flexDirection: 'row',
-    borderRadius: 10,
+    borderRadius: DT.radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.border,
+    borderColor: DT.colors.border,
     overflow: 'hidden',
-    backgroundColor: C.surface,
+    backgroundColor: DT.colors.surface,
   },
   sortBtn: {
     flex: 1,
@@ -1047,24 +1039,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sortBtnActive: {
-    backgroundColor: C.bg,
+    backgroundColor: DT.colors.background,
   },
   sortBtnText: {
     fontSize: 12,
     fontWeight: '500',
-    color: C.textMuted,
+    color: DT.colors.textMuted,
   },
   sortBtnTextActive: {
     fontSize: 12,
     fontWeight: '700',
-    color: C.text,
+    color: DT.colors.textPrimary,
   },
 
   thumbnail: {
     width: 80,
     height: 60,
-    borderRadius: 8,
-    backgroundColor: C.bg,
+    borderRadius: DT.radius.sm,
+    backgroundColor: DT.colors.background,
   },
 
   // ── ホイールピッカー（編集シート内で使用） ──
@@ -1076,14 +1068,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 12,
     fontWeight: '600',
-    color: C.textMuted,
+    color: DT.colors.textMuted,
     paddingBottom: 4,
   },
   wheelsRow: {
     flexDirection: 'row',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: C.border,
+    borderColor: DT.colors.border,
     overflow: 'hidden',
   },
 
@@ -1094,7 +1086,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheetCard: {
-    backgroundColor: C.surface,
+    backgroundColor: DT.colors.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: 20,
@@ -1105,7 +1097,7 @@ const styles = StyleSheet.create({
   sheetTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: C.text,
+    color: DT.colors.textPrimary,
     textAlign: 'center',
   },
   sheetField: {
@@ -1114,47 +1106,47 @@ const styles = StyleSheet.create({
   sheetLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: C.textSecondary,
+    color: DT.colors.textSecondary,
   },
   sheetPriceRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: C.bg,
-    borderRadius: 12,
+    backgroundColor: DT.colors.background,
+    borderRadius: DT.radius.md,
     paddingHorizontal: 14,
     paddingVertical: 4,
   },
   sheetPriceSymbol: {
     fontSize: 22,
     fontWeight: '700',
-    color: C.text,
+    color: DT.colors.textPrimary,
   },
   sheetPriceInput: {
     flex: 1,
     fontSize: 22,
     fontWeight: '700',
-    color: C.text,
+    color: DT.colors.textPrimary,
     paddingVertical: 10,
   },
   sheetRateHint: {
     fontSize: 13,
-    color: C.textSecondary,
+    color: DT.colors.textSecondary,
     fontWeight: '500',
   },
   sheetMemoInput: {
-    backgroundColor: C.bg,
-    borderRadius: 12,
+    backgroundColor: DT.colors.background,
+    borderRadius: DT.radius.md,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 15,
-    color: C.text,
+    color: DT.colors.textPrimary,
   },
   sheetToggle: {
     flexDirection: 'row',
-    borderRadius: 10,
+    borderRadius: DT.radius.sm,
     borderWidth: 1,
-    borderColor: '#cccccc55',
+    borderColor: DT.colors.border,
     overflow: 'hidden',
   },
   sheetToggleBtn: {
@@ -1163,12 +1155,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sheetToggleBtnActive: {
-    backgroundColor: C.brand,
+    backgroundColor: DT.colors.primary,
   },
   sheetToggleBtnText: {
     fontSize: 14,
     fontWeight: '600',
-    color: C.textMuted,
+    color: DT.colors.textMuted,
   },
   sheetToggleBtnTextActive: {
     color: '#fff',
@@ -1180,23 +1172,23 @@ const styles = StyleSheet.create({
   sheetCancelBtn: {
     flex: 1,
     paddingVertical: 14,
-    borderRadius: 14,
+    borderRadius: DT.radius.md,
     alignItems: 'center',
-    backgroundColor: C.bg,
+    backgroundColor: DT.colors.background,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.border,
+    borderColor: DT.colors.border,
   },
   sheetCancelText: {
     fontSize: 16,
     fontWeight: '600',
-    color: C.textSecondary,
+    color: DT.colors.textSecondary,
   },
   sheetSaveBtn: {
     flex: 2,
     paddingVertical: 14,
-    borderRadius: 14,
+    borderRadius: DT.radius.md,
     alignItems: 'center',
-    backgroundColor: C.brand,
+    backgroundColor: DT.colors.primary,
   },
   sheetSaveText: {
     fontSize: 16,
