@@ -36,8 +36,8 @@ export const DT = {
   },
 
   radius: {
-    sm:   10,
-    md:   14,
+    sm:   8,
+    md:   12,
     lg:   18,
     xl:   24,
     pill: 999,
