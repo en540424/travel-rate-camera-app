@@ -85,7 +85,6 @@ export function CameraPreview({ onOcrResult, onPhotoCapture }: CameraPreviewProp
         raw = JSON.stringify(result, null, 2);
       }
 
-      console.log('[OCR raw]', raw);
       onOcrResult?.(raw || 'テキストなし');
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
