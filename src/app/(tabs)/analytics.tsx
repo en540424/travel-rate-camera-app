@@ -4,7 +4,7 @@ import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
-import { CAMERA_UI as C } from '@/constants/camera-screen';
+import { DT } from '@/constants/designTokens';
 import { CURRENCIES } from '@/constants/currencies';
 import type { HistoryRow } from '@/db/queries/history';
 import { useAllHistory } from '@/hooks/use-all-history';
@@ -116,13 +116,13 @@ export default function AnalyticsScreen() {
           <View style={styles.card}>
             <ThemedText style={styles.cardTitle}>{selectedYear}年のまとめ</ThemedText>
             <View style={styles.statsGrid}>
-              <View style={styles.statItem}>
+              <View style={[styles.statItem, styles.statItemPurchased]}>
                 <ThemedText style={styles.statLabel}>購入済み合計</ThemedText>
-                <ThemedText style={styles.statValue}>{formatJpy(yearStats.purchasedTotal)}</ThemedText>
+                <ThemedText style={[styles.statValue, styles.statValuePurchased]}>{formatJpy(yearStats.purchasedTotal)}</ThemedText>
               </View>
-              <View style={styles.statItem}>
+              <View style={[styles.statItem, styles.statItemCandidate]}>
                 <ThemedText style={styles.statLabel}>候補合計</ThemedText>
-                <ThemedText style={styles.statValue}>{formatJpy(yearStats.candidateTotal)}</ThemedText>
+                <ThemedText style={[styles.statValue, styles.statValueCandidate]}>{formatJpy(yearStats.candidateTotal)}</ThemedText>
               </View>
               <View style={styles.statItem}>
                 <ThemedText style={styles.statLabel}>保存</ThemedText>
@@ -200,20 +200,20 @@ export default function AnalyticsScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: C.bg },
+  screen: { flex: 1, backgroundColor: DT.colors.background },
   safe: { flex: 1 },
   scroll: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingHorizontal: DT.spacing.lg,
+    paddingTop: DT.spacing.md,
     paddingBottom: 96,
     gap: 14,
   },
 
   header: { paddingBottom: 2 },
   screenTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: C.text,
+    fontSize: DT.fontSize.lg,
+    fontWeight: DT.fontWeight.bold,
+    color: DT.colors.textPrimary,
     letterSpacing: -0.3,
   },
 
@@ -222,53 +222,45 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: C.surface,
-    borderRadius: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    backgroundColor: DT.colors.surface,
+    borderRadius: DT.radius.lg,
+    paddingHorizontal: DT.spacing.xl,
+    paddingVertical: DT.spacing.sm + 2,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.border,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    borderColor: DT.colors.border,
+    ...DT.shadow.card,
   },
   navArrow: {
     fontSize: 26,
     fontWeight: '300',
-    color: C.brand,
+    color: DT.colors.primary,
     lineHeight: 32,
   },
   yearLabel: {
     fontSize: 17,
-    fontWeight: '700',
-    color: C.text,
+    fontWeight: DT.fontWeight.bold,
+    color: DT.colors.textPrimary,
     letterSpacing: -0.2,
   },
 
   // ── カード共通 ──
   card: {
-    backgroundColor: C.surface,
-    borderRadius: 16,
-    padding: 16,
+    backgroundColor: DT.colors.surface,
+    borderRadius: DT.radius.lg,
+    padding: DT.spacing.lg,
     gap: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.border,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    borderColor: DT.colors.border,
+    ...DT.shadow.card,
   },
   cardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: C.text,
+    fontSize: DT.fontSize.sm,
+    fontWeight: DT.fontWeight.bold,
+    color: DT.colors.textPrimary,
   },
   emptyText: {
-    fontSize: 13,
-    color: C.textMuted,
+    fontSize: DT.fontSize.xs,
+    color: DT.colors.textMuted,
     textAlign: 'center',
     paddingVertical: 20,
   },
@@ -277,28 +269,41 @@ const styles = StyleSheet.create({
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: DT.spacing.sm,
   },
   statItem: {
     flex: 1,
     minWidth: '45%',
-    backgroundColor: C.bg,
-    borderRadius: 10,
-    padding: 10,
-    gap: 3,
+    backgroundColor: DT.colors.background,
+    borderRadius: DT.radius.sm,
+    padding: DT.spacing.md,
+    gap: 4,
     alignItems: 'center',
+  },
+  statItemPurchased: {
+    backgroundColor: DT.colors.purchasedBg,
+  },
+  statItemCandidate: {
+    backgroundColor: DT.colors.candidateBg,
   },
   statLabel: {
     fontSize: 10,
-    fontWeight: '600',
-    color: C.textMuted,
+    fontWeight: DT.fontWeight.semibold,
+    color: DT.colors.textMuted,
     textAlign: 'center',
   },
   statValue: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: C.text,
+    fontSize: DT.fontSize.lg,
+    fontWeight: DT.fontWeight.bold,
+    color: DT.colors.textPrimary,
     textAlign: 'center',
+    letterSpacing: -0.5,
+  },
+  statValuePurchased: {
+    color: DT.colors.purchased,
+  },
+  statValueCandidate: {
+    color: DT.colors.candidate,
   },
 
   // ── 縦棒グラフ ──
@@ -313,27 +318,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   amountLabel: {
-    fontSize: 8,
-    fontWeight: '600',
-    color: C.textMuted,
+    fontSize: 9,
+    fontWeight: DT.fontWeight.semibold,
+    color: DT.colors.textMuted,
     textAlign: 'center',
     marginBottom: 2,
   },
   barRect: {
     width: '80%',
-    backgroundColor: C.brand,
-    borderRadius: 2,
+    backgroundColor: DT.colors.primary,
+    borderRadius: 4,
   },
   monthRow: {
     flexDirection: 'row',
-    marginTop: 6,
+    marginTop: DT.spacing.sm - 2,
   },
   barMonthLabel: {
     flex: 1,
     textAlign: 'center',
     fontSize: 10,
-    fontWeight: '500',
-    color: C.textSecondary,
+    fontWeight: DT.fontWeight.medium,
+    color: DT.colors.textSecondary,
   },
 
   // ── 旅行別一覧 ──
@@ -341,12 +346,12 @@ const styles = StyleSheet.create({
   tripRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    gap: 8,
+    paddingVertical: DT.spacing.md - 2,
+    gap: DT.spacing.sm,
   },
   tripRowBorder: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.border,
+    borderTopColor: DT.colors.border,
   },
   tripFlag: {
     fontSize: 20,
@@ -354,23 +359,23 @@ const styles = StyleSheet.create({
   },
   tripName: {
     flex: 1,
-    fontSize: 14,
-    fontWeight: '600',
-    color: C.text,
+    fontSize: DT.fontSize.sm,
+    fontWeight: DT.fontWeight.semibold,
+    color: DT.colors.textPrimary,
   },
   tripRight: {
     alignItems: 'flex-end',
     gap: 1,
   },
   tripAmount: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: C.text,
+    fontSize: DT.fontSize.sm + 1,
+    fontWeight: DT.fontWeight.bold,
+    color: DT.colors.textPrimary,
     letterSpacing: -0.3,
   },
   tripCount: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: C.textMuted,
+    fontSize: DT.fontSize.xs - 1,
+    fontWeight: DT.fontWeight.medium,
+    color: DT.colors.textMuted,
   },
 });
