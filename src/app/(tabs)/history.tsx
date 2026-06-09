@@ -848,12 +848,12 @@ const styles = StyleSheet.create({
     fontWeight: DT.fontWeight.semibold,
   },
 
-  cardGap: { height: 12 },
+  cardGap: { height: DT.spacing.md },
   candidateCard: {
     backgroundColor: DT.colors.surface,
     borderRadius: DT.radius.lg,
-    padding: 14,
-    gap: 4,
+    padding: DT.spacing.lg,
+    gap: 6,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: DT.colors.border,
     ...DT.shadow.card,
@@ -958,7 +958,7 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: 10,
     alignItems: 'center',
     borderRadius: DT.radius.sm,
     backgroundColor: DT.colors.surface,
@@ -1087,8 +1087,8 @@ const styles = StyleSheet.create({
   },
   sheetCard: {
     backgroundColor: DT.colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: DT.radius.xl,
+    borderTopRightRadius: DT.radius.xl,
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 36,
