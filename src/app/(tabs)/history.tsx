@@ -9,10 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { PhotoModal } from '@/components/photo-modal';
 
 import { ThemedText } from '@/components/themed-text';
-import {
-  FALLBACK_BUDGET_JPY,
-  FALLBACK_TRIP_NAME,
-} from '@/constants/camera-screen';
+import { FALLBACK_BUDGET_JPY } from '@/constants/camera-screen';
 import { DT } from '@/constants/designTokens';
 import { CURRENCIES } from '@/constants/currencies';
 import { FREE_HISTORY_LIMIT } from '@/db/queries/history';
@@ -213,7 +210,6 @@ export default function HistoryScreen() {
   const isLimited = !isPro && totalCount >= FREE_HISTORY_LIMIT;
   const { activeTrip } = useTrips();
 
-  const tripName = activeTrip?.name ?? FALLBACK_TRIP_NAME;
   const tripBudgetJpy = activeTrip?.budget_jpy ?? FALLBACK_BUDGET_JPY;
 
   const stats = useMemo(
@@ -419,22 +415,11 @@ export default function HistoryScreen() {
   function renderItem({ item }: { item: HistoryRow }) {
     const displayDate = resolveDisplayDate(item);
     const isPurchased = (item.is_purchased ?? 0) === 1;
+    const isForeign = item.currency !== 'JPY';
 
     return (
       <View style={styles.candidateCard}>
-        <View style={styles.cardTop}>
-          <ThemedText style={styles.tripLabel}>{tripName}</ThemedText>
-          <TouchableOpacity
-            style={[styles.badge, isPurchased && styles.badgePurchased]}
-            onPress={() => togglePurchasedRef.current(item.id, item.is_purchased ?? 0)}
-            hitSlop={8}>
-            <ThemedText style={[styles.badgeText, isPurchased && styles.badgeTextPurchased]}>
-              {isPurchased ? '✓ 購入済み' : '候補'}
-            </ThemedText>
-          </TouchableOpacity>
-        </View>
-
-        <View style={item.image_uri ? styles.cardRow : undefined}>
+        <View style={styles.cardBody}>
           {item.image_uri && (
             <TouchableOpacity
               onPress={() => setPhotoModalUri(item.image_uri!)}
@@ -448,53 +433,65 @@ export default function HistoryScreen() {
             </TouchableOpacity>
           )}
 
-          <View style={item.image_uri ? styles.cardRight : undefined}>
-            {item.currency !== 'JPY' && (
-              <ThemedText style={styles.foreignPrice}>
-                {formatForeign(item.foreign_amount, item.currency)}
-              </ThemedText>
-            )}
-            <ThemedText style={[styles.jpyPrice, isPurchased && styles.jpyPricePurchased]}>
-              {item.currency === 'JPY' ? formatJpy(item.jpy_amount) : `約 ${formatJpy(item.jpy_amount)}`}
-            </ThemedText>
-            {item.memo && (
-              <View style={styles.memoChip}>
-                <ThemedText style={styles.memoChipText}>{item.memo}</ThemedText>
+          <View style={styles.cardInfo}>
+            <View style={styles.cardInfoTop}>
+              <View style={styles.amountsCol}>
+                <ThemedText style={[styles.jpyPrice, isPurchased && styles.jpyPricePurchased]}>
+                  {item.currency === 'JPY' ? formatJpy(item.jpy_amount) : `約${formatJpy(item.jpy_amount)}`}
+                </ThemedText>
+                {isForeign && (
+                  <ThemedText style={styles.foreignPrice}>
+                    {formatForeign(item.foreign_amount, item.currency)} {item.currency}
+                  </ThemedText>
+                )}
               </View>
+              <TouchableOpacity
+                style={[styles.badge, isPurchased && styles.badgePurchased]}
+                onPress={() => togglePurchasedRef.current(item.id, item.is_purchased ?? 0)}
+                hitSlop={8}>
+                <ThemedText style={[styles.badgeText, isPurchased && styles.badgeTextPurchased]}>
+                  {isPurchased ? '購入済み' : '候補'}
+                </ThemedText>
+              </TouchableOpacity>
+            </View>
+            {!!item.memo && (
+              <ThemedText style={styles.memoText} numberOfLines={1} ellipsizeMode="tail">
+                {item.memo}
+              </ThemedText>
             )}
           </View>
         </View>
 
-        <View style={styles.cardMeta}>
-          <ThemedText style={styles.rateText}>
-            {formatRate(item.rate_used, item.currency)}
-          </ThemedText>
-          <ThemedText style={[styles.dateText, !!item.entry_date && styles.dateTextModified]}>
-            {displayDate}
-          </ThemedText>
-        </View>
+        <View style={styles.cardFooter}>
+          <View style={styles.metaRow}>
+            <ThemedText
+              style={[styles.metaText, !!item.entry_date && styles.metaTextModified]}
+              numberOfLines={1}>
+              {displayDate}
+            </ThemedText>
+            {isForeign && (
+              <>
+                <ThemedText style={styles.metaDivider}>・</ThemedText>
+                <ThemedText style={styles.metaText} numberOfLines={1}>
+                  {formatRate(item.rate_used, item.currency)}
+                </ThemedText>
+              </>
+            )}
+          </View>
 
-        <View style={styles.cardActions}>
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => openEditSheet(item)}
-            activeOpacity={0.75}>
-            <ThemedText style={styles.actionBtnText}>編集</ThemedText>
-          </TouchableOpacity>
-          {Platform.OS !== 'web' && (
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => handleImageButton(item)}
-              activeOpacity={0.75}>
-              <ThemedText style={styles.actionBtnText}>画像</ThemedText>
+          <View style={styles.actionsRow}>
+            <TouchableOpacity onPress={() => openEditSheet(item)} hitSlop={10}>
+              <ThemedText style={styles.actionText}>編集</ThemedText>
             </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.actionBtnDelete]}
-            onPress={() => handleDeleteItem(item)}
-            activeOpacity={0.75}>
-            <ThemedText style={styles.actionBtnTextDelete}>削除</ThemedText>
-          </TouchableOpacity>
+            {Platform.OS !== 'web' && (
+              <TouchableOpacity onPress={() => handleImageButton(item)} hitSlop={10} style={styles.actionGap}>
+                <ThemedText style={styles.actionText}>画像</ThemedText>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity onPress={() => handleDeleteItem(item)} hitSlop={10} style={styles.actionGap}>
+              <ThemedText style={styles.actionTextDelete}>削除</ThemedText>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     );
@@ -852,35 +849,32 @@ const styles = StyleSheet.create({
   candidateCard: {
     backgroundColor: DT.colors.surface,
     borderRadius: DT.radius.lg,
-    padding: DT.spacing.lg,
-    gap: 6,
+    padding: DT.spacing.md,
+    gap: 8,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: DT.colors.border,
     ...DT.shadow.card,
   },
-  cardTop: {
+  cardBody: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 2,
-  },
-  cardRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
     gap: 10,
   },
   thumbCol: {
     flexShrink: 0,
   },
-  cardRight: {
+  cardInfo: {
     flex: 1,
     gap: 4,
+    justifyContent: 'center',
   },
-  tripLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: DT.colors.textMuted,
-    letterSpacing: 0.1,
+  cardInfoTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  amountsCol: {
+    gap: 2,
   },
   badge: {
     backgroundColor: DT.colors.candidateBg,
@@ -904,77 +898,65 @@ const styles = StyleSheet.create({
     opacity: 0.45,
   },
   foreignPrice: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: DT.colors.textSecondary,
+  },
+  jpyPrice: {
     fontSize: 22,
     fontWeight: '700',
     color: DT.colors.textPrimary,
     letterSpacing: -0.4,
+    lineHeight: 27,
   },
-  jpyPrice: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: DT.colors.textPrimary,
-    letterSpacing: -0.6,
-    lineHeight: 34,
-  },
-  memoChip: {
-    alignSelf: 'flex-start',
-    backgroundColor: DT.colors.background,
-    borderRadius: DT.radius.sm,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  memoChipText: {
+  memoText: {
     fontSize: 13,
     color: DT.colors.textSecondary,
     fontWeight: '500',
   },
-  cardMeta: {
+  cardFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 6,
+    marginTop: 2,
     paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: DT.colors.border,
-  },
-  rateText: {
-    fontSize: 13,
-    color: DT.colors.textMuted,
-    fontWeight: '500',
-  },
-  dateText: {
-    fontSize: 13,
-    color: DT.colors.textMuted,
-    fontWeight: '500',
-  },
-  dateTextModified: {
-    color: DT.colors.primary,
-    fontWeight: '600',
-  },
-  cardActions: {
-    flexDirection: 'row',
     gap: 8,
-    marginTop: 2,
   },
-  actionBtn: {
-    flex: 1,
-    paddingVertical: 10,
+  metaRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: DT.radius.sm,
-    backgroundColor: DT.colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: DT.colors.border,
+    flexShrink: 1,
   },
-  actionBtnDelete: {
-    borderColor: '#E35D5B22',
-    backgroundColor: '#E35D5B08',
+  metaText: {
+    fontSize: 12,
+    color: DT.colors.textMuted,
+    fontWeight: '500',
   },
-  actionBtnText: {
+  metaTextModified: {
+    color: DT.colors.primary,
+    fontWeight: '600',
+  },
+  metaDivider: {
+    fontSize: 12,
+    color: DT.colors.textMuted,
+    marginHorizontal: 4,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  actionGap: {
+    marginLeft: 14,
+  },
+  actionText: {
     fontSize: 13,
     fontWeight: '600',
     color: DT.colors.primary,
   },
-  actionBtnTextDelete: {
+  actionTextDelete: {
     fontSize: 13,
     fontWeight: '600',
     color: DT.colors.danger,
@@ -1053,9 +1035,9 @@ const styles = StyleSheet.create({
   },
 
   thumbnail: {
-    width: 80,
-    height: 60,
-    borderRadius: DT.radius.sm,
+    width: 64,
+    height: 64,
+    borderRadius: DT.radius.md,
     backgroundColor: DT.colors.background,
   },
 
