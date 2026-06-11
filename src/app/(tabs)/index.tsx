@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, InputAccessoryView, Keyboard, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CameraPreview } from '@/components/camera/CameraPreview';
@@ -25,6 +25,27 @@ import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
 const C = DT.colors;
 const MEMO_PREVIEW_COUNT = 3;
+const INPUT_ACCESSORY_ID_AMOUNT = 'camera-input-accessory-amount';
+const INPUT_ACCESSORY_ID_MEMO = 'camera-input-accessory-memo';
+
+// iOS専用: キーボード上に「キーボードを閉じる」ボタンを表示するツールバー。
+// 同じ inputAccessoryViewID を複数のTextInputで共有すると、
+// 2つ目以降の入力欄で表示されないことがあるため、入力欄ごとに用意する。
+function KeyboardDoneBar({ nativeID }: { nativeID: string }) {
+  return (
+    <InputAccessoryView nativeID={nativeID}>
+      <View style={styles.accessoryContainer}>
+        <TouchableOpacity
+          onPress={() => Keyboard.dismiss()}
+          hitSlop={8}
+          style={styles.accessoryButton}
+          activeOpacity={0.7}>
+          <ThemedText style={styles.accessoryButtonText}>⌄ キーボードを閉じる</ThemedText>
+        </TouchableOpacity>
+      </View>
+    </InputAccessoryView>
+  );
+}
 
 export default function CameraScreen() {
   const [nativeAmount, setNativeAmount] = useState('');
@@ -38,6 +59,7 @@ export default function CameraScreen() {
   } | null>(null);
   const [ocrRawExpanded, setOcrRawExpanded] = useState(false);
   const [pendingPhotoUri, setPendingPhotoUri] = useState<string | null>(null);
+  const [ocrPhotoUri, setOcrPhotoUri] = useState<string | null>(null);
   const [saveAsPurchased, setSaveAsPurchased] = useState(false);
   const [selectedPrice, setSelectedPrice] = useState<string | null>(null);
   const [addedMemoLines, setAddedMemoLines] = useState<Set<string>>(new Set());
@@ -109,7 +131,11 @@ export default function CameraScreen() {
   }
 
   function handlePhotoCapture(uri: string) {
-    setPendingPhotoUri(uri);
+    if (pendingPhotoUri == null) {
+      setPendingPhotoUri(uri);
+    } else {
+      setOcrPhotoUri(uri);
+    }
   }
 
   async function handlePickPhotoFromLibrary() {
@@ -152,6 +178,12 @@ export default function CameraScreen() {
 
   function handleAddPhoto() {
     showPhotoPickerSheet('商品写真を追加');
+  }
+
+  function handleUseOcrPhoto() {
+    if (!ocrPhotoUri) return;
+    setPendingPhotoUri(ocrPhotoUri);
+    setOcrPhotoUri(null);
   }
 
   function handleRemovePhoto() {
@@ -223,6 +255,7 @@ export default function CameraScreen() {
     setAddedMemoLines(new Set());
     setMemoExpanded(false);
     setPendingPhotoUri(null);
+    setOcrPhotoUri(null);
     setPhotoPreviewVisible(false);
   }
 
@@ -243,6 +276,7 @@ export default function CameraScreen() {
     setNativeAmount('');
     setScanKey((k) => k + 1);
     setPendingPhotoUri(null);
+    setOcrPhotoUri(null);
     setPhotoPreviewVisible(false);
   }
 
@@ -282,6 +316,7 @@ export default function CameraScreen() {
     setOcrResult(null);
     setOcrRawExpanded(false);
     setPendingPhotoUri(null);
+    setOcrPhotoUri(null);
     setPhotoPreviewVisible(false);
     setSaveAsPurchased(false);
     if (Platform.OS !== 'web') {
@@ -310,9 +345,11 @@ export default function CameraScreen() {
       <SafeAreaView style={styles.safe} edges={['top']}>
         <ScrollView
           ref={scrollViewRef}
+          style={styles.scrollView}
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled">
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
 
           <View style={styles.container}>
 
@@ -363,6 +400,7 @@ export default function CameraScreen() {
                       setSelectedPrice(null);
                       setAddedMemoLines(new Set());
                       setMemoExpanded(false);
+                      setOcrPhotoUri(null);
                     }}
                     hitSlop={8}>
                     <ThemedText style={styles.ocrCardClose}>✕</ThemedText>
@@ -528,6 +566,7 @@ export default function CameraScreen() {
                   keyboardType="decimal-pad"
                   inputMode="decimal"
                   selectTextOnFocus
+                  inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID_AMOUNT : undefined}
                 />
                 {isJpyMode
                   ? null
@@ -556,6 +595,7 @@ export default function CameraScreen() {
                   placeholderTextColor={DT.colors.textMuted}
                   returnKeyType="done"
                   maxLength={100}
+                  inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID_MEMO : undefined}
                 />
               </View>
               {addedMemoLines.size > 0 && (
@@ -566,23 +606,33 @@ export default function CameraScreen() {
 
               {Platform.OS !== 'web' && (
                 pendingPhotoUri != null ? (
-                  <View style={styles.pendingPhotoRow}>
-                    <TouchableOpacity onPress={() => setPhotoPreviewVisible(true)} activeOpacity={0.8}>
-                      <Image
-                        source={{ uri: pendingPhotoUri }}
-                        style={styles.pendingPhotoThumb}
-                        contentFit="cover"
-                      />
-                    </TouchableOpacity>
-                    <ThemedText style={styles.pendingPhotoLabel}>保存する写真</ThemedText>
-                    <View style={styles.pendingPhotoActions}>
-                      <TouchableOpacity onPress={handleChangePhoto} hitSlop={8}>
-                        <ThemedText style={styles.pendingPhotoActionText}>変更</ThemedText>
+                  <View style={styles.pendingPhotoBlock}>
+                    <View style={styles.pendingPhotoRow}>
+                      <TouchableOpacity onPress={() => setPhotoPreviewVisible(true)} activeOpacity={0.8}>
+                        <Image
+                          source={{ uri: pendingPhotoUri }}
+                          style={styles.pendingPhotoThumb}
+                          contentFit="cover"
+                        />
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={handleRemovePhoto} hitSlop={8}>
-                        <ThemedText style={styles.pendingPhotoActionTextMuted}>削除</ThemedText>
-                      </TouchableOpacity>
+                      <ThemedText style={styles.pendingPhotoLabel}>保存する写真</ThemedText>
+                      <View style={styles.pendingPhotoActions}>
+                        <TouchableOpacity onPress={handleChangePhoto} hitSlop={8}>
+                          <ThemedText style={styles.pendingPhotoActionText}>変更</ThemedText>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={handleRemovePhoto} hitSlop={8}>
+                          <ThemedText style={styles.pendingPhotoActionTextMuted}>削除</ThemedText>
+                        </TouchableOpacity>
+                      </View>
                     </View>
+                    {ocrPhotoUri != null && (
+                      <View style={styles.ocrPhotoSwapRow}>
+                        <ThemedText style={styles.ocrPhotoSwapText}>保存写真はそのままです</ThemedText>
+                        <TouchableOpacity onPress={handleUseOcrPhoto} hitSlop={8}>
+                          <ThemedText style={styles.ocrPhotoSwapBtnText}>OCR写真に変更</ThemedText>
+                        </TouchableOpacity>
+                      </View>
+                    )}
                   </View>
                 ) : (
                   <View style={styles.pendingPhotoRow}>
@@ -741,6 +791,14 @@ export default function CameraScreen() {
         </ScrollView>
       </SafeAreaView>
 
+      {/* キーボード上の「完了」ボタン（iOSのみ、入力欄ごとに用意） */}
+      {Platform.OS === 'ios' && (
+        <>
+          <KeyboardDoneBar nativeID={INPUT_ACCESSORY_ID_AMOUNT} />
+          <KeyboardDoneBar nativeID={INPUT_ACCESSORY_ID_MEMO} />
+        </>
+      )}
+
       {/* 保存写真プレビュー */}
       {pendingPhotoUri != null && Platform.OS !== 'web' && (
         <Modal
@@ -783,6 +841,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.background,
   },
   safe: { flex: 1 },
+  scrollView: { flex: 1 },
   scroll: {
     flexGrow: 1,
     paddingTop: 10,
@@ -1051,10 +1110,29 @@ const styles = StyleSheet.create({
     color: C.textSecondary,
     flexShrink: 1,
   },
+  pendingPhotoBlock: {
+    gap: 6,
+  },
   pendingPhotoRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  ocrPhotoSwapRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 2,
+  },
+  ocrPhotoSwapText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: C.textMuted,
+  },
+  ocrPhotoSwapBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: C.primary,
   },
   pendingPhotoThumb: {
     width: 40,
@@ -1360,5 +1438,26 @@ const styles = StyleSheet.create({
     fontSize: DT.fontSize.md,
     fontWeight: DT.fontWeight.semibold,
     color: '#fff',
+  },
+
+  accessoryContainer: {
+    width: '100%',
+    height: 38,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    backgroundColor: C.surface,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.border,
+  },
+  accessoryButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  accessoryButtonText: {
+    fontSize: 13,
+    fontWeight: DT.fontWeight.bold,
+    color: C.textPrimary,
   },
 });
