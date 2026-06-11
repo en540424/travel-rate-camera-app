@@ -236,12 +236,12 @@ export default function HistoryScreen() {
 
   function handleDeleteItem(item: HistoryRow) {
     Alert.alert(
-      '買い物候補を削除しますか？',
-      'この候補を履歴から削除します。この操作は取り消せません。',
+      '買い物候補をアーカイブしますか？',
+      'この候補を履歴からアーカイブします。この操作は取り消せません。',
       [
         { text: 'キャンセル', style: 'cancel' },
         {
-          text: '削除',
+          text: 'アーカイブ',
           style: 'destructive',
           onPress: async () => {
             if (item.image_uri && Platform.OS !== 'web') {
@@ -420,7 +420,7 @@ export default function HistoryScreen() {
     return (
       <View style={styles.candidateCard}>
         <View style={styles.cardBody}>
-          {item.image_uri && (
+          {!!item.image_uri && (
             <TouchableOpacity
               onPress={() => setPhotoModalUri(item.image_uri!)}
               activeOpacity={0.8}
@@ -436,11 +436,18 @@ export default function HistoryScreen() {
           <View style={styles.cardInfo}>
             <View style={styles.cardInfoTop}>
               <View style={styles.amountsCol}>
-                <ThemedText style={[styles.jpyPrice, isPurchased && styles.jpyPricePurchased]}>
+                <ThemedText
+                  style={[styles.jpyPrice, isPurchased && styles.jpyPricePurchased]}
+                  numberOfLines={1}>
                   {item.currency === 'JPY' ? formatJpy(item.jpy_amount) : `約${formatJpy(item.jpy_amount)}`}
                 </ThemedText>
+                {!!item.memo && (
+                  <ThemedText style={styles.memoText} numberOfLines={1} ellipsizeMode="tail">
+                    {item.memo}
+                  </ThemedText>
+                )}
                 {isForeign && (
-                  <ThemedText style={styles.foreignPrice}>
+                  <ThemedText style={styles.foreignPrice} numberOfLines={1}>
                     {formatForeign(item.foreign_amount, item.currency)} {item.currency}
                   </ThemedText>
                 )}
@@ -450,15 +457,10 @@ export default function HistoryScreen() {
                 onPress={() => togglePurchasedRef.current(item.id, item.is_purchased ?? 0)}
                 hitSlop={8}>
                 <ThemedText style={[styles.badgeText, isPurchased && styles.badgeTextPurchased]}>
-                  {isPurchased ? '購入済み' : '候補'}
+                  {isPurchased ? '✓ 購入済み' : '候補'}
                 </ThemedText>
               </TouchableOpacity>
             </View>
-            {!!item.memo && (
-              <ThemedText style={styles.memoText} numberOfLines={1} ellipsizeMode="tail">
-                {item.memo}
-              </ThemedText>
-            )}
           </View>
         </View>
 
@@ -480,16 +482,20 @@ export default function HistoryScreen() {
           </View>
 
           <View style={styles.actionsRow}>
-            <TouchableOpacity onPress={() => openEditSheet(item)} hitSlop={10}>
+            <TouchableOpacity onPress={() => openEditSheet(item)} hitSlop={10} style={styles.actionBtn}>
               <ThemedText style={styles.actionText}>編集</ThemedText>
             </TouchableOpacity>
             {Platform.OS !== 'web' && (
-              <TouchableOpacity onPress={() => handleImageButton(item)} hitSlop={10} style={styles.actionGap}>
-                <ThemedText style={styles.actionText}>画像</ThemedText>
-              </TouchableOpacity>
+              <>
+                <View style={styles.actionDivider} />
+                <TouchableOpacity onPress={() => handleImageButton(item)} hitSlop={10} style={styles.actionBtn}>
+                  <ThemedText style={styles.actionText}>画像</ThemedText>
+                </TouchableOpacity>
+              </>
             )}
-            <TouchableOpacity onPress={() => handleDeleteItem(item)} hitSlop={10} style={styles.actionGap}>
-              <ThemedText style={styles.actionTextDelete}>削除</ThemedText>
+            <View style={styles.actionDivider} />
+            <TouchableOpacity onPress={() => handleDeleteItem(item)} hitSlop={10} style={styles.actionBtn}>
+              <ThemedText style={styles.actionTextDelete}>アーカイブ</ThemedText>
             </TouchableOpacity>
           </View>
         </View>
@@ -849,22 +855,21 @@ const styles = StyleSheet.create({
   candidateCard: {
     backgroundColor: DT.colors.surface,
     borderRadius: DT.radius.lg,
-    padding: DT.spacing.md,
-    gap: 8,
+    padding: DT.spacing.lg,
+    gap: 10,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: DT.colors.border,
     ...DT.shadow.card,
   },
   cardBody: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 12,
   },
   thumbCol: {
     flexShrink: 0,
   },
   cardInfo: {
     flex: 1,
-    gap: 4,
     justifyContent: 'center',
   },
   cardInfoTop: {
@@ -874,13 +879,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   amountsCol: {
-    gap: 2,
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
   },
   badge: {
     backgroundColor: DT.colors.candidateBg,
     borderRadius: DT.radius.pill,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    flexShrink: 0,
   },
   badgePurchased: {
     backgroundColor: DT.colors.purchasedBg,
@@ -898,28 +906,28 @@ const styles = StyleSheet.create({
     opacity: 0.45,
   },
   foreignPrice: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '500',
-    color: DT.colors.textSecondary,
+    color: DT.colors.textMuted,
   },
   jpyPrice: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '700',
     color: DT.colors.textPrimary,
-    letterSpacing: -0.4,
-    lineHeight: 27,
+    letterSpacing: -0.5,
+    lineHeight: 29,
   },
   memoText: {
-    fontSize: 13,
+    fontSize: 14,
     color: DT.colors.textSecondary,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   cardFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: 2,
-    paddingTop: 8,
+    paddingTop: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: DT.colors.border,
     gap: 8,
@@ -947,9 +955,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flexShrink: 0,
+    gap: 12,
   },
-  actionGap: {
-    marginLeft: 14,
+  actionBtn: {
+    paddingVertical: 2,
+  },
+  actionDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 12,
+    backgroundColor: DT.colors.border,
   },
   actionText: {
     fontSize: 13,
@@ -1035,8 +1049,8 @@ const styles = StyleSheet.create({
   },
 
   thumbnail: {
-    width: 64,
-    height: 64,
+    width: 72,
+    height: 72,
     borderRadius: DT.radius.md,
     backgroundColor: DT.colors.background,
   },
