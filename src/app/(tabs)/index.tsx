@@ -1,7 +1,8 @@
 import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CameraPreview } from '@/components/camera/CameraPreview';
@@ -23,6 +24,7 @@ import { formatForeign, formatJpy, formatRate } from '@/utils/format';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
 const C = DT.colors;
+const MEMO_PREVIEW_COUNT = 3;
 
 export default function CameraScreen() {
   const [nativeAmount, setNativeAmount] = useState('');
@@ -39,6 +41,8 @@ export default function CameraScreen() {
   const [saveAsPurchased, setSaveAsPurchased] = useState(false);
   const [selectedPrice, setSelectedPrice] = useState<string | null>(null);
   const [addedMemoLines, setAddedMemoLines] = useState<Set<string>>(new Set());
+  const [memoExpanded, setMemoExpanded] = useState(false);
+  const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
 
   const scrollViewRef = useRef<ScrollView>(null);
   const inputCardYRef = useRef(0);
@@ -76,6 +80,15 @@ export default function CameraScreen() {
     : !!activeTrip && rate > 0 && foreignAmount > 0 && jpyAmount > 0;
   const c = CURRENCIES[isJpyMode ? 'JPY' : selectedCurrency];
 
+  const hasInputToReset = !!(
+    nativeAmount ||
+    memo ||
+    ocrResult ||
+    selectedPrice ||
+    addedMemoLines.size > 0 ||
+    pendingPhotoUri
+  );
+
   const stats = useMemo(
     () => getTripStatsForDisplay(history, tripBudgetJpy, activeTrip?.id),
     [history, totalCount, tripBudgetJpy, activeTrip?.id],
@@ -99,6 +112,66 @@ export default function CameraScreen() {
     setPendingPhotoUri(uri);
   }
 
+  async function handlePickPhotoFromLibrary() {
+    const picked = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+      allowsEditing: false,
+    });
+    if (!picked.canceled && picked.assets[0]) {
+      setPendingPhotoUri(picked.assets[0].uri);
+    }
+  }
+
+  async function handleTakeProductPhoto() {
+    const captured = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+      allowsEditing: false,
+    });
+    if (!captured.canceled && captured.assets[0]) {
+      setPendingPhotoUri(captured.assets[0].uri);
+    }
+  }
+
+  function showPhotoPickerSheet(title: string) {
+    Alert.alert(
+      title,
+      '',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '写真から選ぶ', onPress: handlePickPhotoFromLibrary },
+        { text: '商品写真を撮る', onPress: handleTakeProductPhoto },
+      ],
+    );
+  }
+
+  function handleChangePhoto() {
+    showPhotoPickerSheet('保存する写真を変更');
+  }
+
+  function handleAddPhoto() {
+    showPhotoPickerSheet('商品写真を追加');
+  }
+
+  function handleRemovePhoto() {
+    Alert.alert(
+      '写真を削除しますか？',
+      '保存する写真だけを削除します。金額やメモは残ります。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '削除',
+          style: 'destructive',
+          onPress: () => {
+            setPendingPhotoUri(null);
+            setPhotoPreviewVisible(false);
+          },
+        },
+      ],
+    );
+  }
+
   function handleOcrResult(raw: string) {
     if (isWeb) return;
     setOcrResult({
@@ -108,6 +181,7 @@ export default function CameraScreen() {
     });
     setSelectedPrice(null);
     setAddedMemoLines(new Set());
+    setMemoExpanded(false);
   }
 
   function scrollToInputCard() {
@@ -147,7 +221,9 @@ export default function CameraScreen() {
     setOcrRawExpanded(false);
     setSelectedPrice(null);
     setAddedMemoLines(new Set());
+    setMemoExpanded(false);
     setPendingPhotoUri(null);
+    setPhotoPreviewVisible(false);
   }
 
   function handleCopyRawToMemo() {
@@ -167,6 +243,7 @@ export default function CameraScreen() {
     setNativeAmount('');
     setScanKey((k) => k + 1);
     setPendingPhotoUri(null);
+    setPhotoPreviewVisible(false);
   }
 
   async function handleSaveCandidate() {
@@ -205,6 +282,7 @@ export default function CameraScreen() {
     setOcrResult(null);
     setOcrRawExpanded(false);
     setPendingPhotoUri(null);
+    setPhotoPreviewVisible(false);
     setSaveAsPurchased(false);
     if (Platform.OS !== 'web') {
       try {
@@ -238,10 +316,11 @@ export default function CameraScreen() {
 
           <View style={styles.container}>
 
-            {/* 上部：ブランド＋旅行コンテキスト */}
+            {/* 上部：旅行コンテキスト（旅行名が主役） */}
             <View style={styles.topSection}>
-              <ThemedText style={styles.appTitle}>旅レートカメラ</ThemedText>
-              <ThemedText style={styles.tripName}>{tripName}</ThemedText>
+              <ThemedText style={styles.tripName} numberOfLines={1}>
+                {tripName}
+              </ThemedText>
 
               <View style={styles.contextRow}>
                 {isJpyMode ? (
@@ -283,6 +362,7 @@ export default function CameraScreen() {
                       setOcrRawExpanded(false);
                       setSelectedPrice(null);
                       setAddedMemoLines(new Set());
+                      setMemoExpanded(false);
                     }}
                     hitSlop={8}>
                     <ThemedText style={styles.ocrCardClose}>✕</ThemedText>
@@ -294,6 +374,22 @@ export default function CameraScreen() {
                   <ThemedText style={styles.ocrSectionLabel}>価格候補</ThemedText>
                   {ocrResult.prices.length === 0 ? (
                     <ThemedText style={styles.ocrNoneText}>認識できませんでした</ThemedText>
+                  ) : ocrResult.prices.length === 1 ? (
+                    <TouchableOpacity
+                      style={[
+                        styles.ocrPriceBtnSingle,
+                        ocrResult.prices[0] === selectedPrice && styles.ocrPriceBtnSelected,
+                      ]}
+                      onPress={() => handlePickPrice(ocrResult.prices[0])}
+                      activeOpacity={0.75}>
+                      <ThemedText
+                        style={[
+                          styles.ocrPriceBtnSingleText,
+                          ocrResult.prices[0] === selectedPrice && styles.ocrPriceBtnTextSelected,
+                        ]}>
+                        {ocrResult.prices[0] === selectedPrice ? '✓ ' : ''}{c.symbol}{ocrResult.prices[0]}
+                      </ThemedText>
+                    </TouchableOpacity>
                   ) : (
                     <View style={styles.ocrPriceRow}>
                       {ocrResult.prices.map((p) => (
@@ -318,7 +414,10 @@ export default function CameraScreen() {
                     <ThemedText style={styles.ocrSectionLabel}>
                       メモ候補（タップで追加）
                     </ThemedText>
-                    {ocrResult.memoLines.map((line) => {
+                    {(memoExpanded
+                      ? ocrResult.memoLines
+                      : ocrResult.memoLines.slice(0, MEMO_PREVIEW_COUNT)
+                    ).map((line) => {
                       const added = addedMemoLines.has(line);
                       return (
                       <View key={line} style={styles.ocrMemoLineRow}>
@@ -336,6 +435,19 @@ export default function CameraScreen() {
                       </View>
                       );
                     })}
+                    {ocrResult.memoLines.length > MEMO_PREVIEW_COUNT && (
+                      <TouchableOpacity
+                        style={styles.ocrMemoMoreBtn}
+                        onPress={() => setMemoExpanded((v) => !v)}
+                        hitSlop={8}
+                        activeOpacity={0.6}>
+                        <ThemedText style={styles.ocrMemoMoreBtnText}>
+                          {memoExpanded
+                            ? '閉じる'
+                            : `さらに${ocrResult.memoLines.length - MEMO_PREVIEW_COUNT}件表示`}
+                        </ThemedText>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 )}
 
@@ -370,7 +482,6 @@ export default function CameraScreen() {
             <View
               style={styles.inputCard}
               onLayout={(e) => { inputCardYRef.current = e.nativeEvent.layout.y; }}>
-              <ThemedText style={styles.inputCardTitle}>この価格を保存</ThemedText>
 
               {/* 価格反映フィードバック */}
               {selectedPrice != null && nativeAmount === selectedPrice && (
@@ -453,15 +564,34 @@ export default function CameraScreen() {
                 </ThemedText>
               )}
 
-              {pendingPhotoUri != null && Platform.OS !== 'web' && (
-                <View style={styles.pendingPhotoRow}>
-                  <Image
-                    source={{ uri: pendingPhotoUri }}
-                    style={styles.pendingPhotoThumb}
-                    contentFit="cover"
-                  />
-                  <ThemedText style={styles.pendingPhotoLabel}>写真が保存されます</ThemedText>
-                </View>
+              {Platform.OS !== 'web' && (
+                pendingPhotoUri != null ? (
+                  <View style={styles.pendingPhotoRow}>
+                    <TouchableOpacity onPress={() => setPhotoPreviewVisible(true)} activeOpacity={0.8}>
+                      <Image
+                        source={{ uri: pendingPhotoUri }}
+                        style={styles.pendingPhotoThumb}
+                        contentFit="cover"
+                      />
+                    </TouchableOpacity>
+                    <ThemedText style={styles.pendingPhotoLabel}>保存する写真</ThemedText>
+                    <View style={styles.pendingPhotoActions}>
+                      <TouchableOpacity onPress={handleChangePhoto} hitSlop={8}>
+                        <ThemedText style={styles.pendingPhotoActionText}>変更</ThemedText>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={handleRemovePhoto} hitSlop={8}>
+                        <ThemedText style={styles.pendingPhotoActionTextMuted}>削除</ThemedText>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.pendingPhotoRow}>
+                    <ThemedText style={styles.pendingPhotoLabel}>写真なし</ThemedText>
+                    <TouchableOpacity onPress={handleAddPhoto} hitSlop={8}>
+                      <ThemedText style={styles.pendingPhotoActionText}>＋ 商品写真を追加</ThemedText>
+                    </TouchableOpacity>
+                  </View>
+                )
               )}
 
               {/* 保存先（候補 / 購入済み） */}
@@ -505,6 +635,16 @@ export default function CameraScreen() {
                   {saveAsPurchased ? '購入済みとして保存' : '買い物候補に保存'}
                 </ThemedText>
               </TouchableOpacity>
+
+              {/* 入力をリセット（控えめなサブボタン） */}
+              {hasInputToReset && (
+                <TouchableOpacity
+                  style={styles.resetInputBtn}
+                  onPress={handleResetInput}
+                  activeOpacity={0.7}>
+                  <ThemedText style={styles.resetInputBtnText}>↺ 入力をリセット</ThemedText>
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* 残り予算サマリー（判断の文脈・最重要数値） */}
@@ -580,12 +720,6 @@ export default function CameraScreen() {
                 activeOpacity={0.75}>
                 <ThemedText style={styles.rescanBtnText}>もう一度読み取る</ThemedText>
               </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleResetInput}
-                hitSlop={8}
-                activeOpacity={0.6}>
-                <ThemedText style={styles.resetInputLink}>入力をリセット</ThemedText>
-              </TouchableOpacity>
             </View>
 
             {/* 補助導線 */}
@@ -606,6 +740,39 @@ export default function CameraScreen() {
           </View>
         </ScrollView>
       </SafeAreaView>
+
+      {/* 保存写真プレビュー */}
+      {pendingPhotoUri != null && Platform.OS !== 'web' && (
+        <Modal
+          visible={photoPreviewVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPhotoPreviewVisible(false)}>
+          <View style={styles.photoPreviewOverlay}>
+            <ScrollView
+              key={photoPreviewVisible ? 'preview-open' : 'preview-closed'}
+              style={styles.photoPreviewScroll}
+              contentContainerStyle={styles.photoPreviewScrollContent}
+              minimumZoomScale={1}
+              maximumZoomScale={3}
+              centerContent
+              showsHorizontalScrollIndicator={false}
+              showsVerticalScrollIndicator={false}>
+              <Image
+                source={{ uri: pendingPhotoUri }}
+                style={styles.photoPreviewImage}
+                contentFit="contain"
+              />
+            </ScrollView>
+            <TouchableOpacity
+              style={styles.photoPreviewCloseBtn}
+              onPress={() => setPhotoPreviewVisible(false)}
+              activeOpacity={0.75}>
+              <ThemedText style={styles.photoPreviewCloseBtnText}>閉じる</ThemedText>
+            </TouchableOpacity>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -631,29 +798,20 @@ const styles = StyleSheet.create({
 
   topSection: {
     gap: 6,
-    paddingTop: 6,
+    paddingTop: 4,
     marginBottom: 2,
   },
-  appTitle: {
-    fontSize: 26,
-    fontWeight: '700',
-    letterSpacing: -0.4,
-    color: C.textPrimary,
-    lineHeight: 32,
-  },
   tripName: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
     color: C.textPrimary,
     letterSpacing: -0.3,
-    marginTop: 2,
   },
   contextRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
-    marginTop: 8,
   },
   modeChip: {
     backgroundColor: C.surface,
@@ -669,10 +827,9 @@ const styles = StyleSheet.create({
     color: C.textPrimary,
   },
   rateInline: {
-    flex: 1,
     fontSize: 13,
     fontWeight: '500',
-    color: C.textSecondary,
+    color: C.textMuted,
     textAlign: 'right',
   },
 
@@ -685,8 +842,8 @@ const styles = StyleSheet.create({
   ocrCard: {
     backgroundColor: C.surface,
     borderRadius: DT.radius.lg,
-    padding: DT.spacing.lg,
-    gap: 14,
+    padding: DT.spacing.md,
+    gap: DT.spacing.md,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.border,
   },
@@ -696,19 +853,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   ocrCardTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: C.textPrimary,
+    fontSize: DT.fontSize.xs,
+    fontWeight: DT.fontWeight.semibold,
+    color: C.textMuted,
+    letterSpacing: 0.6,
   },
   ocrCardClose: {
     fontSize: 16,
     color: C.textMuted,
   },
   ocrSection: {
-    gap: 8,
+    gap: 6,
   },
   ocrSectionLabel: {
-    fontSize: 11,
+    fontSize: DT.fontSize.xs,
     fontWeight: '700',
     color: C.textMuted,
     letterSpacing: 0.5,
@@ -730,6 +888,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: -0.3,
   },
+  ocrPriceBtnSingle: {
+    backgroundColor: C.primary,
+    borderRadius: DT.radius.md,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  ocrPriceBtnSingleText: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+  },
   ocrPriceBtnSelected: {
     backgroundColor: C.primaryDark,
   },
@@ -744,7 +914,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingVertical: 3,
+    paddingVertical: 2,
   },
   ocrMemoLineText: {
     flex: 1,
@@ -753,11 +923,20 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   ocrAddMemoBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
     borderWidth: 1,
     borderColor: C.primary,
     borderRadius: DT.radius.sm,
+  },
+  ocrMemoMoreBtn: {
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+  },
+  ocrMemoMoreBtnText: {
+    fontSize: 12,
+    color: C.primary,
+    fontWeight: '600',
   },
   ocrAddMemoBtnText: {
     fontSize: 12,
@@ -802,17 +981,11 @@ const styles = StyleSheet.create({
   inputCard: {
     backgroundColor: C.surface,
     borderRadius: DT.radius.lg,
-    padding: DT.spacing.lg,
-    gap: DT.spacing.md,
+    padding: DT.spacing.md,
+    gap: 10,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.border,
     ...DT.shadow.card,
-  },
-  inputCardTitle: {
-    fontSize: DT.fontSize.xs,
-    fontWeight: DT.fontWeight.semibold,
-    color: C.textMuted,
-    letterSpacing: 0.6,
   },
   reflectedBanner: {
     backgroundColor: C.primarySoft,
@@ -881,19 +1054,33 @@ const styles = StyleSheet.create({
   pendingPhotoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
   pendingPhotoThumb: {
-    width: 56,
-    height: 42,
+    width: 40,
+    height: 30,
     borderRadius: DT.radius.sm,
     backgroundColor: C.background,
   },
   pendingPhotoLabel: {
-    fontSize: 12,
-    color: C.textSecondary,
+    fontSize: 11,
+    color: C.textMuted,
     fontWeight: '500',
     flex: 1,
+  },
+  pendingPhotoActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  pendingPhotoActionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: C.primary,
+  },
+  pendingPhotoActionTextMuted: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: C.textMuted,
   },
   memoRow: {
     flexDirection: 'row',
@@ -1041,21 +1228,21 @@ const styles = StyleSheet.create({
   saveTargetRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: DT.spacing.sm,
+    gap: 6,
   },
   saveTargetLabel: {
     fontSize: DT.fontSize.xs,
-    fontWeight: DT.fontWeight.bold,
+    fontWeight: DT.fontWeight.medium,
     color: C.textMuted,
     letterSpacing: 0.4,
   },
   saveTargetPills: {
     flexDirection: 'row',
-    gap: DT.spacing.sm,
+    gap: 6,
   },
   saveTargetPill: {
-    paddingHorizontal: DT.spacing.md,
-    paddingVertical: 6,
+    paddingHorizontal: DT.spacing.sm,
+    paddingVertical: 5,
     borderRadius: DT.radius.pill,
     borderWidth: 1,
     borderColor: C.border,
@@ -1112,12 +1299,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: C.textPrimary,
   },
-  resetInputLink: {
+  resetInputBtn: {
     alignSelf: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  resetInputBtnText: {
     fontSize: 13,
     fontWeight: '600',
-    color: C.textMuted,
-    paddingVertical: 4,
+    color: C.primary,
   },
 
   auxLinks: {
@@ -1136,5 +1326,39 @@ const styles = StyleSheet.create({
   auxDot: {
     fontSize: 14,
     color: C.textMuted,
+  },
+
+  photoPreviewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: DT.spacing.xl,
+  },
+  photoPreviewScroll: {
+    width: '100%',
+    height: '75%',
+  },
+  photoPreviewScrollContent: {
+    flexGrow: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoPreviewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  photoPreviewCloseBtn: {
+    marginTop: DT.spacing.xl,
+    paddingHorizontal: DT.spacing.xl,
+    paddingVertical: DT.spacing.sm,
+    borderRadius: DT.radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  photoPreviewCloseBtnText: {
+    fontSize: DT.fontSize.md,
+    fontWeight: DT.fontWeight.semibold,
+    color: '#fff',
   },
 });
