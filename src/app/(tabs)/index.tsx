@@ -437,41 +437,55 @@ export default function CameraScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* 買い物サマリー（判断の文脈） */}
+            {/* 残り予算サマリー（判断の文脈・最重要数値） */}
             {activeTrip ? (
               <View style={styles.summaryCard}>
-                <ThemedText style={styles.summaryTitle}>買い物サマリー</ThemedText>
+                <ThemedText style={styles.summaryLabel}>残り予算</ThemedText>
+                <ThemedText
+                  style={[
+                    styles.remainingAmount,
+                    tripBudgetJpy <= 0 && styles.remainingAmountUnset,
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.7}>
+                  {tripBudgetJpy > 0 ? formatJpy(stats.remainingBudget) : '未設定'}
+                </ThemedText>
 
-                <View style={styles.summaryRow}>
-                  <ThemedText style={styles.summaryLabel}>買い物候補</ThemedText>
-                  <ThemedText style={styles.summaryValue}>{stats.candidateCount}件</ThemedText>
-                </View>
-                <View style={styles.summaryRow}>
-                  <ThemedText style={styles.summaryLabel}>候補合計</ThemedText>
-                  <ThemedText style={styles.summaryValueAccent}>
-                    {formatJpy(stats.candidateTotalJpy)}
-                  </ThemedText>
-                </View>
-                <View style={styles.summaryRow}>
-                  <ThemedText style={styles.summaryLabel}>購入済み</ThemedText>
-                  <ThemedText style={styles.summaryValue}>
-                    {formatJpy(stats.purchasedTotalJpy)}
-                  </ThemedText>
-                </View>
-                <View style={styles.summaryRow}>
-                  <ThemedText style={styles.summaryLabel}>残り予算</ThemedText>
-                  <ThemedText style={styles.summaryRemaining}>
-                    {tripBudgetJpy > 0 ? formatJpy(stats.remainingBudget) : '未設定'}
-                  </ThemedText>
-                </View>
+                {tripBudgetJpy > 0 && (
+                  <View style={styles.budgetBarTrack}>
+                    <View
+                      style={[
+                        styles.budgetBarFill,
+                        { width: `${budgetUsedRatio * 100}%` },
+                      ]}
+                    />
+                  </View>
+                )}
 
-                <View style={styles.budgetBarTrack}>
-                  <View
-                    style={[
-                      styles.budgetBarFill,
-                      { width: `${budgetUsedRatio * 100}%` },
-                    ]}
-                  />
+                <View style={styles.summaryGrid}>
+                  <View style={styles.summaryGridItem}>
+                    <ThemedText style={styles.summaryGridLabel}>買い物候補</ThemedText>
+                    <ThemedText style={[styles.summaryGridValue, styles.summaryGridValueCandidate]}>
+                      {formatJpy(stats.candidateTotalJpy)}
+                    </ThemedText>
+                  </View>
+                  <View style={[styles.summaryGridItem, styles.summaryGridDivider]}>
+                    <ThemedText style={styles.summaryGridLabel}>購入済み</ThemedText>
+                    <ThemedText style={[styles.summaryGridValue, styles.summaryGridValuePurchased]}>
+                      {formatJpy(stats.purchasedTotalJpy)}
+                    </ThemedText>
+                  </View>
+                  <View style={[styles.summaryGridItem, styles.summaryGridDivider]}>
+                    <ThemedText style={styles.summaryGridLabel}>予算</ThemedText>
+                    <ThemedText
+                      style={[
+                        styles.summaryGridValue,
+                        tripBudgetJpy <= 0 && styles.summaryGridValueMuted,
+                      ]}>
+                      {tripBudgetJpy > 0 ? formatJpy(tripBudgetJpy) : '未設定'}
+                    </ThemedText>
+                  </View>
                 </View>
               </View>
             ) : (
@@ -589,11 +603,7 @@ const styles = StyleSheet.create({
   cameraHero: {
     borderRadius: DT.radius.lg,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOpacity: 0.16,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 10,
+    ...DT.shadow.card,
   },
 
   ocrCard: {
@@ -738,18 +748,21 @@ const styles = StyleSheet.create({
   },
   inputCurrencySymbol: {
     fontSize: 28,
+    lineHeight: 36,
     fontWeight: '700',
     color: C.textPrimary,
   },
   inputAmountField: {
     flex: 1,
     fontSize: 36,
+    lineHeight: 44,
     fontWeight: '800',
     color: C.textPrimary,
     paddingVertical: 0,
   },
   inputJpy: {
     fontSize: 15,
+    lineHeight: 20,
     fontWeight: '600',
     color: C.textSecondary,
     flexShrink: 1,
@@ -798,49 +811,39 @@ const styles = StyleSheet.create({
     backgroundColor: C.surface,
     borderRadius: DT.radius.lg,
     padding: DT.spacing.lg,
-    gap: 10,
+    gap: DT.spacing.md,
+    alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.border,
-  },
-  summaryTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: C.textMuted,
-    letterSpacing: 0.4,
-    marginBottom: 2,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    ...DT.shadow.card,
   },
   summaryLabel: {
-    fontSize: 14,
-    color: C.textSecondary,
-    fontWeight: '500',
+    fontSize: DT.fontSize.xs,
+    fontWeight: DT.fontWeight.semibold,
+    color: C.textMuted,
+    letterSpacing: 0.6,
   },
-  summaryValue: {
-    fontSize: 15,
-    fontWeight: '600',
+  remainingAmount: {
+    fontSize: DT.fontSize.xxl,
+    lineHeight: 46,
+    fontWeight: DT.fontWeight.bold,
     color: C.textPrimary,
+    letterSpacing: -1,
+    paddingVertical: 4,
   },
-  summaryValueAccent: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: C.primary,
-    letterSpacing: -0.3,
-  },
-  summaryRemaining: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: C.primary,
-    letterSpacing: -0.4,
+  remainingAmountUnset: {
+    fontSize: DT.fontSize.lg,
+    lineHeight: 28,
+    fontWeight: DT.fontWeight.semibold,
+    color: C.textMuted,
+    letterSpacing: 0,
+    paddingVertical: 4,
   },
   budgetBarTrack: {
+    width: '100%',
     height: 6,
     borderRadius: 3,
     backgroundColor: C.borderSoft,
-    marginTop: 6,
     overflow: 'hidden',
   },
   budgetBarFill: {
@@ -848,6 +851,42 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: C.primary,
     minWidth: 0,
+  },
+  summaryGrid: {
+    flexDirection: 'row',
+    width: '100%',
+    paddingTop: DT.spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.border,
+  },
+  summaryGridItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  summaryGridDivider: {
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: C.border,
+  },
+  summaryGridLabel: {
+    fontSize: DT.fontSize.xs,
+    fontWeight: DT.fontWeight.semibold,
+    color: C.textMuted,
+  },
+  summaryGridValue: {
+    fontSize: DT.fontSize.md,
+    fontWeight: DT.fontWeight.bold,
+    color: C.textPrimary,
+    letterSpacing: -0.3,
+  },
+  summaryGridValueCandidate: {
+    color: C.candidate,
+  },
+  summaryGridValuePurchased: {
+    color: C.purchased,
+  },
+  summaryGridValueMuted: {
+    color: C.textMuted,
   },
 
   noTripBanner: {
