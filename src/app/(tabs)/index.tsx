@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -37,6 +37,11 @@ export default function CameraScreen() {
   const [ocrRawExpanded, setOcrRawExpanded] = useState(false);
   const [pendingPhotoUri, setPendingPhotoUri] = useState<string | null>(null);
   const [saveAsPurchased, setSaveAsPurchased] = useState(false);
+  const [selectedPrice, setSelectedPrice] = useState<string | null>(null);
+  const [addedMemoLines, setAddedMemoLines] = useState<Set<string>>(new Set());
+
+  const scrollViewRef = useRef<ScrollView>(null);
+  const inputCardYRef = useRef(0);
 
   const { rates } = useRates();
   const { selectedCurrency, setSelectedCurrency } = useSettingsStore();
@@ -101,12 +106,26 @@ export default function CameraScreen() {
       prices: extractPriceCandidates(raw, isJpyMode),
       memoLines: extractMemoLines(raw),
     });
+    setSelectedPrice(null);
+    setAddedMemoLines(new Set());
+  }
+
+  function scrollToInputCard() {
+    // レイアウト確定後にスクロールするため、少し長めのタイマーで待つ
+    setTimeout(() => {
+      scrollViewRef.current?.scrollTo({
+        y: Math.max(inputCardYRef.current - 16, 0),
+        animated: true,
+      });
+    }, 250);
   }
 
   function handlePickPrice(price: string) {
     setNativeAmount(price);
     setInputMode('TO_JPY');
     // OCRカードは閉じない（全文を見ながらメモを書けるようにする）
+    setSelectedPrice(price);
+    scrollToInputCard();
   }
 
   function handleAddMemoLine(line: string) {
@@ -117,6 +136,18 @@ export default function CameraScreen() {
       if (!current) return trimmed.slice(0, 100);
       return `${current} ${trimmed}`.slice(0, 100);
     });
+    setAddedMemoLines((prev) => new Set(prev).add(line));
+    scrollToInputCard();
+  }
+
+  function handleResetInput() {
+    setNativeAmount('');
+    setMemo('');
+    setOcrResult(null);
+    setOcrRawExpanded(false);
+    setSelectedPrice(null);
+    setAddedMemoLines(new Set());
+    setPendingPhotoUri(null);
   }
 
   function handleCopyRawToMemo() {
@@ -200,6 +231,7 @@ export default function CameraScreen() {
     <View style={styles.screen}>
       <SafeAreaView style={styles.safe} edges={['top']}>
         <ScrollView
+          ref={scrollViewRef}
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled">
@@ -246,7 +278,12 @@ export default function CameraScreen() {
                 <View style={styles.ocrCardHeader}>
                   <ThemedText style={styles.ocrCardTitle}>読み取り結果</ThemedText>
                   <TouchableOpacity
-                    onPress={() => { setOcrResult(null); setOcrRawExpanded(false); }}
+                    onPress={() => {
+                      setOcrResult(null);
+                      setOcrRawExpanded(false);
+                      setSelectedPrice(null);
+                      setAddedMemoLines(new Set());
+                    }}
                     hitSlop={8}>
                     <ThemedText style={styles.ocrCardClose}>✕</ThemedText>
                   </TouchableOpacity>
@@ -262,11 +299,12 @@ export default function CameraScreen() {
                       {ocrResult.prices.map((p) => (
                         <TouchableOpacity
                           key={p}
-                          style={styles.ocrPriceBtn}
+                          style={[styles.ocrPriceBtn, p === selectedPrice && styles.ocrPriceBtnSelected]}
                           onPress={() => handlePickPrice(p)}
                           activeOpacity={0.75}>
-                          <ThemedText style={styles.ocrPriceBtnText}>
-                            {c.symbol}{p}
+                          <ThemedText
+                            style={[styles.ocrPriceBtnText, p === selectedPrice && styles.ocrPriceBtnTextSelected]}>
+                            {p === selectedPrice ? '✓ ' : ''}{c.symbol}{p}
                           </ThemedText>
                         </TouchableOpacity>
                       ))}
@@ -280,19 +318,24 @@ export default function CameraScreen() {
                     <ThemedText style={styles.ocrSectionLabel}>
                       メモ候補（タップで追加）
                     </ThemedText>
-                    {ocrResult.memoLines.map((line) => (
+                    {ocrResult.memoLines.map((line) => {
+                      const added = addedMemoLines.has(line);
+                      return (
                       <View key={line} style={styles.ocrMemoLineRow}>
                         <ThemedText style={styles.ocrMemoLineText} numberOfLines={1}>
                           {line}
                         </ThemedText>
                         <TouchableOpacity
-                          style={styles.ocrAddMemoBtn}
+                          style={[styles.ocrAddMemoBtn, added && styles.ocrAddMemoBtnAdded]}
                           onPress={() => handleAddMemoLine(line)}
                           activeOpacity={0.75}>
-                          <ThemedText style={styles.ocrAddMemoBtnText}>＋メモ</ThemedText>
+                          <ThemedText style={[styles.ocrAddMemoBtnText, added && styles.ocrAddMemoBtnTextAdded]}>
+                            {added ? '✓ 追加済み' : '＋メモ'}
+                          </ThemedText>
                         </TouchableOpacity>
                       </View>
-                    ))}
+                      );
+                    })}
                   </View>
                 )}
 
@@ -323,8 +366,21 @@ export default function CameraScreen() {
               </View>
             )}
 
-            {/* 金額入力カード（カメラ下）*/}
-            <View style={styles.inputCard}>
+            {/* 金額入力カード（保存確認カード）*/}
+            <View
+              style={styles.inputCard}
+              onLayout={(e) => { inputCardYRef.current = e.nativeEvent.layout.y; }}>
+              <ThemedText style={styles.inputCardTitle}>この価格を保存</ThemedText>
+
+              {/* 価格反映フィードバック */}
+              {selectedPrice != null && nativeAmount === selectedPrice && (
+                <View style={styles.reflectedBanner}>
+                  <ThemedText style={styles.reflectedBannerText}>
+                    ✓ {isReverse ? '¥' : c.symbol}{selectedPrice} を入力しました
+                  </ThemedText>
+                </View>
+              )}
+
               {/* 入力モード切り替え（JPY モードでは非表示） */}
               {!isJpyMode && (
                 <View style={styles.inputModeRow}>
@@ -347,6 +403,7 @@ export default function CameraScreen() {
                 </View>
               )}
 
+              {/* 金額（カードの主役） */}
               <View style={styles.inputAmountRow}>
                 <ThemedText style={styles.inputCurrencySymbol}>
                   {isReverse ? '¥' : c.symbol}
@@ -374,6 +431,10 @@ export default function CameraScreen() {
                       ))
                 }
               </View>
+
+              <View style={styles.cardDivider} />
+
+              {/* メモ（補助情報） */}
               <View style={styles.memoRow}>
                 <ThemedText style={styles.memoLabel}>メモ</ThemedText>
                 <TextInput
@@ -386,6 +447,11 @@ export default function CameraScreen() {
                   maxLength={100}
                 />
               </View>
+              {addedMemoLines.size > 0 && (
+                <ThemedText style={styles.memoAddedHint}>
+                  ✓ メモを追加しました
+                </ThemedText>
+              )}
 
               {pendingPhotoUri != null && Platform.OS !== 'web' && (
                 <View style={styles.pendingPhotoRow}>
@@ -398,40 +464,44 @@ export default function CameraScreen() {
                 </View>
               )}
 
-              <View style={styles.inputModeRow}>
-                <TouchableOpacity
-                  style={[styles.inputModeBtn, !saveAsPurchased && styles.inputModeBtnActive]}
-                  onPress={() => setSaveAsPurchased(false)}
-                  activeOpacity={0.75}>
-                  <ThemedText style={[styles.inputModeBtnText, !saveAsPurchased && styles.inputModeBtnTextActive]}>
-                    候補
-                  </ThemedText>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.inputModeBtn, saveAsPurchased && styles.inputModeBtnActive]}
-                  onPress={() => setSaveAsPurchased(true)}
-                  activeOpacity={0.75}>
-                  <ThemedText style={[styles.inputModeBtnText, saveAsPurchased && styles.inputModeBtnTextActive]}>
-                    購入済み
-                  </ThemedText>
-                </TouchableOpacity>
+              {/* 保存先（候補 / 購入済み） */}
+              <View style={styles.saveTargetRow}>
+                <ThemedText style={styles.saveTargetLabel}>保存先</ThemedText>
+                <View style={styles.saveTargetPills}>
+                  <TouchableOpacity
+                    style={[styles.saveTargetPill, !saveAsPurchased && styles.saveTargetPillCandidateActive]}
+                    onPress={() => setSaveAsPurchased(false)}
+                    activeOpacity={0.75}>
+                    <ThemedText
+                      style={[
+                        styles.saveTargetPillText,
+                        !saveAsPurchased && styles.saveTargetPillTextCandidateActive,
+                      ]}>
+                      候補
+                    </ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.saveTargetPill, saveAsPurchased && styles.saveTargetPillPurchasedActive]}
+                    onPress={() => setSaveAsPurchased(true)}
+                    activeOpacity={0.75}>
+                    <ThemedText
+                      style={[
+                        styles.saveTargetPillText,
+                        saveAsPurchased && styles.saveTargetPillTextPurchasedActive,
+                      ]}>
+                      購入済み
+                    </ThemedText>
+                  </TouchableOpacity>
+                </View>
               </View>
 
+              {/* 保存ボタン（カードの主役アクション） */}
               <TouchableOpacity
-                style={[
-                  styles.candidateBtn,
-                  !canSave && styles.candidateBtnDisabled,
-                  saveAsPurchased && styles.candidateBtnPurchased,
-                ]}
+                style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
                 onPress={handleSaveCandidate}
                 disabled={!canSave}
                 activeOpacity={0.75}>
-                <ThemedText
-                  style={[
-                    styles.candidateBtnText,
-                    !canSave && styles.candidateBtnTextDisabled,
-                    saveAsPurchased && styles.candidateBtnTextPurchased,
-                  ]}>
+                <ThemedText style={[styles.saveBtnText, !canSave && styles.saveBtnTextDisabled]}>
                   {saveAsPurchased ? '購入済みとして保存' : '買い物候補に保存'}
                 </ThemedText>
               </TouchableOpacity>
@@ -509,6 +579,12 @@ export default function CameraScreen() {
                 onPress={handleRescan}
                 activeOpacity={0.75}>
                 <ThemedText style={styles.rescanBtnText}>もう一度読み取る</ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleResetInput}
+                hitSlop={8}
+                activeOpacity={0.6}>
+                <ThemedText style={styles.resetInputLink}>入力をリセット</ThemedText>
               </TouchableOpacity>
             </View>
 
@@ -654,6 +730,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: -0.3,
   },
+  ocrPriceBtnSelected: {
+    backgroundColor: C.primaryDark,
+  },
+  ocrPriceBtnTextSelected: {
+    color: '#fff',
+  },
   ocrNoneText: {
     fontSize: 13,
     color: C.textMuted,
@@ -681,6 +763,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: C.primary,
     fontWeight: '600',
+  },
+  ocrAddMemoBtnAdded: {
+    borderColor: C.border,
+    backgroundColor: C.borderSoft,
+  },
+  ocrAddMemoBtnTextAdded: {
+    color: C.textMuted,
   },
   ocrRawToggle: {
     paddingVertical: 4,
@@ -717,6 +806,28 @@ const styles = StyleSheet.create({
     gap: DT.spacing.md,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.border,
+    ...DT.shadow.card,
+  },
+  inputCardTitle: {
+    fontSize: DT.fontSize.xs,
+    fontWeight: DT.fontWeight.semibold,
+    color: C.textMuted,
+    letterSpacing: 0.6,
+  },
+  reflectedBanner: {
+    backgroundColor: C.primarySoft,
+    borderRadius: DT.radius.sm,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  reflectedBannerText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: C.primaryDark,
+  },
+  cardDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: C.border,
   },
   inputModeRow: {
     flexDirection: 'row',
@@ -727,7 +838,7 @@ const styles = StyleSheet.create({
   },
   inputModeBtn: {
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: 6,
     alignItems: 'center',
   },
   inputModeBtnActive: {
@@ -805,6 +916,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: C.textPrimary,
     paddingVertical: 10,
+  },
+  memoAddedHint: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: C.primaryDark,
+    paddingLeft: 4,
   },
 
   summaryCard: {
@@ -921,32 +1038,66 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 0.2,
   },
-  candidateBtn: {
-    backgroundColor: C.surface,
-    borderRadius: DT.radius.md,
-    paddingVertical: 14,
+  saveTargetRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: C.primary,
+    gap: DT.spacing.sm,
   },
-  candidateBtnDisabled: {
-    borderColor: C.border,
-    opacity: 0.55,
-  },
-  candidateBtnPurchased: {
-    backgroundColor: C.primary,
-    borderColor: C.primary,
-  },
-  candidateBtnText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: C.primary,
-  },
-  candidateBtnTextDisabled: {
+  saveTargetLabel: {
+    fontSize: DT.fontSize.xs,
+    fontWeight: DT.fontWeight.bold,
     color: C.textMuted,
+    letterSpacing: 0.4,
   },
-  candidateBtnTextPurchased: {
+  saveTargetPills: {
+    flexDirection: 'row',
+    gap: DT.spacing.sm,
+  },
+  saveTargetPill: {
+    paddingHorizontal: DT.spacing.md,
+    paddingVertical: 6,
+    borderRadius: DT.radius.pill,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surface,
+  },
+  saveTargetPillCandidateActive: {
+    backgroundColor: C.candidateBg,
+    borderColor: C.candidate,
+  },
+  saveTargetPillPurchasedActive: {
+    backgroundColor: C.purchasedBg,
+    borderColor: C.purchased,
+  },
+  saveTargetPillText: {
+    fontSize: DT.fontSize.sm,
+    fontWeight: DT.fontWeight.semibold,
+    color: C.textSecondary,
+  },
+  saveTargetPillTextCandidateActive: {
+    color: C.candidate,
+  },
+  saveTargetPillTextPurchasedActive: {
+    color: C.purchased,
+  },
+  saveBtn: {
+    backgroundColor: C.primary,
+    borderRadius: DT.radius.md,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  saveBtnDisabled: {
+    backgroundColor: C.border,
+  },
+  saveBtnText: {
+    fontSize: DT.fontSize.md,
+    lineHeight: 22,
+    fontWeight: DT.fontWeight.bold,
     color: '#fff',
+    letterSpacing: 0.2,
+  },
+  saveBtnTextDisabled: {
+    color: C.textSecondary,
   },
   rescanBtn: {
     backgroundColor: C.surface,
@@ -960,6 +1111,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: C.textPrimary,
+  },
+  resetInputLink: {
+    alignSelf: 'center',
+    fontSize: 13,
+    fontWeight: '600',
+    color: C.textMuted,
+    paddingVertical: 4,
   },
 
   auxLinks: {
