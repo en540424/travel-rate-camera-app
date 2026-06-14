@@ -1,5 +1,5 @@
-import { router } from 'expo-router';
-import { useRef, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -11,24 +11,39 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
+import { PrimaryButton, SecondaryButton, SettingRow, SettingSection } from '@/components/ui';
+import { ActiveTripSwitchSheet } from '@/components/domain/ActiveTripSwitchSheet';
 import type { CurrencyCode } from '@/constants/currencies';
-import { CURRENCIES, CURRENCY_CODES, FOREIGN_CURRENCY_CODES } from '@/constants/currencies';
-import { Spacing } from '@/constants/theme';
+import { CURRENCIES, CURRENCY_CODES } from '@/constants/currencies';
+import { FALLBACK_BUDGET_JPY } from '@/constants/camera-screen';
 import type { TripRow } from '@/db/queries/trips';
+import { useHistory } from '@/hooks/use-history';
 import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
-import { useTheme } from '@/hooks/use-theme';
+import { color, radius, shadow, spacing } from '@/theme/tokens';
+import { formatJpy } from '@/utils/format';
+import { getTripStatsForDisplay } from '@/utils/trip-stats';
+
+function formatDateRange(start: string | null, end: string | null): string | null {
+  const fmt = (s: string) => {
+    const [, m, d] = s.split('-');
+    if (!m || !d) return s;
+    return `${parseInt(m, 10)}/${parseInt(d, 10)}`;
+  };
+  if (start && end) return `${fmt(start)} – ${fmt(end)}`;
+  if (start) return `${fmt(start)} –`;
+  return null;
+}
 
 export default function SettingsScreen() {
-  const { selectedCurrency, setSelectedCurrency, isPro } = useSettingsStore();
-  const { activeTrip, loadTrips, createTrip, editTrip, removeTrip, switchTrip } = useTrips();
+  const { selectedCurrency, isPro } = useSettingsStore();
+  const { activeTrip, loadTrips, createTrip, editTrip, switchTrip } = useTrips();
   const { saveRate } = useRates();
-  const theme = useTheme();
+  const { history, totalCount } = useHistory();
 
-  const [trips, setTrips] = useState<Awaited<ReturnType<typeof loadTrips>>>([]);
-  const [showTripList, setShowTripList] = useState(false);
+  const [trips, setTrips] = useState<TripRow[]>([]);
+  const [showSwitch, setShowSwitch] = useState(false);
 
   // 旅行作成フォームの状態
   const [creating, setCreating] = useState(false);
@@ -46,23 +61,20 @@ export default function SettingsScreen() {
   const [editRate, setEditRate] = useState('');
 
   // React Compiler のメモ化でクロージャが古くなるのを防ぐ ref
-  const newNameRef = useRef(newName);
-  const newBudgetRef = useRef(newBudget);
-  const newCurrencyRef = useRef(newCurrency);
-  const newRateRef = useRef(newRate);
-  newNameRef.current = newName;
-  newBudgetRef.current = newBudget;
-  newCurrencyRef.current = newCurrency;
-  newRateRef.current = newRate;
+  // 一覧件数を表示するため、フォーカス時に旅行リストを読み込む
+  useFocusEffect(
+    useCallback(() => {
+      loadTrips().then(setTrips).catch(() => {});
+    }, [loadTrips]),
+  );
 
-  const editNameRef = useRef(editName);
-  const editBudgetRef = useRef(editBudget);
-  const editCurrencyRef = useRef(editCurrency);
-  const editRateRef = useRef(editRate);
-  editNameRef.current = editName;
-  editBudgetRef.current = editBudget;
-  editCurrencyRef.current = editCurrency;
-  editRateRef.current = editRate;
+  const tripBudgetJpy = activeTrip?.budget_jpy ?? FALLBACK_BUDGET_JPY;
+  const stats = useMemo(
+    () => getTripStatsForDisplay(history, tripBudgetJpy, activeTrip?.id),
+    [history, tripBudgetJpy, activeTrip?.id],
+  );
+
+  // ─── 以下、既存のロジックを維持（ハンドラは変更しない） ───
 
   function handleStartEdit(trip: TripRow) {
     setEditName(trip.name);
@@ -72,23 +84,24 @@ export default function SettingsScreen() {
     setEditRate(trip.manual_rate > 0 ? String(trip.manual_rate) : '');
     setEditingTripId(trip.id);
     setCreating(false);
-    setShowTripList(false);
+    setShowSwitch(false);
   }
 
   async function handleSaveEdit() {
     const id = editingTripId;
     if (id === null) return;
-    const name = editNameRef.current.trim();
+    const name = editName.trim();
     if (!name) return;
-    const budget = parseFloat(editBudgetRef.current) || 0;
-    const currency = editCurrencyRef.current;
-    const rate = currency === 'JPY' ? 0 : (parseFloat(editRateRef.current) || 0);
+    const budget = parseFloat(editBudget) || 0;
+    const currency = editCurrency;
+    const rate = currency === 'JPY' ? 0 : (parseFloat(editRate) || 0);
     if (currency !== 'JPY' && rate <= 0) return;
 
     async function doSave() {
       await editTrip(id!, { name, budget_jpy: budget, base_currency: currency, manual_rate: rate });
       if (currency !== 'JPY' && rate > 0) await saveRate(currency, rate);
       setEditingTripId(null);
+      loadTrips().then(setTrips).catch(() => {});
     }
 
     if (currency !== originalEditCurrency) {
@@ -105,17 +118,11 @@ export default function SettingsScreen() {
     }
   }
 
-  async function handleShowTrips() {
-    const list = await loadTrips();
-    setTrips(list);
-    setShowTripList(true);
-  }
-
   async function handleCreate() {
-    const name = newNameRef.current.trim();
-    const budget = parseFloat(newBudgetRef.current) || 0;
-    const currency = newCurrencyRef.current;
-    const rate = parseFloat(newRateRef.current) || 0;
+    const name = newName.trim();
+    const budget = parseFloat(newBudget) || 0;
+    const currency = newCurrency;
+    const rate = parseFloat(newRate) || 0;
     if (!name) return;
     await createTrip(name, budget, currency, rate);
     setCreating(false);
@@ -128,9 +135,10 @@ export default function SettingsScreen() {
 
   async function handleSwitch(id: number) {
     await switchTrip(id);
-    setShowTripList(false);
+    setShowSwitch(false);
   }
 
+  /*
   function handleRemove(id: number, name: string) {
     Alert.alert(
       '旅行をアーカイブ',
@@ -151,403 +159,394 @@ export default function SettingsScreen() {
     );
   }
 
+  // ─── レンダー（v4: settings-main-v4 準拠） ───
+
+  */
+  const canCreate = newName.trim() !== '' && (newCurrency === 'JPY' || parseFloat(newRate) > 0);
+  const canSaveEdit = editName.trim() !== '' && (editCurrency === 'JPY' || parseFloat(editRate) > 0);
+  const dateRange = activeTrip ? formatDateRange(activeTrip.started_at, activeTrip.ended_at) : null;
+
+  function renderCurrencyChips(value: CurrencyCode, onSelect: (c: CurrencyCode) => void, codes: readonly CurrencyCode[]) {
+    return (
+      <View style={styles.chips}>
+        {codes.map((code) => {
+          const c = CURRENCIES[code];
+          const selected = value === code;
+          return (
+            <TouchableOpacity
+              key={code}
+              style={[styles.chip, selected && styles.chipSelected]}
+              onPress={() => onSelect(code)}
+              activeOpacity={0.8}>
+              <ThemedText style={[styles.chipText, selected && styles.chipTextSelected]}>
+                {c.flag} {code}
+              </ThemedText>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    );
+  }
+
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.scroll}>
-          <ThemedText type="subtitle" style={styles.title}>設定</ThemedText>
+    <View style={styles.screen}>
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <ThemedText style={styles.title}>設定</ThemedText>
 
-          {/* 旅行フォルダ */}
-          <ThemedView type="backgroundElement" style={styles.section}>
-            <ThemedText type="smallBold" style={styles.sectionTitle}>旅行フォルダ</ThemedText>
+          {/* 現在の旅行カード（v4黒ヒーロー） */}
+          {activeTrip ? (
+            <View style={styles.hero}>
+              <View style={styles.heroTopRow}>
+                <View style={styles.heroNameWrap}>
+                  <ThemedText style={styles.heroName} numberOfLines={1}>
+                    {activeTrip.name}
+                  </ThemedText>
+                  <View style={styles.heroBadge}>
+                    <ThemedText style={styles.heroBadgeText}>使用中</ThemedText>
+                  </View>
+                </View>
+                <ThemedText style={styles.heroCurrency}>
+                  {activeTrip.base_currency === 'JPY' ? '🇯🇵 国内' : `${activeTrip.base_currency} → JPY`}
+                </ThemedText>
+              </View>
 
-            {activeTrip ? (
-              <View style={styles.activeTripBox}>
-                <View style={styles.activeTripInfo}>
-                  <ThemedText type="smallBold">{activeTrip.name}</ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary">
-                    予算 ¥{activeTrip.budget_jpy.toLocaleString()} ・{' '}
-                    {activeTrip.base_currency === 'JPY'
-                      ? '🇯🇵 国内モード'
-                      : `${activeTrip.base_currency}${activeTrip.manual_rate > 0 ? ` ・ ¥${activeTrip.manual_rate}` : ''}`}
+              <View style={styles.heroBudgetRow}>
+                <View style={styles.heroBudgetCol}>
+                  <ThemedText style={styles.heroBudgetLabel}>残り予算</ThemedText>
+                  <ThemedText style={styles.heroBudgetValue} numberOfLines={1}>
+                    {tripBudgetJpy > 0 ? formatJpy(stats.remainingBudget) : '予算未設定'}
                   </ThemedText>
                 </View>
-                <View style={styles.activeTripActions}>
-                  <TouchableOpacity
-                    style={[styles.smallBtn, { borderColor: theme.backgroundSelected }]}
-                    onPress={() => handleStartEdit(activeTrip)}>
-                    <ThemedText type="small">編集</ThemedText>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.smallBtn, { borderColor: theme.backgroundSelected }]}
-                    onPress={showTripList ? () => setShowTripList(false) : handleShowTrips}>
-                    <ThemedText type="small">{showTripList ? '閉じる' : '切り替え'}</ThemedText>
-                  </TouchableOpacity>
+                <View style={styles.heroRateCol}>
+                  <ThemedText style={styles.heroRate}>
+                    {activeTrip.base_currency === 'JPY'
+                      ? '円のみ'
+                      : activeTrip.manual_rate > 0
+                        ? `1 ${activeTrip.base_currency} = ¥${activeTrip.manual_rate}`
+                        : 'レート未設定'}
+                  </ThemedText>
+                  {dateRange != null && <ThemedText style={styles.heroDate}>{dateRange}</ThemedText>}
                 </View>
               </View>
-            ) : (
-              <ThemedText type="small" themeColor="textSecondary">
-                旅行が未作成です
+
+              <View style={styles.heroActions}>
+                <TouchableOpacity
+                  style={styles.heroBtn}
+                  onPress={() => handleStartEdit(activeTrip)}
+                  activeOpacity={0.8}>
+                  <ThemedText style={styles.heroBtnText}>旅行を編集</ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.heroBtn}
+                  onPress={() => setShowSwitch(true)}
+                  activeOpacity={0.8}>
+                  <ThemedText style={styles.heroBtnText}>旅行を切り替える</ThemedText>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.hero}>
+              <ThemedText style={styles.heroName}>旅行がありません</ThemedText>
+              <ThemedText style={styles.heroEmptyBody}>
+                旅行を作成すると、レート・予算に合わせて記録できます。
               </ThemedText>
-            )}
-
-            {/* 旅行リスト */}
-            {showTripList && trips.length > 0 && (
-              <View style={styles.tripList}>
-                {trips.map((t) => (
-                  <View key={t.id} style={styles.tripListRow}>
-                    <TouchableOpacity
-                      style={styles.tripListName}
-                      onPress={() => handleSwitch(t.id)}>
-                      <View style={styles.tripListNameRow}>
-                        <ThemedText
-                          type="smallBold"
-                          style={activeTrip?.id === t.id ? styles.activeTripLabel : undefined}>
-                          {t.name}
-                        </ThemedText>
-                        {activeTrip?.id === t.id && (
-                          <View style={styles.selectedBadge}>
-                            <ThemedText style={styles.selectedBadgeText}>選択中</ThemedText>
-                          </View>
-                        )}
-                      </View>
-                      <ThemedText type="small" themeColor="textSecondary">
-                        {t.base_currency === 'JPY'
-                          ? '🇯🇵 国内モード'
-                          : `${t.base_currency} → JPY${t.manual_rate > 0 ? `  ·  1 ${t.base_currency} = ¥${t.manual_rate}` : '  ·  レート未設定'}`}
-                      </ThemedText>
-                      <ThemedText type="small" themeColor="textSecondary">
-                        予算 {t.budget_jpy > 0 ? `¥${t.budget_jpy.toLocaleString()}` : '未設定'}
-                      </ThemedText>
-                    </TouchableOpacity>
-                    <View style={styles.tripListActions}>
-                      <TouchableOpacity
-                        hitSlop={8}
-                        onPress={() => handleStartEdit(t)}>
-                        <ThemedText type="small" style={styles.editBtn}>編集</ThemedText>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        hitSlop={8}
-                        onPress={() => handleRemove(t.id, t.name)}>
-                        <ThemedText type="small" style={styles.removeBtn}>アーカイブ</ThemedText>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {/* 旅行編集フォーム */}
-            {editingTripId !== null && (
-              <View style={styles.createForm}>
-                <ThemedText type="smallBold" style={styles.editFormTitle}>旅行を編集</ThemedText>
-                <TextInput
-                  style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                  value={editName}
-                  onChangeText={setEditName}
-                  placeholder="旅行名"
-                  placeholderTextColor={theme.textSecondary}
-                />
-                <ThemedText type="small" themeColor="textSecondary">通貨</ThemedText>
-                <View style={styles.chips}>
-                  {CURRENCY_CODES.map((code) => {
-                    const c = CURRENCIES[code as CurrencyCode];
-                    const selected = editCurrency === code;
-                    return (
-                      <TouchableOpacity
-                        key={code}
-                        style={[styles.chip, selected && styles.chipSelected]}
-                        onPress={() => setEditCurrency(code as CurrencyCode)}>
-                        <ThemedText type="small" style={selected ? styles.chipTextSelected : undefined}>
-                          {c.flag} {code}
-                        </ThemedText>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                {editCurrency !== 'JPY' && (
-                  <TextInput
-                    style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                    value={editRate}
-                    onChangeText={setEditRate}
-                    placeholder={`レート（例：1 ${editCurrency} = ¥148.5）`}
-                    placeholderTextColor={theme.textSecondary}
-                    keyboardType="decimal-pad"
-                  />
-                )}
-                <View style={styles.budgetRow}>
-                  <ThemedText type="small" themeColor="textSecondary" style={styles.budgetPrefix}>¥</ThemedText>
-                  <TextInput
-                    style={[styles.input, styles.budgetInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                    value={editBudget}
-                    onChangeText={setEditBudget}
-                    placeholder="予算（例：50000）"
-                    placeholderTextColor={theme.textSecondary}
-                    keyboardType="number-pad"
-                  />
-                </View>
-                <View style={styles.formButtons}>
-                  <TouchableOpacity
-                    style={[styles.formBtn, styles.formBtnCancel, { borderColor: theme.backgroundSelected }]}
-                    onPress={() => setEditingTripId(null)}>
-                    <ThemedText type="small">キャンセル</ThemedText>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.formBtn,
-                      styles.formBtnCreate,
-                      (!editName.trim() || (editCurrency !== 'JPY' && parseFloat(editRate) <= 0)) && styles.formBtnDisabled,
-                    ]}
-                    onPress={handleSaveEdit}
-                    disabled={!editName.trim() || (editCurrency !== 'JPY' && parseFloat(editRate) <= 0)}>
-                    <ThemedText type="small" style={styles.formBtnCreateText}>保存</ThemedText>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
-            {/* 旅行作成フォーム */}
-            {editingTripId === null && creating ? (
-              <View style={styles.createForm}>
-                <TextInput
-                  style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                  value={newName}
-                  onChangeText={setNewName}
-                  placeholder="旅行名（例：ハワイ旅行）"
-                  placeholderTextColor={theme.textSecondary}
-                />
-                <ThemedText type="small" themeColor="textSecondary">通貨</ThemedText>
-                <View style={styles.chips}>
-                  {CURRENCY_CODES.map((code) => {
-                    const c = CURRENCIES[code as CurrencyCode];
-                    const selected = newCurrency === code;
-                    return (
-                      <TouchableOpacity
-                        key={code}
-                        style={[styles.chip, selected && styles.chipSelected]}
-                        onPress={() => setNewCurrency(code as CurrencyCode)}>
-                        <ThemedText type="small" style={selected ? styles.chipTextSelected : undefined}>
-                          {c.flag} {code}
-                        </ThemedText>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                {newCurrency !== 'JPY' && (
-                  <TextInput
-                    style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                    value={newRate}
-                    onChangeText={setNewRate}
-                    placeholder={`レート（例：1 ${newCurrency} = ¥148.5）`}
-                    placeholderTextColor={theme.textSecondary}
-                    keyboardType="decimal-pad"
-                  />
-                )}
-                <View style={styles.budgetRow}>
-                  <ThemedText type="small" themeColor="textSecondary" style={styles.budgetPrefix}>¥</ThemedText>
-                  <TextInput
-                    style={[styles.input, styles.budgetInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                    value={newBudget}
-                    onChangeText={setNewBudget}
-                    placeholder="予算（例：50000）"
-                    placeholderTextColor={theme.textSecondary}
-                    keyboardType="number-pad"
-                  />
-                </View>
-                <View style={styles.formButtons}>
-                  <TouchableOpacity
-                    style={[styles.formBtn, styles.formBtnCancel, { borderColor: theme.backgroundSelected }]}
-                    onPress={() => setCreating(false)}>
-                    <ThemedText type="small">キャンセル</ThemedText>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.formBtn,
-                      styles.formBtnCreate,
-                      (!newName.trim() || (newCurrency !== 'JPY' && parseFloat(newRate) <= 0)) && styles.formBtnDisabled,
-                    ]}
-                    onPress={handleCreate}
-                    disabled={!newName.trim() || (newCurrency !== 'JPY' && parseFloat(newRate) <= 0)}>
-                    <ThemedText type="small" style={styles.formBtnCreateText}>作成</ThemedText>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : editingTripId === null && (
               <TouchableOpacity
-                style={styles.addTripBtn}
-                onPress={() => { setCreating(true); setShowTripList(false); }}>
-                <ThemedText type="small" style={styles.addTripBtnText}>+ 新しい旅行を作成</ThemedText>
+                style={styles.heroBtn}
+                onPress={() => router.push('/trip-create')}
+                activeOpacity={0.8}>
+                <ThemedText style={styles.heroBtnText}>＋ 旅行を作成</ThemedText>
               </TouchableOpacity>
-            )}
-          </ThemedView>
-
-          {/* Pro バナー */}
-          {!isPro && (
-            <ThemedView type="backgroundElement" style={styles.section}>
-              <ThemedText type="smallBold" style={styles.sectionTitle}>旅レートカメラ Pro</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary" style={styles.proDesc}>
-                • 為替レート自動取得{'\n'}
-                • 履歴保存無制限{'\n'}
-                • 複数旅行管理{'\n'}
-                • ライブ円換算ウィジェット
-              </ThemedText>
-              <TouchableOpacity style={styles.proButton} disabled>
-                <ThemedText type="smallBold" style={styles.proButtonText}>
-                  Pro版にアップグレード（準備中）
-                </ThemedText>
-              </TouchableOpacity>
-            </ThemedView>
+            </View>
           )}
 
-          {/* デフォルト通貨 */}
-          <ThemedView type="backgroundElement" style={styles.section}>
-            <ThemedText type="smallBold" style={styles.sectionTitle}>デフォルト通貨</ThemedText>
-            <View style={styles.chips}>
-              {FOREIGN_CURRENCY_CODES.map((code) => {
-                const c = CURRENCIES[code as CurrencyCode];
-                const selected = selectedCurrency === code;
-                return (
-                  <TouchableOpacity
-                    key={code}
-                    style={[styles.chip, selected && styles.chipSelected]}
-                    onPress={() => setSelectedCurrency(code as CurrencyCode)}>
-                    <ThemedText type="default">{c.flag}</ThemedText>
-                    <ThemedText
-                      type="small"
-                      style={selected ? styles.chipTextSelected : undefined}>
-                      {code}
-                    </ThemedText>
-                  </TouchableOpacity>
-                );
-              })}
+          {/* 作成 / 編集フォーム */}
+          {(creating || editingTripId !== null) && (
+            <View style={styles.formCard}>
+              <ThemedText style={styles.formTitle}>
+                {editingTripId !== null ? '旅行を編集' : '新しい旅行'}
+              </ThemedText>
+              <TextInput
+                style={styles.input}
+                value={editingTripId !== null ? editName : newName}
+                onChangeText={editingTripId !== null ? setEditName : setNewName}
+                placeholder="旅行名（例：ハワイ旅行）"
+                placeholderTextColor={color.faint2}
+              />
+              <ThemedText style={styles.formLabel}>通貨</ThemedText>
+              {renderCurrencyChips(
+                editingTripId !== null ? editCurrency : newCurrency,
+                editingTripId !== null ? setEditCurrency : setNewCurrency,
+                CURRENCY_CODES,
+              )}
+              {(editingTripId !== null ? editCurrency : newCurrency) !== 'JPY' && (
+                <TextInput
+                  style={styles.input}
+                  value={editingTripId !== null ? editRate : newRate}
+                  onChangeText={editingTripId !== null ? setEditRate : setNewRate}
+                  placeholder={`レート（例：1 ${editingTripId !== null ? editCurrency : newCurrency} = ¥148.5）`}
+                  placeholderTextColor={color.faint2}
+                  keyboardType="decimal-pad"
+                />
+              )}
+              <View style={styles.budgetRow}>
+                <ThemedText style={styles.budgetPrefix}>¥</ThemedText>
+                <TextInput
+                  style={[styles.input, styles.budgetInput]}
+                  value={editingTripId !== null ? editBudget : newBudget}
+                  onChangeText={editingTripId !== null ? setEditBudget : setNewBudget}
+                  placeholder="予算（例：50000）"
+                  placeholderTextColor={color.faint2}
+                  keyboardType="number-pad"
+                />
+              </View>
+              <View style={styles.formButtons}>
+                <SecondaryButton
+                  title="キャンセル"
+                  onPress={() => { setCreating(false); setEditingTripId(null); }}
+                  style={styles.formBtnFlex}
+                />
+                <PrimaryButton
+                  title={editingTripId !== null ? '保存' : '作成'}
+                  onPress={editingTripId !== null ? handleSaveEdit : handleCreate}
+                  disabled={editingTripId !== null ? !canSaveEdit : !canCreate}
+                  style={styles.formBtnFlex}
+                />
+              </View>
             </View>
-          </ThemedView>
+          )}
 
-          {/* レート設定リンク */}
-          <TouchableOpacity
-            style={styles.linkRow}
-            onPress={() => router.push('/rate-setup')}>
-            <ThemedText type="default">為替レートを設定</ThemedText>
-            <ThemedText type="default" themeColor="textSecondary"> →</ThemedText>
-          </TouchableOpacity>
+          {/* 旅行とレート */}
+          {editingTripId === null && !creating && (
+            <SettingSection title="旅行とレート">
+              <SettingRow
+                label="旅行管理"
+                value={`${trips.length}つの旅行`}
+                onPress={() => router.push('/trip-list')}
+              />
+              <SettingRow
+                label="レート設定"
+                value={activeTrip && activeTrip.base_currency !== 'JPY' && activeTrip.manual_rate > 0 ? `¥${activeTrip.manual_rate}` : undefined}
+                onPress={() => router.push('/rate-setup')}
+              />
+              <SettingRow
+                label="通貨選択"
+                value={selectedCurrency}
+                onPress={() => router.push('/currency-select')}
+              />
+            </SettingSection>
+          )}
+
+          {/* データ */}
+          {editingTripId === null && !creating && (
+            <SettingSection title="データ">
+              <SettingRow
+                label="データ管理"
+                value={`${totalCount}件保存`}
+                onPress={() => router.push('/data-management')}
+              />
+            </SettingSection>
+          )}
+
+          {/* サポート */}
+          {editingTripId === null && !creating && (
+            <SettingSection title="サポート">
+              <SettingRow label="ヘルプ・使い方" onPress={() => router.push('/help')} />
+              <SettingRow label="アプリについて" onPress={() => router.push('/app-info')} />
+            </SettingSection>
+          )}
+
+          {/* Pro導線（最下部・控えめ） */}
+          {editingTripId === null && !creating && !isPro && (
+            <SettingSection>
+              <SettingRow
+                label="旅レートカメラ Pro"
+                badge="Pro"
+                onPress={() => router.push('/pro')}
+              />
+            </SettingSection>
+          )}
         </ScrollView>
       </SafeAreaView>
-    </ThemedView>
+
+      <ActiveTripSwitchSheet
+        visible={showSwitch}
+        onClose={() => setShowSwitch(false)}
+        trips={trips}
+        activeTripId={activeTrip?.id ?? null}
+        onSelect={(id) => { setShowSwitch(false); handleSwitch(id); }}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  safeArea: { flex: 1 },
-  scroll: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.six, gap: Spacing.three },
-  title: { paddingTop: Spacing.three },
-  section: {
-    borderRadius: Spacing.two,
-    padding: Spacing.three,
-    gap: Spacing.two,
+  screen: { flex: 1, backgroundColor: color.bgScreen },
+  safe: { flex: 1 },
+  scroll: {
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 96,
+    gap: 18,
+    maxWidth: 480,
+    width: '100%',
+    alignSelf: 'center',
   },
-  sectionTitle: { marginBottom: Spacing.one },
+  title: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: color.text,
+    letterSpacing: -0.5,
+  },
 
-  activeTripBox: {
+  // ── 黒ヒーロー（現在の旅行） ──
+  hero: {
+    backgroundColor: color.dark,
+    borderRadius: radius.cardLg,
+    padding: 18,
+    gap: 16,
+    ...shadow.raised,
+  },
+  heroTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: Spacing.two,
+    gap: 10,
   },
-  activeTripInfo: { gap: 2, flex: 1 },
-  activeTripActions: { flexDirection: 'row', gap: Spacing.one },
-  smallBtn: {
-    borderWidth: 1,
-    borderRadius: Spacing.one,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: 4,
-  },
-  editFormTitle: { marginBottom: 2 },
-
-  tripList: { gap: Spacing.one },
-  tripListRow: {
+  heroNameWrap: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#cccccc44',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 1,
   },
-  tripListName: { flex: 1, gap: 3 },
-  tripListNameRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },
-  activeTripLabel: { color: '#208AEF', fontWeight: '700' },
-  selectedBadge: {
-    backgroundColor: '#208AEF22',
-    borderRadius: 4,
-    paddingHorizontal: 6,
+  heroName: {
+    fontSize: 19,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+    flexShrink: 1,
+  },
+  heroBadge: {
+    backgroundColor: color.primaryAccent,
+    borderRadius: radius.pill,
+    paddingHorizontal: 8,
     paddingVertical: 2,
   },
-  selectedBadgeText: { fontSize: 10, fontWeight: '700', color: '#208AEF' },
-  tripListActions: { flexDirection: 'row', gap: Spacing.two, paddingTop: 2 },
-  editBtn: { color: '#208AEF' },
-  removeBtn: { color: '#FF3B30' },
-
-  addTripBtn: {
-    paddingVertical: Spacing.one,
+  heroBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: color.dark,
   },
-  addTripBtnText: { color: '#208AEF', fontWeight: '600' },
-
-  createForm: { gap: Spacing.two },
-  input: {
-    borderWidth: 1,
-    borderRadius: Spacing.one,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.one,
-    fontSize: 15,
+  heroCurrency: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: color.primaryAccent,
+    flexShrink: 0,
   },
-  budgetRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  budgetPrefix: { fontSize: 15, paddingBottom: 1 },
-  budgetInput: { flex: 1 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one },
-  chip: {
+  heroEmptyBody: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: color.darkSub,
+    lineHeight: 20,
+  },
+  heroBudgetRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.one,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#cccccc55',
-  },
-  chipSelected: { borderColor: '#208AEF', backgroundColor: '#208AEF22' },
-  chipTextSelected: { color: '#208AEF', fontWeight: '700' },
-  formButtons: { flexDirection: 'row', gap: Spacing.two },
-  formBtn: {
-    flex: 1,
-    borderRadius: Spacing.one,
-    paddingVertical: Spacing.two,
-    alignItems: 'center',
-  },
-  formBtnCancel: { borderWidth: 1 },
-  formBtnCreate: { backgroundColor: '#208AEF' },
-  formBtnDisabled: { opacity: 0.4 },
-  formBtnCreateText: { color: '#fff', fontWeight: '700' },
-
-  proDesc: { lineHeight: 22 },
-  proButton: {
-    backgroundColor: '#208AEF',
-    borderRadius: Spacing.two,
-    padding: Spacing.two,
-    alignItems: 'center',
-    opacity: 0.5,
-  },
-  proButtonText: { color: '#ffffff' },
-  currencyGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.two,
-  },
-  linkRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     justifyContent: 'space-between',
-    paddingVertical: Spacing.three,
-    borderBottomWidth: 1,
-    borderBottomColor: '#cccccc44',
+    gap: 12,
   },
+  heroBudgetCol: { flexShrink: 1 },
+  heroBudgetLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: color.primaryAccent,
+    marginBottom: 2,
+  },
+  heroBudgetValue: {
+    fontSize: 30,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: -0.8,
+    fontVariant: ['tabular-nums'],
+  },
+  heroRateCol: { alignItems: 'flex-end', gap: 2 },
+  heroRate: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: color.darkSub,
+    fontVariant: ['tabular-nums'],
+  },
+  heroDate: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: color.darkMuted,
+    fontVariant: ['tabular-nums'],
+  },
+  heroActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  heroBtn: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: radius.button,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  heroBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  // ── 作成/編集フォーム ──
+  formCard: {
+    backgroundColor: color.card,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: color.line,
+    padding: spacing.lg,
+    gap: 12,
+    ...shadow.card,
+  },
+  formTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: color.text,
+  },
+  formLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: color.body,
+  },
+  input: {
+    borderWidth: 1.5,
+    borderColor: color.inputBorder,
+    borderRadius: radius.chip,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: color.text,
+    backgroundColor: color.card,
+  },
+  budgetRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  budgetPrefix: { fontSize: 18, fontWeight: '700', color: color.body },
+  budgetInput: { flex: 1 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderColor: color.inputBorder,
+    backgroundColor: color.card,
+  },
+  chipSelected: {
+    borderColor: color.primary,
+    backgroundColor: color.primarySoft,
+  },
+  chipText: { fontSize: 13, fontWeight: '600', color: color.body },
+  chipTextSelected: { color: color.primaryDark, fontWeight: '700' },
+  formButtons: { flexDirection: 'row', gap: 12, marginTop: 2 },
+  formBtnFlex: { flex: 1 },
 });

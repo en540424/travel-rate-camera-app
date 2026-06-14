@@ -1,135 +1,169 @@
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import type { CurrencyCode } from '@/constants/currencies';
-import { CURRENCIES, FOREIGN_CURRENCY_CODES } from '@/constants/currencies';
-import { Spacing } from '@/constants/theme';
+import { CURRENCIES } from '@/constants/currencies';
 import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
-import { useTheme } from '@/hooks/use-theme';
+import { color, radius, shadow } from '@/theme/tokens';
+import { formatJpy } from '@/utils/format';
 
 export default function RateSetupScreen() {
-  const { rates, saveRate } = useRates();
+  const { saveRate } = useRates();
   const { activeTrip, editTrip } = useTrips();
-  const theme = useTheme();
 
-  // 編集中の値を文字列で保持（各通貨ごと）
-  const [inputs, setInputs] = useState<Partial<Record<CurrencyCode, string>>>(
-    Object.fromEntries(
-      FOREIGN_CURRENCY_CODES.map((c) => [c, (rates[c] ?? 0) > 0 ? String(rates[c]) : '']),
-    ),
+  const currency = activeTrip?.base_currency ?? 'USD';
+  const isJpy = currency === 'JPY';
+  const c = CURRENCIES[currency];
+
+  const [rate, setRate] = useState(
+    activeTrip && activeTrip.manual_rate > 0 ? String(activeTrip.manual_rate) : '',
   );
 
+  const rateNum = parseFloat(rate);
+  const validRate = isFinite(rateNum) && rateNum > 0;
+  const examples = c.decimals > 0 ? [4.99, 24.0] : [1000, 5000];
+
   async function handleSave() {
-    for (const code of FOREIGN_CURRENCY_CODES) {
-      const raw = inputs[code];
-      if (!raw) continue;
-      const n = parseFloat(raw);
-      if (isFinite(n) && n > 0) {
-        await saveRate(code, n);
-        if (activeTrip && code === activeTrip.base_currency) {
-          await editTrip(activeTrip.id, { manual_rate: n });
-        }
-      }
+    if (!activeTrip || isJpy || !validRate) {
+      router.back();
+      return;
     }
+    await saveRate(currency, rateNum);
+    await editTrip(activeTrip.id, { manual_rate: rateNum });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     router.back();
   }
 
-  return (
-    <ThemedView style={styles.container}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView contentContainerStyle={styles.scroll}>
-          <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
-            各通貨の 1単位あたりのJPYレートを入力してください。
-          </ThemedText>
+  if (!activeTrip) {
+    return (
+      <View style={[styles.screen, styles.center]}>
+        <ThemedText style={styles.missingText}>旅行が選択されていません</ThemedText>
+        <ThemedText style={styles.missingSub}>先に旅行を作成・選択してください。</ThemedText>
+      </View>
+    );
+  }
 
-          {FOREIGN_CURRENCY_CODES.map((code) => {
-            const c = CURRENCIES[code];
-            return (
-              <ThemedView key={code} type="backgroundElement" style={styles.row}>
-                <View style={styles.rowLeft}>
-                  <ThemedText style={styles.flag}>{c.flag}</ThemedText>
-                  <View>
-                    <ThemedText type="smallBold">{c.code}</ThemedText>
-                    <ThemedText type="small" themeColor="textSecondary">{c.nameJa}</ThemedText>
-                  </View>
-                </View>
-                <View style={styles.rowRight}>
-                  <ThemedText type="small" themeColor="textSecondary" style={styles.jpyLabel}>
-                    ¥
-                  </ThemedText>
+  return (
+    <View style={styles.screen}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          {/* 黒ヒーロー：現在のレート */}
+          <View style={styles.hero}>
+            <View style={styles.heroTop}>
+              <ThemedText style={styles.heroTrip} numberOfLines={1}>{activeTrip.name}</ThemedText>
+              <ThemedText style={styles.heroDir}>{isJpy ? '🇯🇵 国内' : `${currency} → JPY`}</ThemedText>
+            </View>
+            <ThemedText style={styles.heroLabel}>現在のレート</ThemedText>
+            <ThemedText style={styles.heroRate}>
+              {isJpy ? '円のみ（換算なし）' : activeTrip.manual_rate > 0 ? `1 ${currency} = ¥${activeTrip.manual_rate}` : 'レート未設定'}
+            </ThemedText>
+          </View>
+
+          {isJpy ? (
+            <ThemedText style={styles.jpyNote}>
+              この旅行は日本円（国内モード）のため、為替レートの設定は不要です。
+            </ThemedText>
+          ) : (
+            <>
+              {/* レート入力 */}
+              <View style={styles.field}>
+                <ThemedText style={styles.label}>レートを変更</ThemedText>
+                <View style={styles.rateRow}>
+                  <ThemedText style={styles.ratePrefix}>1 {currency} =</ThemedText>
                   <TextInput
-                    style={[
-                      styles.input,
-                      { color: theme.text, borderColor: theme.backgroundSelected },
-                    ]}
-                    value={inputs[code] ?? ''}
-                    onChangeText={(v) =>
-                      setInputs((prev) => ({ ...prev, [code]: v }))
-                    }
+                    style={styles.rateInput}
+                    value={rate}
+                    onChangeText={setRate}
                     keyboardType="decimal-pad"
-                    placeholder="0.00"
-                    placeholderTextColor={theme.textSecondary}
+                    placeholder="158.00"
+                    placeholderTextColor={color.faint2}
                     returnKeyType="done"
                   />
+                  <ThemedText style={styles.rateSuffix}>円</ThemedText>
                 </View>
-              </ThemedView>
-            );
-          })}
+              </View>
 
-          <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-            <ThemedText type="smallBold" style={styles.saveButtonText}>
-              保存して戻る
-            </ThemedText>
-          </TouchableOpacity>
+              {/* 換算プレビュー */}
+              <View style={styles.preview}>
+                <ThemedText style={styles.previewTitle}>換算プレビュー</ThemedText>
+                {examples.map((amt) => (
+                  <View key={amt} style={styles.previewRow}>
+                    <ThemedText style={styles.previewFrom}>
+                      {c.symbol}{c.decimals > 0 ? amt.toFixed(2) : amt.toLocaleString()}
+                    </ThemedText>
+                    <ThemedText style={styles.previewArrow}>→</ThemedText>
+                    <ThemedText style={styles.previewTo}>
+                      {validRate ? `約 ${formatJpy(Math.round(amt * rateNum))}` : '—'}
+                    </ThemedText>
+                  </View>
+                ))}
+              </View>
+
+              <ThemedText style={styles.note}>ⓘ 保存するとメイン画面・履歴の円換算に反映されます</ThemedText>
+            </>
+          )}
         </ScrollView>
+
+        <View style={styles.footer}>
+          <Pressable
+            onPress={handleSave}
+            disabled={!isJpy && !validRate}
+            style={({ pressed }) => [
+              styles.saveBtn,
+              !isJpy && !validRate && styles.saveBtnDisabled,
+              pressed && (isJpy || validRate) && styles.pressed,
+            ]}>
+            <ThemedText style={[styles.saveBtnText, !isJpy && !validRate && styles.saveBtnTextDisabled]}>
+              {isJpy ? '戻る' : 'レートを保存'}
+            </ThemedText>
+          </Pressable>
+        </View>
       </KeyboardAvoidingView>
-    </ThemedView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  screen: { flex: 1, backgroundColor: color.bgScreen },
   flex: { flex: 1 },
-  scroll: {
-    padding: Spacing.three,
-    gap: Spacing.two,
+  center: { alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24 },
+  missingText: { fontSize: 16, fontWeight: '700', color: color.text },
+  missingSub: { fontSize: 13, fontWeight: '500', color: color.muted },
+  scroll: { padding: 18, paddingBottom: 40, gap: 18, maxWidth: 480, width: '100%', alignSelf: 'center' },
+  hero: { backgroundColor: color.dark, borderRadius: radius.cardLg, padding: 18, gap: 6, ...shadow.raised },
+  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 4 },
+  heroTrip: { fontSize: 15, fontWeight: '700', color: '#FFFFFF', flexShrink: 1 },
+  heroDir: { fontSize: 12.5, fontWeight: '700', color: color.primaryAccent },
+  heroLabel: { fontSize: 12, fontWeight: '700', color: color.primaryAccent },
+  heroRate: { fontSize: 26, fontWeight: '700', color: '#FFFFFF', letterSpacing: -0.6, fontVariant: ['tabular-nums'] },
+  jpyNote: { fontSize: 13.5, fontWeight: '500', color: color.body, lineHeight: 21, paddingHorizontal: 4 },
+  field: { gap: 8 },
+  label: { fontSize: 13, fontWeight: '700', color: color.body },
+  rateRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderWidth: 1.5, borderColor: color.primary, borderRadius: radius.chip,
+    paddingHorizontal: 14, backgroundColor: color.card,
   },
-  hint: { marginBottom: Spacing.two },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: Spacing.three,
-    borderRadius: Spacing.two,
+  ratePrefix: { fontSize: 15, fontWeight: '600', color: color.body },
+  rateInput: { flex: 1, fontSize: 22, fontWeight: '700', color: color.text, paddingVertical: 12, fontVariant: ['tabular-nums'] },
+  rateSuffix: { fontSize: 15, fontWeight: '600', color: color.body },
+  preview: {
+    backgroundColor: color.card, borderRadius: radius.card, borderWidth: 1, borderColor: color.line,
+    padding: 14, gap: 10, ...shadow.card,
   },
-  rowLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
-  rowRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },
-  flag: { fontSize: 28 },
-  jpyLabel: { fontSize: 16 },
-  input: {
-    width: 100,
-    borderWidth: 1,
-    borderRadius: Spacing.one,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.one,
-    fontSize: 16,
-    textAlign: 'right',
-  },
-  saveButton: {
-    marginTop: Spacing.three,
-    backgroundColor: '#208AEF',
-    borderRadius: Spacing.two,
-    padding: Spacing.three,
-    alignItems: 'center',
-  },
-  saveButtonText: { color: '#ffffff', fontSize: 16 },
+  previewTitle: { fontSize: 12, fontWeight: '700', color: color.muted },
+  previewRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  previewFrom: { fontSize: 14, fontWeight: '600', color: color.body, fontVariant: ['tabular-nums'] },
+  previewArrow: { fontSize: 14, color: color.faint2 },
+  previewTo: { fontSize: 15, fontWeight: '700', color: color.text, fontVariant: ['tabular-nums'] },
+  note: { fontSize: 12, fontWeight: '500', color: color.primary, paddingHorizontal: 4 },
+  footer: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 28, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: color.line2, backgroundColor: color.card },
+  saveBtn: { height: 52, borderRadius: radius.button, backgroundColor: color.primary, alignItems: 'center', justifyContent: 'center', ...shadow.cta },
+  saveBtnDisabled: { backgroundColor: '#EEF1F0', shadowOpacity: 0, elevation: 0 },
+  saveBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
+  saveBtnTextDisabled: { color: '#A6AEAB' },
+  pressed: { opacity: 0.85 },
 });

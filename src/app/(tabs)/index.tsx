@@ -7,6 +7,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CameraPreview } from '@/components/camera/CameraPreview';
 import { ThemedText } from '@/components/themed-text';
+import {
+  PriceResultCard,
+  SaveLimitBanner,
+} from '@/components/domain';
+import { EmptyState, SectionCard, SecondaryButton, PrimaryButton } from '@/components/ui';
 import type { ConversionDirection, CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES, FOREIGN_CURRENCY_CODES } from '@/constants/currencies';
 import {
@@ -14,19 +19,25 @@ import {
   FALLBACK_TRIP_NAME,
 } from '@/constants/camera-screen';
 import { DT } from '@/constants/designTokens';
+import { FREE_LIMITS } from '@/config/limits';
 import { useHistory } from '@/hooks/use-history';
 import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
+import { statusColor } from '@/theme/tokens';
 import { convert } from '@/utils/currency';
 import { extractMemoLines, extractPriceCandidates } from '@/utils/extract-prices';
-import { formatForeign, formatJpy, formatRate } from '@/utils/format';
+import { formatJpy, formatRate } from '@/utils/format';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
 const C = DT.colors;
 const MEMO_PREVIEW_COUNT = 3;
 const INPUT_ACCESSORY_ID_AMOUNT = 'camera-input-accessory-amount';
 const INPUT_ACCESSORY_ID_MEMO = 'camera-input-accessory-memo';
+const NEAR_SAVE_LIMIT = FREE_LIMITS.saves - 5;
+
+/** 撮影前メイン画面の撮影モード。価格OCR（既定）/ 商品写真（補助） */
+type CaptureMode = 'ocr' | 'photo';
 
 // iOS専用: キーボード上に「キーボードを閉じる」ボタンを表示するツールバー。
 // 同じ inputAccessoryViewID を複数のTextInputで共有すると、
@@ -65,12 +76,14 @@ export default function CameraScreen() {
   const [addedMemoLines, setAddedMemoLines] = useState<Set<string>>(new Set());
   const [memoExpanded, setMemoExpanded] = useState(false);
   const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
+  const [captureMode, setCaptureMode] = useState<CaptureMode>('ocr');
+  const [showManualInput, setShowManualInput] = useState(false);
 
   const scrollViewRef = useRef<ScrollView>(null);
   const inputCardYRef = useRef(0);
 
   const { rates } = useRates();
-  const { selectedCurrency, setSelectedCurrency } = useSettingsStore();
+  const { selectedCurrency, setSelectedCurrency, isPro } = useSettingsStore();
   const { history, totalCount, addEntry, reload } = useHistory();
   const { activeTrip } = useTrips();
 
@@ -90,9 +103,10 @@ export default function CameraScreen() {
   );
 
   const isJpyMode = activeTrip?.base_currency === 'JPY';
+  const currencyForDisplay = activeTrip?.base_currency ?? selectedCurrency;
   const tripRate = activeTrip?.manual_rate ?? 0;
-  const globalRate = rates[selectedCurrency] ?? 0;
-  const rate = isJpyMode ? 1 : (tripRate > 0 ? tripRate : globalRate);
+  const globalRate = rates[currencyForDisplay] ?? 0;
+  const rate = activeTrip ? (isJpyMode ? 1 : tripRate) : globalRate;
   const isReverse = !isJpyMode && inputMode === 'FROM_JPY';
   const inputNum = parseFloat(nativeAmount) || 0;
   const foreignAmount = isJpyMode ? inputNum : (isReverse ? convert(inputNum, rate, 'FROM_JPY') : inputNum);
@@ -100,7 +114,7 @@ export default function CameraScreen() {
   const canSave = isJpyMode
     ? !!activeTrip && inputNum > 0
     : !!activeTrip && rate > 0 && foreignAmount > 0 && jpyAmount > 0;
-  const c = CURRENCIES[isJpyMode ? 'JPY' : selectedCurrency];
+  const c = CURRENCIES[currencyForDisplay];
 
   const hasInputToReset = !!(
     nativeAmount ||
@@ -119,9 +133,28 @@ export default function CameraScreen() {
   const remainingIfSaved = canSave
     ? Math.max(0, stats.remainingBudget - Math.round(jpyAmount))
     : null;
-  const budgetUsedRatio = tripBudgetJpy > 0
-    ? Math.min(1, stats.purchasedTotalJpy / tripBudgetJpy)
-    : 0;
+
+  // 下部サマリー「今日」用。既存の history を読むだけ（新規クエリなし）
+  const todayCount = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const d = now.getDate();
+    return history.filter((row) => {
+      if (row.entry_date) {
+        const [ry, rm, rd] = row.entry_date.split('-').map((v) => parseInt(v, 10));
+        return ry === y && rm === m + 1 && rd === d;
+      }
+      const iso = row.created_at.includes('T')
+        ? row.created_at
+        : `${row.created_at.replace(' ', 'T')}Z`;
+      const dt = new Date(iso);
+      return dt.getFullYear() === y && dt.getMonth() === m && dt.getDate() === d;
+    }).length;
+  }, [history]);
+
+  // 入力カードは「OCR後」または「手入力で記録を開いたとき」だけ前面に出す（撮影前は主役＝カメラ）
+  const showInputCard = ocrResult != null || showManualInput;
 
   const isWeb = Platform.OS === 'web';
 
@@ -257,6 +290,12 @@ export default function CameraScreen() {
     setPendingPhotoUri(null);
     setOcrPhotoUri(null);
     setPhotoPreviewVisible(false);
+    setShowManualInput(false);
+  }
+
+  function openManualInput() {
+    setShowManualInput(true);
+    scrollToInputCard();
   }
 
   function handleCopyRawToMemo() {
@@ -278,10 +317,11 @@ export default function CameraScreen() {
     setPendingPhotoUri(null);
     setOcrPhotoUri(null);
     setPhotoPreviewVisible(false);
+    setShowManualInput(false);
   }
 
   async function handleSaveCandidate() {
-    if (!canSave) return;
+    if (!canSave || !activeTrip) return;
     let savedPhotoUri: string | undefined;
     if (pendingPhotoUri && Platform.OS !== 'web') {
       try {
@@ -298,9 +338,19 @@ export default function CameraScreen() {
         console.warn('[photo save]', e);
       }
     }
-    const currencyToSave: CurrencyCode = isJpyMode ? 'JPY' : selectedCurrency;
+    const currencyToSave = activeTrip.base_currency;
+    const rateToSave = currencyToSave === 'JPY' ? 1 : activeTrip.manual_rate;
+    const foreignAmountToSave = currencyToSave === 'JPY' ? jpyAmount : foreignAmount;
     try {
-      await addEntry(currencyToSave, foreignAmount, jpyAmount, rate, memo.trim() || undefined, savedPhotoUri, saveAsPurchased);
+      await addEntry(
+        currencyToSave,
+        foreignAmountToSave,
+        jpyAmount,
+        rateToSave,
+        memo.trim() || undefined,
+        savedPhotoUri,
+        saveAsPurchased,
+      );
     } catch (e) {
       console.warn('[save error]', e);
       Alert.alert(
@@ -319,6 +369,7 @@ export default function CameraScreen() {
     setOcrPhotoUri(null);
     setPhotoPreviewVisible(false);
     setSaveAsPurchased(false);
+    setShowManualInput(false);
     if (Platform.OS !== 'web') {
       try {
         const { notificationAsync, NotificationFeedbackType } = await import('expo-haptics');
@@ -332,7 +383,7 @@ export default function CameraScreen() {
   const cameraPreview = (
     <CameraPreview
       key={scanKey}
-      currency={selectedCurrency}
+      currency={currencyForDisplay}
       rate={rate}
       remainingIfSaved={remainingIfSaved}
       onOcrResult={Platform.OS !== 'web' ? handleOcrResult : undefined}
@@ -353,33 +404,56 @@ export default function CameraScreen() {
 
           <View style={styles.container}>
 
-            {/* 上部：旅行コンテキスト（旅行名が主役） */}
-            <View style={styles.topSection}>
-              <ThemedText style={styles.tripName} numberOfLines={1}>
-                {tripName}
-              </ThemedText>
-
-              <View style={styles.contextRow}>
+            {/* 上部：旅行名 ＋ 小さいレートチップ（v4撮影前ヘッダー） */}
+            {activeTrip ? (
+              <View style={styles.header}>
+                <ThemedText style={styles.headerTripName} numberOfLines={1}>
+                  {tripName}
+                </ThemedText>
                 {isJpyMode ? (
-                  <View style={styles.modeChip}>
-                    <ThemedText style={styles.modeChipText}>
-                      🇯🇵 JPY 国内モード
-                    </ThemedText>
+                  <View style={styles.rateChip}>
+                    <ThemedText style={styles.rateChipText}>🇯🇵 JPY 国内</ThemedText>
                   </View>
                 ) : (
                   <TouchableOpacity
-                    style={styles.modeChip}
+                    style={styles.rateChip}
                     onPress={cycleCurrency}
                     activeOpacity={0.75}>
-                    <ThemedText style={styles.modeChipText}>
-                      {c.flag} {selectedCurrency} → JPY
+                    <ThemedText style={styles.rateChipText} numberOfLines={1}>
+                      {c.flag} {rate > 0 ? formatRate(rate, currencyForDisplay) : 'レート未設定'}
                     </ThemedText>
                   </TouchableOpacity>
                 )}
-                <ThemedText style={styles.rateInline} numberOfLines={1}>
-                  {isJpyMode ? '変換なし' : (rate > 0 ? formatRate(rate, selectedCurrency) : 'レート未設定')}
-                </ThemedText>
               </View>
+            ) : (
+              <EmptyState
+                tone="neutral"
+                title="旅行が選択されていません"
+                body="設定で旅行を作成するか、既存の旅行を選択すると、レートや予算に合わせて記録できます。"
+                primary={{ title: '設定で旅行を作成・選択', onPress: () => router.push('/settings') }}
+              />
+            )}
+
+            {/* モード切替セグメント（価格OCR / 商品写真） */}
+            <View style={styles.modeSegment}>
+              <TouchableOpacity
+                style={[styles.modeSegmentBtn, captureMode === 'ocr' && styles.modeSegmentBtnActive]}
+                onPress={() => setCaptureMode('ocr')}
+                activeOpacity={0.8}>
+                <ThemedText
+                  style={[styles.modeSegmentText, captureMode === 'ocr' && styles.modeSegmentTextActive]}>
+                  価格OCR
+                </ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modeSegmentBtn, captureMode === 'photo' && styles.modeSegmentBtnActive]}
+                onPress={() => setCaptureMode('photo')}
+                activeOpacity={0.8}>
+                <ThemedText
+                  style={[styles.modeSegmentText, captureMode === 'photo' && styles.modeSegmentTextActive]}>
+                  商品写真
+                </ThemedText>
+              </TouchableOpacity>
             </View>
 
             {/* 中央：カメラ（主役） */}
@@ -389,7 +463,7 @@ export default function CameraScreen() {
 
             {/* OCR結果カード（Web では表示しない） */}
             {!isWeb && ocrResult != null && (
-              <View style={styles.ocrCard}>
+              <SectionCard style={styles.ocrCard}>
                 {/* ヘッダー */}
                 <View style={styles.ocrCardHeader}>
                   <ThemedText style={styles.ocrCardTitle}>読み取り結果</ThemedText>
@@ -513,13 +587,13 @@ export default function CameraScreen() {
                     </TouchableOpacity>
                   </View>
                 )}
-              </View>
+              </SectionCard>
             )}
 
-            {/* 金額入力カード（保存確認カード）*/}
-            <View
-              style={styles.inputCard}
-              onLayout={(e) => { inputCardYRef.current = e.nativeEvent.layout.y; }}>
+            {/* 金額入力カード（保存確認カード）: 撮影前は非表示。OCR後 or 手入力で記録のときだけ表示 */}
+            {showInputCard && (
+            <View onLayout={(e) => { inputCardYRef.current = e.nativeEvent.layout.y; }}>
+            <SectionCard style={styles.inputCard}>
 
               {/* 価格反映フィードバック */}
               {selectedPrice != null && nativeAmount === selectedPrice && (
@@ -538,7 +612,7 @@ export default function CameraScreen() {
                     onPress={() => switchInputMode('TO_JPY')}
                     activeOpacity={0.75}>
                     <ThemedText style={[styles.inputModeBtnText, !isReverse && styles.inputModeBtnTextActive]}>
-                      {selectedCurrency} → JPY
+                      {currencyForDisplay} → JPY
                     </ThemedText>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -546,7 +620,7 @@ export default function CameraScreen() {
                     onPress={() => switchInputMode('FROM_JPY')}
                     activeOpacity={0.75}>
                     <ThemedText style={[styles.inputModeBtnText, isReverse && styles.inputModeBtnTextActive]}>
-                      JPY → {selectedCurrency}
+                      JPY → {currencyForDisplay}
                     </ThemedText>
                   </TouchableOpacity>
                 </View>
@@ -568,19 +642,17 @@ export default function CameraScreen() {
                   selectTextOnFocus
                   inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID_AMOUNT : undefined}
                 />
-                {isJpyMode
-                  ? null
-                  : isReverse
-                    ? (foreignAmount > 0 && (
-                        <ThemedText style={styles.inputJpy}>
-                          ≈ {formatForeign(foreignAmount, selectedCurrency)}
-                        </ThemedText>
-                      ))
-                    : (jpyAmount > 0 && (
-                        <ThemedText style={styles.inputJpy}>≈ {formatJpy(jpyAmount)}</ThemedText>
-                      ))
-                }
               </View>
+
+              {/* 円換算結果（v4: 大きな表示） */}
+              {!isJpyMode && jpyAmount > 0 && (
+                <PriceResultCard
+                  jpyAmount={jpyAmount}
+                  foreignAmount={foreignAmount}
+                  currency={currencyForDisplay}
+                  rate={rate}
+                />
+              )}
 
               <View style={styles.cardDivider} />
 
@@ -675,16 +747,17 @@ export default function CameraScreen() {
                 </View>
               </View>
 
+              {/* 保存上限（無料版） */}
+              {!isPro && totalCount >= NEAR_SAVE_LIMIT && (
+                <SaveLimitBanner currentCount={totalCount} isPro={isPro} />
+              )}
+
               {/* 保存ボタン（カードの主役アクション） */}
-              <TouchableOpacity
-                style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
+              <PrimaryButton
+                title={saveAsPurchased ? '購入済みとして保存' : '買い物候補に保存'}
                 onPress={handleSaveCandidate}
                 disabled={!canSave}
-                activeOpacity={0.75}>
-                <ThemedText style={[styles.saveBtnText, !canSave && styles.saveBtnTextDisabled]}>
-                  {saveAsPurchased ? '購入済みとして保存' : '買い物候補に保存'}
-                </ThemedText>
-              </TouchableOpacity>
+              />
 
               {/* 入力をリセット（控えめなサブボタン） */}
               {hasInputToReset && (
@@ -695,97 +768,40 @@ export default function CameraScreen() {
                   <ThemedText style={styles.resetInputBtnText}>↺ 入力をリセット</ThemedText>
                 </TouchableOpacity>
               )}
+            </SectionCard>
             </View>
-
-            {/* 残り予算サマリー（判断の文脈・最重要数値） */}
-            {activeTrip ? (
-              <View style={styles.summaryCard}>
-                <ThemedText style={styles.summaryLabel}>残り予算</ThemedText>
-                <ThemedText
-                  style={[
-                    styles.remainingAmount,
-                    tripBudgetJpy <= 0 && styles.remainingAmountUnset,
-                  ]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.7}>
-                  {tripBudgetJpy > 0 ? formatJpy(stats.remainingBudget) : '未設定'}
-                </ThemedText>
-
-                {tripBudgetJpy > 0 && (
-                  <View style={styles.budgetBarTrack}>
-                    <View
-                      style={[
-                        styles.budgetBarFill,
-                        { width: `${budgetUsedRatio * 100}%` },
-                      ]}
-                    />
-                  </View>
-                )}
-
-                <View style={styles.summaryGrid}>
-                  <View style={styles.summaryGridItem}>
-                    <ThemedText style={styles.summaryGridLabel}>買い物候補</ThemedText>
-                    <ThemedText style={[styles.summaryGridValue, styles.summaryGridValueCandidate]}>
-                      {formatJpy(stats.candidateTotalJpy)}
-                    </ThemedText>
-                  </View>
-                  <View style={[styles.summaryGridItem, styles.summaryGridDivider]}>
-                    <ThemedText style={styles.summaryGridLabel}>購入済み</ThemedText>
-                    <ThemedText style={[styles.summaryGridValue, styles.summaryGridValuePurchased]}>
-                      {formatJpy(stats.purchasedTotalJpy)}
-                    </ThemedText>
-                  </View>
-                  <View style={[styles.summaryGridItem, styles.summaryGridDivider]}>
-                    <ThemedText style={styles.summaryGridLabel}>予算</ThemedText>
-                    <ThemedText
-                      style={[
-                        styles.summaryGridValue,
-                        tripBudgetJpy <= 0 && styles.summaryGridValueMuted,
-                      ]}>
-                      {tripBudgetJpy > 0 ? formatJpy(tripBudgetJpy) : '未設定'}
-                    </ThemedText>
-                  </View>
-                </View>
-              </View>
-            ) : (
-              <TouchableOpacity
-                style={styles.noTripBanner}
-                onPress={() => router.push('/settings')}
-                activeOpacity={0.75}>
-                <ThemedText style={styles.noTripBannerText}>
-                  旅行フォルダがありません
-                </ThemedText>
-                <ThemedText style={styles.noTripBannerLink}>
-                  設定で旅行を作成する →
-                </ThemedText>
-              </TouchableOpacity>
             )}
 
-            {/* 再スキャン */}
-            <View style={styles.judgmentSection}>
-              <TouchableOpacity
-                style={styles.rescanBtn}
-                onPress={handleRescan}
-                activeOpacity={0.75}>
-                <ThemedText style={styles.rescanBtnText}>もう一度読み取る</ThemedText>
-              </TouchableOpacity>
-            </View>
+            {/* 再スキャン（読み取り後のみ） */}
+            {ocrResult != null && (
+              <View style={styles.judgmentSection}>
+                <SecondaryButton title="もう一度読み取る" onPress={handleRescan} />
+              </View>
+            )}
 
-            {/* 補助導線 */}
-            <View style={styles.auxLinks}>
-              <TouchableOpacity
-                onPress={() => router.push('/converter')}
-                hitSlop={8}>
-                <ThemedText style={styles.auxLink}>手入力で換算</ThemedText>
-              </TouchableOpacity>
-              <ThemedText style={styles.auxDot}>·</ThemedText>
-              <TouchableOpacity
-                onPress={() => router.push('/rate-setup')}
-                hitSlop={8}>
-                <ThemedText style={styles.auxLink}>レート変更</ThemedText>
-              </TouchableOpacity>
-            </View>
+            {/* 下部：小さな予算サマリー ＋ 手入力サブ導線（撮影を邪魔しない） */}
+            {activeTrip && (
+              <View style={styles.bottomSummary}>
+                <View style={styles.bottomSummaryItem}>
+                  <ThemedText style={styles.bottomSummaryLabel}>残り</ThemedText>
+                  <ThemedText style={styles.bottomSummaryValue} numberOfLines={1}>
+                    {tripBudgetJpy > 0 ? formatJpy(stats.remainingBudget) : '—'}
+                  </ThemedText>
+                </View>
+                <View style={styles.bottomSummaryDivider} />
+                <View style={styles.bottomSummaryItem}>
+                  <ThemedText style={styles.bottomSummaryLabel}>今日</ThemedText>
+                  <ThemedText style={styles.bottomSummaryValue}>{todayCount}件</ThemedText>
+                </View>
+                <View style={styles.bottomSummaryDivider} />
+                <TouchableOpacity
+                  style={styles.bottomSummaryItem}
+                  onPress={openManualInput}
+                  activeOpacity={0.7}>
+                  <ThemedText style={styles.bottomSummaryAction}>✎ 手入力で記録</ThemedText>
+                </TouchableOpacity>
+              </View>
+            )}
 
           </View>
         </ScrollView>
@@ -855,43 +871,58 @@ const styles = StyleSheet.create({
     gap: 14,
   },
 
-  topSection: {
-    gap: 6,
-    paddingTop: 4,
-    marginBottom: 2,
-  },
-  tripName: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: C.textPrimary,
-    letterSpacing: -0.3,
-  },
-  contextRow: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
+    paddingTop: 4,
   },
-  modeChip: {
-    backgroundColor: C.surface,
-    borderRadius: DT.radius.pill,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.border,
-  },
-  modeChipText: {
-    fontSize: 15,
+  headerTripName: {
+    flex: 1,
+    fontSize: 20,
     fontWeight: '700',
     color: C.textPrimary,
+    letterSpacing: -0.3,
   },
-  rateInline: {
+  rateChip: {
+    maxWidth: '60%',
+    backgroundColor: C.primarySoft,
+    borderRadius: DT.radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  rateChipText: {
     fontSize: 13,
-    fontWeight: '500',
-    color: C.textMuted,
-    textAlign: 'right',
+    fontWeight: '700',
+    color: C.primaryDark,
   },
-
+  modeSegment: {
+    flexDirection: 'row',
+    backgroundColor: C.borderSoft,
+    borderRadius: DT.radius.md,
+    padding: 3,
+    gap: 3,
+  },
+  modeSegmentBtn: {
+    flex: 1,
+    paddingVertical: 9,
+    alignItems: 'center',
+    borderRadius: DT.radius.sm,
+  },
+  modeSegmentBtnActive: {
+    backgroundColor: C.surface,
+    ...DT.shadow.card,
+  },
+  modeSegmentText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: C.textMuted,
+  },
+  modeSegmentTextActive: {
+    color: C.textPrimary,
+    fontWeight: '700',
+  },
   cameraHero: {
     borderRadius: DT.radius.lg,
     overflow: 'hidden',
@@ -899,12 +930,7 @@ const styles = StyleSheet.create({
   },
 
   ocrCard: {
-    backgroundColor: C.surface,
-    borderRadius: DT.radius.lg,
-    padding: DT.spacing.md,
     gap: DT.spacing.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.border,
   },
   ocrCardHeader: {
     flexDirection: 'row',
@@ -1038,13 +1064,7 @@ const styles = StyleSheet.create({
   },
 
   inputCard: {
-    backgroundColor: C.surface,
-    borderRadius: DT.radius.lg,
-    padding: DT.spacing.md,
     gap: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.border,
-    ...DT.shadow.card,
   },
   reflectedBanner: {
     backgroundColor: C.primarySoft,
@@ -1102,13 +1122,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: C.textPrimary,
     paddingVertical: 0,
-  },
-  inputJpy: {
-    fontSize: 15,
-    lineHeight: 20,
-    fontWeight: '600',
-    color: C.textSecondary,
-    flexShrink: 1,
   },
   pendingPhotoBlock: {
     gap: 6,
@@ -1189,119 +1202,46 @@ const styles = StyleSheet.create({
     paddingLeft: 4,
   },
 
-  summaryCard: {
-    backgroundColor: C.surface,
-    borderRadius: DT.radius.lg,
-    padding: DT.spacing.lg,
-    gap: DT.spacing.md,
+  bottomSummary: {
+    flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: C.surface,
+    borderRadius: DT.radius.md,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.border,
-    ...DT.shadow.card,
+    paddingVertical: 10,
+    marginTop: 2,
   },
-  summaryLabel: {
-    fontSize: DT.fontSize.xs,
-    fontWeight: DT.fontWeight.semibold,
-    color: C.textMuted,
-    letterSpacing: 0.6,
-  },
-  remainingAmount: {
-    fontSize: DT.fontSize.xxl,
-    lineHeight: 46,
-    fontWeight: DT.fontWeight.bold,
-    color: C.textPrimary,
-    letterSpacing: -1,
-    paddingVertical: 4,
-  },
-  remainingAmountUnset: {
-    fontSize: DT.fontSize.lg,
-    lineHeight: 28,
-    fontWeight: DT.fontWeight.semibold,
-    color: C.textMuted,
-    letterSpacing: 0,
-    paddingVertical: 4,
-  },
-  budgetBarTrack: {
-    width: '100%',
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: C.borderSoft,
-    overflow: 'hidden',
-  },
-  budgetBarFill: {
-    height: '100%',
-    borderRadius: 3,
-    backgroundColor: C.primary,
-    minWidth: 0,
-  },
-  summaryGrid: {
-    flexDirection: 'row',
-    width: '100%',
-    paddingTop: DT.spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.border,
-  },
-  summaryGridItem: {
+  bottomSummaryItem: {
     flex: 1,
     alignItems: 'center',
     gap: 2,
   },
-  summaryGridDivider: {
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderLeftColor: C.border,
+  bottomSummaryDivider: {
+    width: StyleSheet.hairlineWidth,
+    alignSelf: 'stretch',
+    backgroundColor: C.border,
   },
-  summaryGridLabel: {
+  bottomSummaryLabel: {
     fontSize: DT.fontSize.xs,
     fontWeight: DT.fontWeight.semibold,
     color: C.textMuted,
   },
-  summaryGridValue: {
+  bottomSummaryValue: {
     fontSize: DT.fontSize.md,
     fontWeight: DT.fontWeight.bold,
     color: C.textPrimary,
     letterSpacing: -0.3,
   },
-  summaryGridValueCandidate: {
-    color: C.candidate,
-  },
-  summaryGridValuePurchased: {
-    color: C.purchased,
-  },
-  summaryGridValueMuted: {
-    color: C.textMuted,
-  },
-
-  noTripBanner: {
-    backgroundColor: C.surface,
-    borderRadius: DT.radius.lg,
-    padding: 20,
-    alignItems: 'center',
-    gap: 6,
-    borderWidth: 1.5,
-    borderColor: C.primary,
-    borderStyle: 'dashed',
-  },
-  noTripBannerText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: C.textSecondary,
-  },
-  noTripBannerLink: {
-    fontSize: 14,
-    fontWeight: '700',
+  bottomSummaryAction: {
+    fontSize: DT.fontSize.sm,
+    fontWeight: DT.fontWeight.bold,
     color: C.primary,
   },
 
   judgmentSection: {
     gap: 10,
     alignItems: 'stretch',
-  },
-  judgmentLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: C.textMuted,
-    textAlign: 'center',
-    letterSpacing: 0.2,
   },
   saveTargetRow: {
     flexDirection: 'row',
@@ -1327,12 +1267,12 @@ const styles = StyleSheet.create({
     backgroundColor: C.surface,
   },
   saveTargetPillCandidateActive: {
-    backgroundColor: C.candidateBg,
-    borderColor: C.candidate,
+    backgroundColor: statusColor.candidate.badgeBg,
+    borderColor: statusColor.candidate.border,
   },
   saveTargetPillPurchasedActive: {
-    backgroundColor: C.purchasedBg,
-    borderColor: C.purchased,
+    backgroundColor: statusColor.purchased.badgeBg,
+    borderColor: statusColor.purchased.border,
   },
   saveTargetPillText: {
     fontSize: DT.fontSize.sm,
@@ -1340,42 +1280,10 @@ const styles = StyleSheet.create({
     color: C.textSecondary,
   },
   saveTargetPillTextCandidateActive: {
-    color: C.candidate,
+    color: statusColor.candidate.text,
   },
   saveTargetPillTextPurchasedActive: {
-    color: C.purchased,
-  },
-  saveBtn: {
-    backgroundColor: C.primary,
-    borderRadius: DT.radius.md,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  saveBtnDisabled: {
-    backgroundColor: C.border,
-  },
-  saveBtnText: {
-    fontSize: DT.fontSize.md,
-    lineHeight: 22,
-    fontWeight: DT.fontWeight.bold,
-    color: '#fff',
-    letterSpacing: 0.2,
-  },
-  saveBtnTextDisabled: {
-    color: C.textSecondary,
-  },
-  rescanBtn: {
-    backgroundColor: C.surface,
-    borderRadius: DT.radius.md,
-    paddingVertical: 13,
-    alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.border,
-  },
-  rescanBtnText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: C.textPrimary,
+    color: statusColor.purchased.text,
   },
   resetInputBtn: {
     alignSelf: 'center',
@@ -1386,24 +1294,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: C.primary,
-  },
-
-  auxLinks: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 10,
-    paddingTop: 4,
-    paddingBottom: 8,
-  },
-  auxLink: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: C.primary,
-  },
-  auxDot: {
-    fontSize: 14,
-    color: C.textMuted,
   },
 
   photoPreviewOverlay: {

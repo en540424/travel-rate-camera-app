@@ -1,14 +1,11 @@
-import * as FileSystem from 'expo-file-system/legacy';
 import { Image } from 'expo-image';
-import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { FlatList, Pressable, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { PhotoModal } from '@/components/photo-modal';
-
 import { ThemedText } from '@/components/themed-text';
+import { EmptyState } from '@/components/ui';
 import { FALLBACK_BUDGET_JPY } from '@/constants/camera-screen';
 import { DT } from '@/constants/designTokens';
 import { CURRENCIES } from '@/constants/currencies';
@@ -17,195 +14,45 @@ import type { HistoryRow } from '@/db/queries/history';
 import { useHistory } from '@/hooks/use-history';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
+import { color, statusColor } from '@/theme/tokens';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
-type FilterMode = 'all' | 'candidate' | 'purchased' | 'has-memo' | 'has-photo';
-type SortMode   = 'newest' | 'price-desc' | 'price-asc';
+// 履歴メイン画面 v4（design 濃いタブ「履歴」/ history-v4-main）。
+// 上のすべて/候補/購入済みで絞り込み、残り予算を主役に、購入済み（ティール）・
+// 候補（アンバー）を点で色分け。カードタップで商品詳細画面へ遷移。
+type FilterMode = 'all' | 'candidate' | 'purchased';
 
-const FILTER_LABELS: Record<FilterMode, string> = {
-  all: 'すべて',
-  candidate: '候補',
-  purchased: '購入済み',
-  'has-memo': 'メモあり',
-  'has-photo': '写真あり',
-};
-const SORT_LABELS: Record<SortMode, string> = {
-  newest: '新しい順',
-  'price-desc': '高い順',
-  'price-asc': '安い順',
-};
+const SEGMENTS: { mode: FilterMode; label: string }[] = [
+  { mode: 'all', label: 'すべて' },
+  { mode: 'candidate', label: '候補' },
+  { mode: 'purchased', label: '購入済み' },
+];
 
-const FILTER_MODES = Object.keys(FILTER_LABELS) as FilterMode[];
-const SORT_MODES   = Object.keys(SORT_LABELS)   as SortMode[];
-
-// ─── 日付ピッカー定数 ─────────────────────────────────────────────
-
-const _refYear = new Date().getFullYear();
-const YEARS = Array.from({ length: 7 }, (_, i) => _refYear - 3 + i);
-const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
-
-function getDays(year: number, month: number): number[] {
-  return Array.from({ length: new Date(year, month, 0).getDate() }, (_, i) => i + 1);
-}
-
-// ─── 日付ユーティリティ ──────────────────────────────────────────
-
-function formatSavedAt(createdAt: string): string {
-  const iso = createdAt.includes('T') ? createdAt : `${createdAt.replace(' ', 'T')}Z`;
-  return new Date(iso).toLocaleDateString('ja-JP', {
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function resolveDisplayDate(row: HistoryRow): string {
+/** カード副題用の日付。「今日 12:09」「昨日 15:08」「6月12日」 */
+function formatCardDate(row: HistoryRow): string {
+  const iso = row.created_at.includes('T') ? row.created_at : `${row.created_at.replace(' ', 'T')}Z`;
+  const created = new Date(iso);
+  const time = `${String(created.getHours()).padStart(2, '0')}:${String(created.getMinutes()).padStart(2, '0')}`;
+  let basis = created;
   if (row.entry_date) {
-    const [, m, d] = row.entry_date.split('-');
-    return `${parseInt(m, 10)}月${parseInt(d, 10)}日`;
+    const [y, m, d] = row.entry_date.split('-').map(Number);
+    basis = new Date(y, m - 1, d);
   }
-  return formatSavedAt(row.created_at);
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(new Date()) - startOfDay(basis)) / 86_400_000);
+  if (diffDays === 0) return `今日 ${time}`;
+  if (diffDays === 1) return `昨日 ${time}`;
+  return `${basis.getMonth() + 1}月${basis.getDate()}日`;
 }
 
-function getInitialDateKey(row: HistoryRow): string {
-  if (row.entry_date) return row.entry_date;
-  const iso = row.created_at.includes('T')
-    ? row.created_at
-    : `${row.created_at.replace(' ', 'T')}Z`;
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function openDetail(id: number) {
+  router.push({ pathname: '/item-detail', params: { id: String(id) } });
 }
-
-// ─── WheelCol ─────────────────────────────────────────────────────
-
-const WHEEL_ITEM_H = 44;
-const WHEEL_VISIBLE = 3;
-
-function WheelCol({
-  items,
-  selected,
-  onSelect,
-  formatItem,
-}: {
-  items: number[];
-  selected: number;
-  onSelect: (v: number) => void;
-  formatItem?: (v: number) => string;
-}) {
-  const listRef = useRef<FlatList<number>>(null);
-  const onSelectRef = useRef(onSelect);
-  onSelectRef.current = onSelect;
-  const itemsRef = useRef(items);
-  itemsRef.current = items;
-
-  useEffect(() => {
-    const idx = items.indexOf(selected);
-    if (idx < 0) return;
-    const t = setTimeout(() => {
-      listRef.current?.scrollToIndex({ index: idx, animated: false });
-    }, 60);
-    return () => clearTimeout(t);
-  }, []); // mount only — parent remounts via key when items list changes
-
-  return (
-    <View style={wheelStyles.col}>
-      {/* 中央固定ハイライト — FlatList より前に描画 = 背面に固定 */}
-      <View pointerEvents="none" style={wheelStyles.highlight} />
-      <FlatList
-        ref={listRef}
-        data={items}
-        extraData={selected}
-        keyExtractor={(v) => String(v)}
-        snapToInterval={WHEEL_ITEM_H}
-        decelerationRate="fast"
-        showsVerticalScrollIndicator={false}
-        getItemLayout={(_, i) => ({ length: WHEEL_ITEM_H, offset: WHEEL_ITEM_H * i, index: i })}
-        contentContainerStyle={{ paddingVertical: WHEEL_ITEM_H * Math.floor(WHEEL_VISIBLE / 2) }}
-        onScrollToIndexFailed={() => {}}
-        onMomentumScrollEnd={(e) => {
-          const idx = Math.round(e.nativeEvent.contentOffset.y / WHEEL_ITEM_H);
-          const clamped = Math.max(0, Math.min(itemsRef.current.length - 1, idx));
-          onSelectRef.current(itemsRef.current[clamped]);
-        }}
-        renderItem={({ item }) => (
-          <View style={wheelStyles.item}>
-            <ThemedText
-              style={[wheelStyles.itemText, item === selected && wheelStyles.itemTextSelected]}>
-              {formatItem ? formatItem(item) : String(item)}
-            </ThemedText>
-          </View>
-        )}
-      />
-    </View>
-  );
-}
-
-const wheelStyles = StyleSheet.create({
-  col: {
-    flex: 1,
-    height: WHEEL_ITEM_H * WHEEL_VISIBLE,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  highlight: {
-    position: 'absolute',
-    top: WHEEL_ITEM_H * Math.floor(WHEEL_VISIBLE / 2),
-    left: 4,
-    right: 4,
-    height: WHEEL_ITEM_H,
-    backgroundColor: DT.colors.primarySoft,
-    borderRadius: 8,
-  },
-  item: {
-    height: WHEEL_ITEM_H,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  itemText: {
-    fontSize: 17,
-    fontWeight: '400',
-    color: DT.colors.textPrimary,
-  },
-  itemTextSelected: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: DT.colors.textPrimary,
-  },
-});
-
-// ─── HistoryScreen ────────────────────────────────────────────────
 
 export default function HistoryScreen() {
-  const { history, totalCount, clearAll, reload, togglePurchased, removeEntry, updateAmount, updateMemo, updateEntryDate, updateImageUri } = useHistory();
-
-  const removeEntryRef = useRef(removeEntry);
-  const togglePurchasedRef = useRef(togglePurchased);
-  const updateAmountRef = useRef(updateAmount);
-  const updateMemoRef = useRef(updateMemo);
-  const updateEntryDateRef = useRef(updateEntryDate);
-  const updateImageUriRef = useRef(updateImageUri);
-  removeEntryRef.current = removeEntry;
-  togglePurchasedRef.current = togglePurchased;
-  updateAmountRef.current = updateAmount;
-  updateMemoRef.current = updateMemo;
-  updateEntryDateRef.current = updateEntryDate;
-  updateImageUriRef.current = updateImageUri;
-
-  // 編集シート
-  const [editingItem, setEditingItem] = useState<HistoryRow | null>(null);
-  const [sheetAmount, setSheetAmount] = useState('');
-  const [sheetMemo, setSheetMemo] = useState('');
-  const [sheetYear, setSheetYear] = useState(0);
-  const [sheetMonth, setSheetMonth] = useState(1);
-  const [sheetDay, setSheetDay] = useState(1);
-  const [sheetIsPurchased, setSheetIsPurchased] = useState(false);
-  const [sheetOriginalDateKey, setSheetOriginalDateKey] = useState('');
-
-  const [photoModalUri, setPhotoModalUri] = useState<string | null>(null);
+  const { history, totalCount, reload } = useHistory();
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
-  const [sortMode,   setSortMode]   = useState<SortMode>('newest');
   const isPro = useSettingsStore((s) => s.isPro);
   const isLimited = !isPro && totalCount >= FREE_HISTORY_LIMIT;
   const { activeTrip } = useTrips();
@@ -217,16 +64,21 @@ export default function HistoryScreen() {
     [history, totalCount, tripBudgetJpy, activeTrip?.id],
   );
 
+  const counts = useMemo(() => {
+    let candidate = 0;
+    let purchased = 0;
+    for (const r of history) {
+      if ((r.is_purchased ?? 0) === 1) purchased += 1;
+      else candidate += 1;
+    }
+    return { all: history.length, candidate, purchased };
+  }, [history]);
+
   const displayHistory = useMemo(() => {
-    let result = history;
-    if (filterMode === 'candidate')  result = result.filter((r) => r.is_purchased === 0);
-    if (filterMode === 'purchased')  result = result.filter((r) => r.is_purchased === 1);
-    if (filterMode === 'has-memo')   result = result.filter((r) => !!r.memo);
-    if (filterMode === 'has-photo')  result = result.filter((r) => !!r.image_uri);
-    if (sortMode === 'price-desc')   result = [...result].sort((a, b) => b.jpy_amount - a.jpy_amount);
-    if (sortMode === 'price-asc')    result = [...result].sort((a, b) => a.jpy_amount - b.jpy_amount);
-    return result;
-  }, [history, filterMode, sortMode]);
+    if (filterMode === 'candidate') return history.filter((r) => (r.is_purchased ?? 0) === 0);
+    if (filterMode === 'purchased') return history.filter((r) => (r.is_purchased ?? 0) === 1);
+    return history;
+  }, [history, filterMode]);
 
   useFocusEffect(
     useCallback(() => {
@@ -234,359 +86,146 @@ export default function HistoryScreen() {
     }, [reload]),
   );
 
-  function handleDeleteItem(item: HistoryRow) {
-    Alert.alert(
-      '買い物候補をアーカイブしますか？',
-      'この候補を履歴からアーカイブします。この操作は取り消せません。',
-      [
-        { text: 'キャンセル', style: 'cancel' },
-        {
-          text: 'アーカイブ',
-          style: 'destructive',
-          onPress: async () => {
-            if (item.image_uri && Platform.OS !== 'web') {
-              try {
-                await FileSystem.deleteAsync(item.image_uri, { idempotent: true });
-              } catch {}
-            }
-            removeEntryRef.current(item.id);
-          },
-        },
-      ],
-    );
-  }
-
-  function handleClearAll() {
-    const isFiltered = filterMode !== 'all';
-    const message = isFiltered
-      ? 'この操作は取り消せません。表示中だけでなく全履歴が削除されます。'
-      : 'この操作は取り消せません。';
-    Alert.alert('すべての履歴を削除しますか？', message, [
-      { text: 'キャンセル', style: 'cancel' },
-      {
-        text: 'すべて削除',
-        style: 'destructive',
-        onPress: async () => {
-          if (Platform.OS !== 'web') {
-            try {
-              const docsDir = FileSystem.documentDirectory;
-              if (docsDir) {
-                await FileSystem.deleteAsync(`${docsDir}photos/`, { idempotent: true });
-              }
-            } catch {}
-          }
-          clearAll();
-        },
-      },
-    ]);
-  }
-
-  async function handleAddImage(item: HistoryRow) {
-    if (Platform.OS === 'web') return;
-    const picked = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.8,
-      allowsEditing: false,
-    });
-    if (picked.canceled || !picked.assets[0]) return;
-    const docsDir = FileSystem.documentDirectory;
-    const photosDir = `${docsDir}photos/`;
-    await FileSystem.makeDirectoryAsync(photosDir, { intermediates: true });
-    const destUri = `${photosDir}${Date.now()}.jpg`;
-    await FileSystem.copyAsync({ from: picked.assets[0].uri, to: destUri });
-    await updateImageUriRef.current(item.id, destUri);
-  }
-
-  async function handleChangeImage(item: HistoryRow) {
-    if (Platform.OS === 'web') return;
-    const picked = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.8,
-      allowsEditing: false,
-    });
-    if (picked.canceled || !picked.assets[0]) return;
-    if (item.image_uri) {
-      try { await FileSystem.deleteAsync(item.image_uri, { idempotent: true }); } catch {}
-    }
-    const docsDir = FileSystem.documentDirectory;
-    const photosDir = `${docsDir}photos/`;
-    await FileSystem.makeDirectoryAsync(photosDir, { intermediates: true });
-    const destUri = `${photosDir}${Date.now()}.jpg`;
-    await FileSystem.copyAsync({ from: picked.assets[0].uri, to: destUri });
-    await updateImageUriRef.current(item.id, destUri);
-  }
-
-  function handleDeleteImage(item: HistoryRow) {
-    Alert.alert(
-      '画像を削除しますか？',
-      'この記録から画像を削除します。この操作は取り消せません。',
-      [
-        { text: 'キャンセル', style: 'cancel' },
-        {
-          text: '削除',
-          style: 'destructive',
-          onPress: async () => {
-            if (item.image_uri && Platform.OS !== 'web') {
-              try { await FileSystem.deleteAsync(item.image_uri, { idempotent: true }); } catch {}
-            }
-            updateImageUriRef.current(item.id, null);
-          },
-        },
-      ],
-    );
-  }
-
-  function openEditSheet(item: HistoryRow) {
-    const dateKey = getInitialDateKey(item);
-    const [y, m, d] = dateKey.split('-').map(Number);
-    setEditingItem(item);
-    setSheetAmount(item.currency === 'JPY' ? String(item.jpy_amount) : String(item.foreign_amount));
-    setSheetMemo(item.memo ?? '');
-    setSheetYear(y);
-    setSheetMonth(m);
-    setSheetDay(Math.min(d, new Date(y, m, 0).getDate()));
-    setSheetIsPurchased((item.is_purchased ?? 0) === 1);
-    setSheetOriginalDateKey(dateKey);
-  }
-
-  function closeEditSheet() {
-    setEditingItem(null);
-  }
-
-  function handleSheetYearChange(y: number) {
-    setSheetYear(y);
-    const maxDay = new Date(y, sheetMonth, 0).getDate();
-    setSheetDay((prev) => Math.min(prev, maxDay));
-  }
-
-  function handleSheetMonthChange(m: number) {
-    setSheetMonth(m);
-    const maxDay = new Date(sheetYear, m, 0).getDate();
-    setSheetDay((prev) => Math.min(prev, maxDay));
-  }
-
-  async function handleSaveSheet() {
-    if (!editingItem) return;
-    const id = editingItem.id;
-    const updates: Promise<void>[] = [];
-
-    if (editingItem.currency === 'JPY') {
-      const amount = parseInt(sheetAmount.trim(), 10);
-      if (isFinite(amount) && amount > 0 && amount !== editingItem.jpy_amount) {
-        updates.push(updateAmountRef.current(id, amount, amount));
-      }
-    } else {
-      const foreign = parseFloat(sheetAmount.trim());
-      if (isFinite(foreign) && foreign > 0 && foreign !== editingItem.foreign_amount) {
-        const jpy = Math.round(foreign * editingItem.rate_used);
-        updates.push(updateAmountRef.current(id, foreign, jpy));
-      }
-    }
-
-    updates.push(updateMemoRef.current(id, sheetMemo.trim() || null));
-
-    const newDateKey = `${sheetYear}-${String(sheetMonth).padStart(2, '0')}-${String(sheetDay).padStart(2, '0')}`;
-    if (newDateKey !== sheetOriginalDateKey) {
-      updates.push(updateEntryDateRef.current(id, newDateKey));
-    }
-
-    const wasPurchased = (editingItem.is_purchased ?? 0) === 1;
-    if (sheetIsPurchased !== wasPurchased) {
-      updates.push(togglePurchasedRef.current(id, editingItem.is_purchased ?? 0));
-    }
-
-    if (updates.length > 0) await Promise.all(updates);
-    setEditingItem(null);
-  }
-
-  function handleImageButton(item: HistoryRow) {
-    if (Platform.OS === 'web') return;
-    if (item.image_uri) {
-      Alert.alert('画像', '', [
-        { text: 'キャンセル', style: 'cancel' },
-        { text: '変更', onPress: () => handleChangeImage(item) },
-        { text: '削除', style: 'destructive', onPress: () => handleDeleteImage(item) },
-      ]);
-    } else {
-      handleAddImage(item);
-    }
-  }
-
   function renderItem({ item }: { item: HistoryRow }) {
-    const displayDate = resolveDisplayDate(item);
     const isPurchased = (item.is_purchased ?? 0) === 1;
     const isForeign = item.currency !== 'JPY';
+    const tone = isPurchased ? statusColor.purchased : statusColor.candidate;
+    const hasMemo = !!item.memo?.trim();
+    const titleText = hasMemo ? item.memo!.trim() : '（メモなし）';
+
+    const subParts: string[] = [];
+    if (isForeign) subParts.push(formatForeign(item.foreign_amount, item.currency));
+    subParts.push(formatCardDate(item));
+    const subtitle = subParts.join(' ・ ');
 
     return (
-      <View style={styles.candidateCard}>
-        <View style={styles.cardBody}>
-          {!!item.image_uri && (
-            <TouchableOpacity
-              onPress={() => setPhotoModalUri(item.image_uri!)}
-              activeOpacity={0.8}
-              style={styles.thumbCol}>
-              <Image
-                source={{ uri: item.image_uri! }}
-                style={styles.thumbnail}
-                contentFit="cover"
-              />
-            </TouchableOpacity>
+      <Pressable
+        style={styles.card}
+        onPress={() => openDetail(item.id)}
+        android_ripple={{ color: color.line2 }}>
+        <View style={styles.thumb}>
+          {item.image_uri ? (
+            <Image source={{ uri: item.image_uri }} style={styles.thumbImage} contentFit="cover" />
+          ) : (
+            <View style={styles.thumbPlaceholder}>
+              <ThemedText style={styles.thumbPlaceholderText}>写真なし</ThemedText>
+            </View>
           )}
+        </View>
 
-          <View style={styles.cardInfo}>
-            <View style={styles.cardInfoTop}>
-              <View style={styles.amountsCol}>
-                <ThemedText
-                  style={[styles.jpyPrice, isPurchased && styles.jpyPricePurchased]}
-                  numberOfLines={1}>
-                  {item.currency === 'JPY' ? formatJpy(item.jpy_amount) : `約${formatJpy(item.jpy_amount)}`}
-                </ThemedText>
-                {!!item.memo && (
-                  <ThemedText style={styles.memoText} numberOfLines={1} ellipsizeMode="tail">
-                    {item.memo}
-                  </ThemedText>
-                )}
-                {isForeign && (
-                  <ThemedText style={styles.foreignPrice} numberOfLines={1}>
-                    {formatForeign(item.foreign_amount, item.currency)} {item.currency}
-                  </ThemedText>
-                )}
-              </View>
-              <TouchableOpacity
-                style={[styles.badge, isPurchased && styles.badgePurchased]}
-                onPress={() => togglePurchasedRef.current(item.id, item.is_purchased ?? 0)}
-                hitSlop={8}>
-                <ThemedText style={[styles.badgeText, isPurchased && styles.badgeTextPurchased]}>
-                  {isPurchased ? '✓ 購入済み' : '候補'}
-                </ThemedText>
-              </TouchableOpacity>
+        <View style={styles.cardMid}>
+          <View style={styles.cardTitleRow}>
+            <ThemedText style={[styles.cardTitle, !hasMemo && styles.cardTitleMuted]} numberOfLines={1}>
+              {titleText}
+            </ThemedText>
+            <View style={[styles.chip, { backgroundColor: tone.badgeBg }]}>
+              <ThemedText style={[styles.chipText, { color: tone.text }]}>{tone.label}</ThemedText>
             </View>
           </View>
+          <ThemedText style={styles.cardSub} numberOfLines={1}>
+            {subtitle}
+          </ThemedText>
         </View>
 
-        <View style={styles.cardFooter}>
-          <View style={styles.metaRow}>
-            <ThemedText
-              style={[styles.metaText, !!item.entry_date && styles.metaTextModified]}
-              numberOfLines={1}>
-              {displayDate}
-            </ThemedText>
-            {isForeign && (
-              <>
-                <ThemedText style={styles.metaDivider}>・</ThemedText>
-                <ThemedText style={styles.metaText} numberOfLines={1}>
-                  {formatRate(item.rate_used, item.currency)}
-                </ThemedText>
-              </>
-            )}
-          </View>
-
-          <View style={styles.actionsRow}>
-            <TouchableOpacity onPress={() => openEditSheet(item)} hitSlop={10} style={styles.actionBtn}>
-              <ThemedText style={styles.actionText}>編集</ThemedText>
-            </TouchableOpacity>
-            {Platform.OS !== 'web' && (
-              <>
-                <View style={styles.actionDivider} />
-                <TouchableOpacity onPress={() => handleImageButton(item)} hitSlop={10} style={styles.actionBtn}>
-                  <ThemedText style={styles.actionText}>画像</ThemedText>
-                </TouchableOpacity>
-              </>
-            )}
-            <View style={styles.actionDivider} />
-            <TouchableOpacity onPress={() => handleDeleteItem(item)} hitSlop={10} style={styles.actionBtn}>
-              <ThemedText style={styles.actionTextDelete}>アーカイブ</ThemedText>
-            </TouchableOpacity>
-          </View>
+        <View style={styles.cardRight}>
+          <ThemedText style={styles.cardJpy} numberOfLines={1}>
+            {formatJpy(item.jpy_amount)}
+          </ThemedText>
+          <ThemedText style={styles.cardJpyLabel}>日本円</ThemedText>
         </View>
-      </View>
+      </Pressable>
     );
   }
 
-  const listHeader = (
+  const tripFlag = activeTrip ? CURRENCIES[activeTrip.base_currency]?.flag ?? '' : '';
+  const tripRate = activeTrip?.manual_rate ?? 0;
+
+  const listHeader = activeTrip && (
     <View style={styles.headerBlock}>
       <View style={styles.titleRow}>
-        <View>
-          <ThemedText style={styles.title}>履歴</ThemedText>
-          <ThemedText style={styles.subtitle}>保存した買い物候補</ThemedText>
+        <ThemedText style={styles.title} numberOfLines={1}>
+          {activeTrip.name}
+        </ThemedText>
+        <View style={styles.rateChip}>
+          <ThemedText style={styles.rateChipText} numberOfLines={1}>
+            {tripFlag} {formatRate(tripRate, activeTrip.base_currency)}
+          </ThemedText>
         </View>
-        {history.length > 0 && (
-          <TouchableOpacity onPress={handleClearAll} hitSlop={8}>
-            <ThemedText style={styles.clearAll}>全削除</ThemedText>
-          </TouchableOpacity>
-        )}
       </View>
 
-      <View style={styles.summaryCard}>
-        <View style={styles.summaryRow}>
-          <ThemedText style={styles.summaryLabel}>買い物候補</ThemedText>
-          <ThemedText style={styles.summaryValue}>{stats.candidateCount}件</ThemedText>
-        </View>
-        <View style={styles.summaryRow}>
-          <ThemedText style={styles.summaryLabel}>候補合計</ThemedText>
-          <ThemedText style={styles.summaryAccent}>
-            {formatJpy(stats.candidateTotalJpy)}
-          </ThemedText>
-        </View>
-        <View style={styles.summaryRow}>
-          <ThemedText style={styles.summaryLabel}>購入済み</ThemedText>
-          <ThemedText style={styles.summaryValue}>
-            {formatJpy(stats.purchasedTotalJpy)}
-          </ThemedText>
-        </View>
-        <View style={[styles.summaryRow, styles.summaryRowLast]}>
-          <ThemedText style={styles.summaryLabel}>残り予算</ThemedText>
-          <ThemedText style={styles.summaryRemaining}>
+      <View style={styles.summaryRow}>
+        <View style={styles.budgetCol}>
+          <ThemedText style={styles.budgetLabel}>残り予算</ThemedText>
+          <ThemedText style={styles.budgetValue} numberOfLines={1}>
             {tripBudgetJpy > 0 ? formatJpy(stats.remainingBudget) : '未設定'}
           </ThemedText>
+        </View>
+        <View style={styles.statusTotals}>
+          <View style={styles.statusLine}>
+            <View style={[styles.statusDot, { backgroundColor: color.purchased }]} />
+            <ThemedText style={styles.statusLineLabel}>購入済み</ThemedText>
+            <ThemedText style={styles.statusLineValue}>{formatJpy(stats.purchasedTotalJpy)}</ThemedText>
+          </View>
+          <View style={styles.statusLine}>
+            <View style={[styles.statusDot, { backgroundColor: color.candidate }]} />
+            <ThemedText style={styles.statusLineLabel}>候補</ThemedText>
+            <ThemedText style={styles.statusLineValue}>{formatJpy(stats.candidateTotalJpy)}</ThemedText>
+          </View>
         </View>
       </View>
 
       {isLimited && (
-        <TouchableOpacity
-          style={styles.proBanner}
-          onPress={() => router.push('/settings')}>
+        <TouchableOpacity style={styles.proBanner} onPress={() => router.push('/pro')}>
           <ThemedText style={styles.proBannerText}>
             Pro版で無制限に保存（現在 {FREE_HISTORY_LIMIT} 件まで）→
           </ThemedText>
         </TouchableOpacity>
       )}
 
-      {/* フィルター */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterRow}
-        keyboardShouldPersistTaps="handled">
-        {FILTER_MODES.map((f) => (
-          <TouchableOpacity
-            key={f}
-            style={[styles.filterChip, filterMode === f && styles.filterChipActive]}
-            onPress={() => setFilterMode(f)}
-            activeOpacity={0.75}>
-            <ThemedText style={[styles.filterChipText, filterMode === f && styles.filterChipTextActive]}>
-              {FILTER_LABELS[f]}
-            </ThemedText>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      {/* 並び替え */}
-      <View style={styles.sortRow}>
-        {SORT_MODES.map((s) => (
-          <TouchableOpacity
-            key={s}
-            style={[styles.sortBtn, sortMode === s && styles.sortBtnActive]}
-            onPress={() => setSortMode(s)}
-            activeOpacity={0.75}>
-            <ThemedText style={[styles.sortBtnText, sortMode === s && styles.sortBtnTextActive]}>
-              {SORT_LABELS[s]}
-            </ThemedText>
-          </TouchableOpacity>
-        ))}
-      </View>
+      {history.length > 0 && (
+        <View style={styles.segment}>
+          {SEGMENTS.map(({ mode, label }) => {
+            const active = filterMode === mode;
+            return (
+              <TouchableOpacity
+                key={mode}
+                style={[styles.segmentBtn, active && styles.segmentBtnActive]}
+                onPress={() => setFilterMode(mode)}
+                activeOpacity={0.8}>
+                <ThemedText style={[styles.segmentText, active && styles.segmentTextActive]}>
+                  {label}
+                  <ThemedText style={[styles.segmentCount, active && styles.segmentCountActive]}>
+                    {counts[mode]}
+                  </ThemedText>
+                </ThemedText>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
     </View>
   );
+
+  // 旅行未選択状態（引き継ぎ資料 §6-B）
+  if (!activeTrip) {
+    return (
+      <View style={styles.screen}>
+        <SafeAreaView style={styles.safe} edges={['top']}>
+          <View style={styles.noTripTitleRow}>
+            <ThemedText style={styles.title}>履歴</ThemedText>
+          </View>
+          <View style={styles.noTripWrap}>
+            <EmptyState
+              tone="neutral"
+              title="旅行が選択されていません"
+              body="旅行を作成すると、その旅行ごとに保存した記録がここに表示されます。"
+              primary={{ title: '設定で旅行を作成・選択', onPress: () => router.push('/settings') }}
+            />
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.screen}>
@@ -600,160 +239,30 @@ export default function HistoryScreen() {
           ListHeaderComponent={listHeader}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <ThemedText style={styles.emptyTitle}>
-                {history.length === 0
-                  ? 'まだ買い物候補はありません'
-                  : 'フィルターに一致する候補がありません'}
-              </ThemedText>
-              <ThemedText style={styles.emptyBody}>
-                {history.length === 0
-                  ? `カメラで値札を読み取って、${'\n'}気になる商品を保存できます`
-                  : '「すべて」を選ぶと全件表示されます'}
-              </ThemedText>
+              {history.length === 0 ? (
+                <EmptyState
+                  title="まだ保存した商品がありません"
+                  body={`カメラで価格を読み取ると、候補／購入済み${'\n'}としてここに残せます。`}
+                  primary={{ title: 'カメラを開く', onPress: () => router.push('/') }}
+                />
+              ) : (
+                <EmptyState
+                  tone="neutral"
+                  title="該当する記録がありません"
+                  body="フィルターを「すべて」に戻すと、全件表示されます。"
+                  primary={{ title: 'すべて表示', onPress: () => setFilterMode('all') }}
+                />
+              )}
             </View>
           }
         />
       </SafeAreaView>
-
-      {/* 写真フルスクリーンモーダル */}
-      <PhotoModal uri={photoModalUri} onClose={() => setPhotoModalUri(null)} />
-
-      {/* 編集シート */}
-      {editingItem && (
-        <Modal
-          visible
-          animationType="slide"
-          transparent
-          onRequestClose={closeEditSheet}>
-          <View style={styles.sheetBg}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={closeEditSheet} />
-            <View style={styles.sheetCard}>
-              <ThemedText style={styles.sheetTitle}>記録を編集</ThemedText>
-
-              {/* 金額 */}
-              <View style={styles.sheetField}>
-                <ThemedText style={styles.sheetLabel}>
-                  {editingItem.currency === 'JPY' ? '金額' : '外貨金額'}
-                </ThemedText>
-                <View style={styles.sheetPriceRow}>
-                  <ThemedText style={styles.sheetPriceSymbol}>
-                    {editingItem.currency === 'JPY' ? '¥' : CURRENCIES[editingItem.currency].symbol}
-                  </ThemedText>
-                  <TextInput
-                    style={styles.sheetPriceInput}
-                    value={sheetAmount}
-                    onChangeText={setSheetAmount}
-                    keyboardType={editingItem.currency === 'JPY' ? 'number-pad' : 'decimal-pad'}
-                    returnKeyType="done"
-                    selectTextOnFocus
-                  />
-                </View>
-                {editingItem.currency !== 'JPY' && (
-                  <ThemedText style={styles.sheetRateHint}>
-                    {(() => {
-                      const f = parseFloat(sheetAmount);
-                      const jpy = isFinite(f) && f > 0 ? Math.round(f * editingItem.rate_used) : null;
-                      return `${jpy != null ? `約 ${formatJpy(jpy)}` : '—'}　（${formatRate(editingItem.rate_used, editingItem.currency)}）`;
-                    })()}
-                  </ThemedText>
-                )}
-              </View>
-
-              {/* メモ */}
-              <View style={styles.sheetField}>
-                <ThemedText style={styles.sheetLabel}>メモ</ThemedText>
-                <TextInput
-                  style={styles.sheetMemoInput}
-                  value={sheetMemo}
-                  onChangeText={setSheetMemo}
-                  placeholder="メモを入力（省略可）"
-                  placeholderTextColor={DT.colors.textMuted}
-                  maxLength={100}
-                  returnKeyType="done"
-                />
-              </View>
-
-              {/* 日付 */}
-              <View style={styles.sheetField}>
-                <ThemedText style={styles.sheetLabel}>買い物日</ThemedText>
-                <View style={styles.wheelHeaders}>
-                  <ThemedText style={styles.wheelHeader}>年</ThemedText>
-                  <ThemedText style={styles.wheelHeader}>月</ThemedText>
-                  <ThemedText style={styles.wheelHeader}>日</ThemedText>
-                </View>
-                <View style={styles.wheelsRow}>
-                  <WheelCol
-                    items={YEARS}
-                    selected={sheetYear}
-                    onSelect={handleSheetYearChange}
-                  />
-                  <WheelCol
-                    items={MONTHS}
-                    selected={sheetMonth}
-                    onSelect={handleSheetMonthChange}
-                    formatItem={(v) => `${v}月`}
-                  />
-                  <WheelCol
-                    key={`sheet-day-${sheetYear}-${sheetMonth}`}
-                    items={getDays(sheetYear, sheetMonth)}
-                    selected={sheetDay}
-                    onSelect={setSheetDay}
-                    formatItem={(v) => `${v}日`}
-                  />
-                </View>
-              </View>
-
-              {/* 状態 */}
-              <View style={styles.sheetField}>
-                <ThemedText style={styles.sheetLabel}>状態</ThemedText>
-                <View style={styles.sheetToggle}>
-                  <TouchableOpacity
-                    style={[styles.sheetToggleBtn, !sheetIsPurchased && styles.sheetToggleBtnActive]}
-                    onPress={() => setSheetIsPurchased(false)}
-                    activeOpacity={0.75}>
-                    <ThemedText style={[styles.sheetToggleBtnText, !sheetIsPurchased && styles.sheetToggleBtnTextActive]}>
-                      候補
-                    </ThemedText>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.sheetToggleBtn, sheetIsPurchased && styles.sheetToggleBtnActive]}
-                    onPress={() => setSheetIsPurchased(true)}
-                    activeOpacity={0.75}>
-                    <ThemedText style={[styles.sheetToggleBtnText, sheetIsPurchased && styles.sheetToggleBtnTextActive]}>
-                      購入済み
-                    </ThemedText>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* アクション */}
-              <View style={styles.sheetActions}>
-                <TouchableOpacity
-                  style={styles.sheetCancelBtn}
-                  onPress={closeEditSheet}
-                  activeOpacity={0.75}>
-                  <ThemedText style={styles.sheetCancelText}>キャンセル</ThemedText>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.sheetSaveBtn}
-                  onPress={handleSaveSheet}
-                  activeOpacity={0.75}>
-                  <ThemedText style={styles.sheetSaveText}>保存</ThemedText>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
-      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: DT.colors.background,
-  },
+  screen: { flex: 1, backgroundColor: color.bgScreen },
   safe: { flex: 1 },
   listContent: {
     paddingHorizontal: 18,
@@ -764,431 +273,190 @@ const styles = StyleSheet.create({
   },
 
   headerBlock: {
-    paddingTop: 10,
-    paddingBottom: 16,
-    gap: 14,
+    paddingTop: 8,
+    paddingBottom: 14,
+    gap: 16,
   },
   titleRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: 10,
   },
   title: {
-    fontSize: 28,
+    flex: 1,
+    fontSize: 26,
     fontWeight: '700',
-    color: DT.colors.textPrimary,
-    letterSpacing: -0.4,
-    lineHeight: 34,
+    color: color.text,
+    letterSpacing: -0.5,
+    lineHeight: 32,
   },
-  subtitle: {
-    fontSize: 14,
-    color: DT.colors.textSecondary,
-    marginTop: 4,
-    fontWeight: '500',
+  rateChip: {
+    maxWidth: '58%',
+    backgroundColor: color.primarySoft,
+    borderRadius: DT.radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
-  clearAll: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: DT.colors.primary,
-    paddingTop: 6,
+  rateChipText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: color.primaryDark,
   },
 
-  summaryCard: {
-    backgroundColor: DT.colors.surface,
-    borderRadius: DT.radius.lg,
-    padding: DT.spacing.lg,
-    gap: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: DT.colors.border,
-    ...DT.shadow.card,
-  },
   summaryRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     justifyContent: 'space-between',
-  },
-  summaryRowLast: {
-    paddingTop: 4,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: DT.colors.border,
-    marginTop: 2,
-  },
-  summaryLabel: {
-    fontSize: 14,
-    color: DT.colors.textSecondary,
-    fontWeight: '500',
-  },
-  summaryValue: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: DT.colors.textPrimary,
-  },
-  summaryAccent: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: DT.colors.candidate,
-    letterSpacing: -0.3,
-  },
-  summaryRemaining: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: DT.colors.primary,
-    letterSpacing: -0.4,
-  },
-
-  proBanner: {
-    backgroundColor: DT.colors.primarySoft,
-    borderRadius: DT.radius.md,
-    padding: DT.spacing.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: `${DT.colors.primary}33`,
-  },
-  proBannerText: {
-    color: DT.colors.primary,
-    textAlign: 'center',
-    fontSize: DT.fontSize.xs,
-    fontWeight: DT.fontWeight.semibold,
-  },
-
-  cardGap: { height: DT.spacing.md },
-  candidateCard: {
-    backgroundColor: DT.colors.surface,
-    borderRadius: DT.radius.lg,
-    padding: DT.spacing.lg,
-    gap: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: DT.colors.border,
-    ...DT.shadow.card,
-  },
-  cardBody: {
-    flexDirection: 'row',
     gap: 12,
   },
-  thumbCol: {
-    flexShrink: 0,
-  },
-  cardInfo: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  cardInfoTop: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  amountsCol: {
-    flex: 1,
-    minWidth: 0,
-    gap: 3,
-  },
-  badge: {
-    backgroundColor: DT.colors.candidateBg,
-    borderRadius: DT.radius.pill,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    flexShrink: 0,
-  },
-  badgePurchased: {
-    backgroundColor: DT.colors.purchasedBg,
-  },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: DT.colors.candidate,
-    letterSpacing: 0.3,
-  },
-  badgeTextPurchased: {
-    color: DT.colors.purchased,
-  },
-  jpyPricePurchased: {
-    opacity: 0.45,
-  },
-  foreignPrice: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: DT.colors.textMuted,
-  },
-  jpyPrice: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: DT.colors.textPrimary,
-    letterSpacing: -0.5,
-    lineHeight: 29,
-  },
-  memoText: {
-    fontSize: 14,
-    color: DT.colors.textSecondary,
-    fontWeight: '600',
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 2,
-    paddingTop: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: DT.colors.border,
-    gap: 8,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexShrink: 1,
-  },
-  metaText: {
-    fontSize: 12,
-    color: DT.colors.textMuted,
-    fontWeight: '500',
-  },
-  metaTextModified: {
-    color: DT.colors.primary,
-    fontWeight: '600',
-  },
-  metaDivider: {
-    fontSize: 12,
-    color: DT.colors.textMuted,
-    marginHorizontal: 4,
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexShrink: 0,
-    gap: 12,
-  },
-  actionBtn: {
-    paddingVertical: 2,
-  },
-  actionDivider: {
-    width: StyleSheet.hairlineWidth,
-    height: 12,
-    backgroundColor: DT.colors.border,
-  },
-  actionText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: DT.colors.primary,
-  },
-  actionTextDelete: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: DT.colors.danger,
-  },
-
-  empty: {
-    alignItems: 'center',
-    paddingTop: 32,
-    paddingHorizontal: 24,
-    gap: 10,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: DT.colors.textSecondary,
-    textAlign: 'center',
-  },
-  emptyBody: {
-    fontSize: 14,
-    color: DT.colors.textMuted,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-
-  filterRow: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingVertical: 2,
-  },
-  filterChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: DT.radius.pill,
-    backgroundColor: DT.colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: DT.colors.border,
-  },
-  filterChipActive: {
-    backgroundColor: DT.colors.primary,
-    borderColor: DT.colors.primary,
-  },
-  filterChipText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: DT.colors.textSecondary,
-  },
-  filterChipTextActive: {
-    color: '#fff',
-  },
-
-  sortRow: {
-    flexDirection: 'row',
-    borderRadius: DT.radius.sm,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: DT.colors.border,
-    overflow: 'hidden',
-    backgroundColor: DT.colors.surface,
-  },
-  sortBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  sortBtnActive: {
-    backgroundColor: DT.colors.background,
-  },
-  sortBtnText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: DT.colors.textMuted,
-  },
-  sortBtnTextActive: {
+  budgetCol: { flexShrink: 1 },
+  budgetLabel: {
     fontSize: 12,
     fontWeight: '700',
-    color: DT.colors.textPrimary,
+    color: color.primary,
+    letterSpacing: 0.2,
+    marginBottom: 2,
   },
-
-  thumbnail: {
-    width: 72,
-    height: 72,
-    borderRadius: DT.radius.md,
-    backgroundColor: DT.colors.background,
+  budgetValue: {
+    fontSize: 38,
+    fontWeight: '700',
+    color: color.text,
+    letterSpacing: -1.2,
+    lineHeight: 44,
+    fontVariant: ['tabular-nums'],
   },
-
-  // ── ホイールピッカー（編集シート内で使用） ──
-  wheelHeaders: {
-    flexDirection: 'row',
-  },
-  wheelHeader: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 12,
-    fontWeight: '600',
-    color: DT.colors.textMuted,
+  statusTotals: {
+    alignItems: 'flex-end',
+    gap: 6,
     paddingBottom: 4,
   },
-  wheelsRow: {
-    flexDirection: 'row',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: DT.colors.border,
-    overflow: 'hidden',
-  },
-
-  // ── 編集シート ──
-  sheetBg: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-  },
-  sheetCard: {
-    backgroundColor: DT.colors.surface,
-    borderTopLeftRadius: DT.radius.xl,
-    borderTopRightRadius: DT.radius.xl,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 36,
-    gap: 20,
-  },
-  sheetTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: DT.colors.textPrimary,
-    textAlign: 'center',
-  },
-  sheetField: {
-    gap: 8,
-  },
-  sheetLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: DT.colors.textSecondary,
-  },
-  sheetPriceRow: {
+  statusLine: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: DT.colors.background,
-    borderRadius: DT.radius.md,
-    paddingHorizontal: 14,
-    paddingVertical: 4,
   },
-  sheetPriceSymbol: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: DT.colors.textPrimary,
-  },
-  sheetPriceInput: {
-    flex: 1,
-    fontSize: 22,
-    fontWeight: '700',
-    color: DT.colors.textPrimary,
-    paddingVertical: 10,
-  },
-  sheetRateHint: {
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  statusLineLabel: { fontSize: 12, fontWeight: '600', color: color.body },
+  statusLineValue: {
     fontSize: 13,
-    color: DT.colors.textSecondary,
-    fontWeight: '500',
-  },
-  sheetMemoInput: {
-    backgroundColor: DT.colors.background,
-    borderRadius: DT.radius.md,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: DT.colors.textPrimary,
-  },
-  sheetToggle: {
-    flexDirection: 'row',
-    borderRadius: DT.radius.sm,
-    borderWidth: 1,
-    borderColor: DT.colors.border,
-    overflow: 'hidden',
-  },
-  sheetToggleBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  sheetToggleBtnActive: {
-    backgroundColor: DT.colors.primary,
-  },
-  sheetToggleBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: DT.colors.textMuted,
-  },
-  sheetToggleBtnTextActive: {
-    color: '#fff',
-  },
-  sheetActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  sheetCancelBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: DT.radius.md,
-    alignItems: 'center',
-    backgroundColor: DT.colors.background,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: DT.colors.border,
-  },
-  sheetCancelText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: DT.colors.textSecondary,
-  },
-  sheetSaveBtn: {
-    flex: 2,
-    paddingVertical: 14,
-    borderRadius: DT.radius.md,
-    alignItems: 'center',
-    backgroundColor: DT.colors.primary,
-  },
-  sheetSaveText: {
-    fontSize: 16,
     fontWeight: '700',
-    color: '#fff',
+    color: color.text,
+    fontVariant: ['tabular-nums'],
+    minWidth: 56,
+    textAlign: 'right',
+  },
+
+  proBanner: {
+    backgroundColor: color.primarySoft,
+    borderRadius: DT.radius.md,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: color.primaryBorder,
+  },
+  proBannerText: {
+    color: color.primaryDark,
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  segment: {
+    flexDirection: 'row',
+    backgroundColor: color.line2,
+    borderRadius: DT.radius.md,
+    padding: 3,
+    gap: 3,
+  },
+  segmentBtn: {
+    flex: 1,
+    paddingVertical: 9,
+    alignItems: 'center',
+    borderRadius: DT.radius.sm,
+  },
+  segmentBtnActive: {
+    backgroundColor: color.card,
+    ...DT.shadow.card,
+  },
+  segmentText: { fontSize: 13.5, fontWeight: '600', color: color.muted },
+  segmentTextActive: { color: color.text, fontWeight: '700' },
+  segmentCount: { fontSize: 13.5, fontWeight: '600', color: color.faint2 },
+  segmentCountActive: { color: color.muted },
+
+  cardGap: { height: 10 },
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: color.card,
+    borderRadius: DT.radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: color.line,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    ...DT.shadow.card,
+  },
+  thumb: {
+    width: 58,
+    height: 58,
+    borderRadius: DT.radius.md,
+    overflow: 'hidden',
+    flexShrink: 0,
+  },
+  thumbImage: { width: '100%', height: '100%', backgroundColor: color.line2 },
+  thumbPlaceholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: color.line2,
+  },
+  thumbPlaceholderText: { fontSize: 10, fontWeight: '600', color: color.faint2 },
+  cardMid: { flex: 1, minWidth: 0, gap: 3 },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cardTitle: {
+    flexShrink: 1,
+    fontSize: 15,
+    fontWeight: '700',
+    color: color.text,
+    letterSpacing: -0.2,
+  },
+  cardTitleMuted: { fontWeight: '600', color: color.faint },
+  chip: {
+    borderRadius: DT.radius.pill,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    flexShrink: 0,
+  },
+  chipText: { fontSize: 11, fontWeight: '700' },
+  cardSub: {
+    fontSize: 12.5,
+    fontWeight: '500',
+    color: color.muted,
+    fontVariant: ['tabular-nums'],
+  },
+  cardRight: { alignItems: 'flex-end', flexShrink: 0 },
+  cardJpy: {
+    fontSize: 19,
+    fontWeight: '700',
+    color: color.text,
+    letterSpacing: -0.4,
+    fontVariant: ['tabular-nums'],
+  },
+  cardJpyLabel: { fontSize: 11, fontWeight: '500', color: color.faint2, marginTop: 1 },
+
+  empty: { paddingTop: 40 },
+  noTripTitleRow: {
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    maxWidth: 430,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  noTripWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingBottom: 60,
   },
 });
