@@ -1022,15 +1022,15 @@ export default function CameraScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: C.background,
+    backgroundColor: color.bgScreen, // v2 地色（#F4F6F5）
   },
   safe: { flex: 1 },
   scrollView: { flex: 1 },
   scroll: {
     flexGrow: 1,
     paddingTop: 10,
-    paddingBottom: 96,
-    paddingHorizontal: 18,
+    paddingBottom: 64, // 下タブとの距離（安全側。窮屈にならない範囲で圧縮）
+    paddingHorizontal: 15, // v2 基準の画面左右余白
   },
   container: {
     width: '100%',
@@ -1044,7 +1044,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
-    paddingTop: 4,
+    paddingTop: 8, // v2 ヘッダー上余白
   },
   headerTripName: {
     flex: 1,
@@ -1094,9 +1094,9 @@ const styles = StyleSheet.create({
   },
   cameraHero: {
     position: 'relative',
-    borderRadius: DT.radius.lg,
+    borderRadius: radius.card, // v2 カメラ枠角丸（16）
     overflow: 'hidden',
-    ...DT.shadow.card,
+    ...shadow.card,
   },
   scanningOverlay: {
     position: 'absolute',
