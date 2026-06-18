@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, InputAccessoryView, Keyboard, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, InputAccessoryView, Keyboard, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CameraPreview } from '@/components/camera/CameraPreview';
@@ -81,6 +81,10 @@ export default function CameraScreen() {
   const [photoSheetVisible, setPhotoSheetVisible] = useState(false);
   // OCR候補カードを一時的に閉じる表示制御（ocrResult 自体は破棄しない）
   const [ocrResultCollapsed, setOcrResultCollapsed] = useState(false);
+  // OCR抽出中オーバーレイの表示制御（表示専用。CameraPreview/OCR処理には影響しない）
+  const [ocrProcessing, setOcrProcessing] = useState(false);
+  // 再スキャンで得たOCR写真を「保存写真に使う」案内の表示制御（自動上書きせず明示操作のみ）
+  const [ocrPhotoSuggestionDismissed, setOcrPhotoSuggestionDismissed] = useState(false);
 
   const scrollViewRef = useRef<ScrollView>(null);
   const inputCardYRef = useRef(0);
@@ -161,42 +165,61 @@ export default function CameraScreen() {
 
   const isWeb = Platform.OS === 'web';
 
+  // 再スキャンで得たOCR写真を、保存写真にまだ使っていないとき案内を出す（自動上書きはしない）
+  const canSuggestUsingOcrPhoto =
+    !isWeb &&
+    !!ocrPhotoUri &&
+    pendingPhotoUri !== ocrPhotoUri &&
+    !ocrPhotoSuggestionDismissed;
+
   function switchInputMode(mode: ConversionDirection) {
     setInputMode(mode);
     setNativeAmount('');
   }
 
   function handlePhotoCapture(uri: string) {
+    setOcrProcessing(true); // OCR抽出中オーバーレイを表示（表示専用・既存分岐は不変）
     if (pendingPhotoUri == null) {
       setPendingPhotoUri(uri);
     } else {
       setOcrPhotoUri(uri);
+      setOcrPhotoSuggestionDismissed(false); // 新しいOCR写真が来たら「使う」案内を再表示
     }
   }
 
   async function handlePickPhotoFromLibrary() {
-    const picked = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.8,
-      allowsEditing: false,
-    });
-    if (!picked.canceled && picked.assets[0]) {
-      setPendingPhotoUri(picked.assets[0].uri);
-      // 写真選択後は手入力カードを開き、金額入力→保存へそのまま進めるようにする
-      setShowManualInput(true);
+    try {
+      const picked = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.8,
+        allowsEditing: false,
+      });
+      if (!picked.canceled && picked.assets[0]) {
+        setPendingPhotoUri(picked.assets[0].uri);
+        // 写真選択後は手入力カードを開き、サムネ位置（入力カード）へスクロールして変化を示す
+        setShowManualInput(true);
+        scrollToInputCard();
+      }
+    } catch (e) {
+      console.warn('[photo library]', e);
     }
   }
 
   async function handleTakeProductPhoto() {
-    const captured = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      quality: 0.8,
-      allowsEditing: false,
-    });
-    if (!captured.canceled && captured.assets[0]) {
-      setPendingPhotoUri(captured.assets[0].uri);
-      // 撮影後は手入力カードを開き、金額入力→保存へそのまま進めるようにする
-      setShowManualInput(true);
+    try {
+      const captured = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        quality: 0.8,
+        allowsEditing: false,
+      });
+      if (!captured.canceled && captured.assets[0]) {
+        setPendingPhotoUri(captured.assets[0].uri);
+        // 撮影後は手入力カードを開き、サムネ位置（入力カード）へスクロールして変化を示す
+        setShowManualInput(true);
+        scrollToInputCard();
+      }
+    } catch (e) {
+      console.warn('[camera]', e);
     }
   }
 
@@ -208,10 +231,18 @@ export default function CameraScreen() {
     setPhotoSheetVisible(true);
   }
 
+  // iOS では ActionSheet(Modal) が閉じきる前に native picker / Alert を呼ぶと
+  // カメラが即終了・固まることがあるため、シートを閉じてから実行する。
+  function closeSheetThen(action: () => void) {
+    setPhotoSheetVisible(false);
+    setTimeout(action, 250);
+  }
+
   function handleUseOcrPhoto() {
     if (!ocrPhotoUri) return;
     setPendingPhotoUri(ocrPhotoUri);
     setOcrPhotoUri(null);
+    scrollToInputCard(); // 反映先（入力カードのサムネ）へスクロールして変化を示す
   }
 
   function handleRemovePhoto() {
@@ -233,6 +264,7 @@ export default function CameraScreen() {
   }
 
   function handleOcrResult(raw: string) {
+    setOcrProcessing(false); // OCR完了/エラーで必ずオーバーレイを消す
     if (isWeb) return;
     setOcrResult({
       raw,
@@ -314,6 +346,7 @@ export default function CameraScreen() {
   function handleRescan() {
     setScanKey((k) => k + 1);
     setOcrResultCollapsed(false);
+    setOcrProcessing(false); // 念のため：読み取り中オーバーレイを残さない
     setOcrPhotoUri(null);
     setPhotoPreviewVisible(false);
     scrollToCamera(); // 上のカメラで撮り直すことを示す
@@ -447,7 +480,7 @@ export default function CameraScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modeSegmentBtn, captureMode === 'photo' && styles.modeSegmentBtnActive]}
-                onPress={() => setCaptureMode('photo')}
+                onPress={() => { setCaptureMode('photo'); setOcrProcessing(false); }}
                 activeOpacity={0.8}>
                 <ThemedText
                   style={[styles.modeSegmentText, captureMode === 'photo' && styles.modeSegmentTextActive]}>
@@ -460,6 +493,15 @@ export default function CameraScreen() {
             {captureMode === 'ocr' ? (
               <View style={styles.cameraHero}>
                 {cameraPreview}
+                {/* OCR抽出中の薄いオーバーレイ（表示専用・native/OCRモードのみ）。
+                    pointerEvents="none" で下のUIのタップを奪わない。二重撮影防止は
+                    CameraPreview 既存の disabled={scanning} に任せる。 */}
+                {ocrProcessing && !isWeb ? (
+                  <View pointerEvents="none" style={styles.scanningOverlay}>
+                    <ActivityIndicator color="#fff" />
+                    <ThemedText style={styles.scanningText}>値札を読み取り中…</ThemedText>
+                  </View>
+                ) : null}
               </View>
             ) : (
               <View style={styles.productPanel}>
@@ -759,6 +801,29 @@ export default function CameraScreen() {
                 )
               )}
 
+              {/* 再スキャンで得たOCR写真を保存写真に使う案内（自動上書きせず明示操作のみ） */}
+              {canSuggestUsingOcrPhoto && (
+                <View style={styles.ocrPhotoSuggest}>
+                  <ThemedText style={styles.ocrPhotoSuggestTitle}>今読み取った値札写真があります</ThemedText>
+                  <ThemedText style={styles.ocrPhotoSuggestDesc}>
+                    保存写真に使うと、あとで見返しやすくなります。
+                  </ThemedText>
+                  <View style={styles.ocrPhotoSuggestActions}>
+                    <TouchableOpacity
+                      style={styles.ocrPhotoSuggestUseBtn}
+                      onPress={handleUseOcrPhoto}
+                      activeOpacity={0.8}>
+                      <ThemedText style={styles.ocrPhotoSuggestUseText}>この写真を使う</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => setOcrPhotoSuggestionDismissed(true)}
+                      hitSlop={8}>
+                      <ThemedText style={styles.ocrPhotoSuggestKeepText}>今の写真を維持</ThemedText>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
               {/* 保存先（候補 / 購入済み） */}
               <View style={styles.saveTargetRow}>
                 <ThemedText style={styles.saveTargetLabel}>保存先</ThemedText>
@@ -897,7 +962,9 @@ export default function CameraScreen() {
         </Modal>
       )}
 
-      {/* 保存写真アクションシート（メイン画面・Alert置換） */}
+      {/* 保存写真アクションシート（メイン画面・Alert置換）。
+          閉じている時は描画しない＝透明Modal/backdropがタップを奪わないようにする。 */}
+      {photoSheetVisible && (
       <ActionSheet visible={photoSheetVisible} onClose={() => setPhotoSheetVisible(false)}>
         <View style={styles.photoSheetGrabber} />
         <ThemedText style={styles.photoSheetTitle}>保存する写真</ThemedText>
@@ -907,7 +974,7 @@ export default function CameraScreen() {
         <View style={styles.photoSheetList}>
           <TouchableOpacity
             style={[styles.photoSheetRow, styles.photoSheetRowPrimary]}
-            onPress={() => { setPhotoSheetVisible(false); handleTakeProductPhoto(); }}
+            onPress={() => closeSheetThen(handleTakeProductPhoto)}
             activeOpacity={0.7}>
             <ThemedText style={[styles.photoSheetRowText, styles.photoSheetRowTextPrimary]}>
               商品写真を撮る
@@ -915,14 +982,14 @@ export default function CameraScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.photoSheetRow}
-            onPress={() => { setPhotoSheetVisible(false); handlePickPhotoFromLibrary(); }}
+            onPress={() => closeSheetThen(handlePickPhotoFromLibrary)}
             activeOpacity={0.7}>
             <ThemedText style={styles.photoSheetRowText}>写真ライブラリから選ぶ</ThemedText>
           </TouchableOpacity>
           {ocrPhotoUri != null && (
             <TouchableOpacity
               style={styles.photoSheetRow}
-              onPress={() => { setPhotoSheetVisible(false); handleUseOcrPhoto(); }}
+              onPress={() => closeSheetThen(handleUseOcrPhoto)}
               activeOpacity={0.7}>
               <ThemedText style={styles.photoSheetRowText}>OCR写真を使う</ThemedText>
             </TouchableOpacity>
@@ -930,7 +997,7 @@ export default function CameraScreen() {
           {pendingPhotoUri != null && (
             <TouchableOpacity
               style={[styles.photoSheetRow, styles.photoSheetRowDanger]}
-              onPress={() => { setPhotoSheetVisible(false); handleRemovePhoto(); }}
+              onPress={() => closeSheetThen(handleRemovePhoto)}
               activeOpacity={0.7}>
               <ThemedText style={[styles.photoSheetRowText, styles.photoSheetRowTextDanger]}>
                 写真を削除
@@ -947,6 +1014,7 @@ export default function CameraScreen() {
           </TouchableOpacity>
         </View>
       </ActionSheet>
+      )}
     </View>
   );
 }
@@ -1025,9 +1093,26 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   cameraHero: {
+    position: 'relative',
     borderRadius: DT.radius.lg,
     overflow: 'hidden',
     ...DT.shadow.card,
+  },
+  scanningOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(17, 32, 30, 0.38)', // 暗すぎない薄幕（color.dark ベース）
+  },
+  scanningText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#fff',
   },
 
   // 商品写真モード（captureMode==='photo'）のパネル
@@ -1365,6 +1450,49 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: color.primaryDark,
     paddingLeft: 4,
+  },
+
+  // 再スキャンで得たOCR写真を保存写真に使う案内（淡いティールの控えめカード）
+  ocrPhotoSuggest: {
+    backgroundColor: color.primarySoft2,
+    borderWidth: 1,
+    borderColor: color.primaryBorder,
+    borderRadius: radius.chip,
+    padding: spacing.md,
+    gap: 4,
+  },
+  ocrPhotoSuggestTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: color.primaryDark,
+  },
+  ocrPhotoSuggestDesc: {
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 17,
+    color: color.body,
+  },
+  ocrPhotoSuggestActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginTop: 6,
+  },
+  ocrPhotoSuggestUseBtn: {
+    backgroundColor: color.primary,
+    borderRadius: radius.button,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  ocrPhotoSuggestUseText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  ocrPhotoSuggestKeepText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: color.muted,
   },
 
   bottomSummary: {
