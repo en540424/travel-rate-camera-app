@@ -119,13 +119,13 @@ export default function CameraScreen() {
     : !!activeTrip && rate > 0 && foreignAmount > 0 && jpyAmount > 0;
   const c = CURRENCIES[currencyForDisplay];
 
+  // 「入力をリセット」は入力欄だけを消す操作なので、入力系の有無だけで判定する
+  // （OCR結果・保存写真だけが残っている状態ではボタンを出さない）
   const hasInputToReset = !!(
     nativeAmount ||
     memo ||
-    ocrResult ||
     selectedPrice ||
-    addedMemoLines.size > 0 ||
-    pendingPhotoUri
+    addedMemoLines.size > 0
   );
 
   const stats = useMemo(
@@ -255,6 +255,11 @@ export default function CameraScreen() {
     }, 250);
   }
 
+  // 上部のカメラ位置へ戻す（「もう一度読み取る」で撮り直し先を示す）
+  function scrollToCamera() {
+    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+  }
+
   function handlePickPrice(price: string) {
     setNativeAmount(price);
     setInputMode('TO_JPY');
@@ -275,19 +280,14 @@ export default function CameraScreen() {
     scrollToInputCard();
   }
 
+  // 入力をリセット（軽量）：入力欄だけを消す。
+  // OCR結果・候補カード・保存写真・入力カードは残す（完全クリアではない）。
   function handleResetInput() {
     setNativeAmount('');
-    setMemo('');
-    setOcrResult(null);
-    setOcrResultCollapsed(false);
-    setOcrRawExpanded(false);
     setSelectedPrice(null);
+    setMemo('');
     setAddedMemoLines(new Set());
-    setMemoExpanded(false);
-    setPendingPhotoUri(null);
-    setOcrPhotoUri(null);
-    setPhotoPreviewVisible(false);
-    setShowManualInput(false);
+    setSaveAsPurchased(false);
   }
 
   function openManualInput() {
@@ -308,14 +308,15 @@ export default function CameraScreen() {
     );
   }
 
+  // もう一度読み取る：価格OCRだけ撮り直す。
+  // 保存写真(pendingPhotoUri)・入力中の金額/メモ・入力カードは残す。
+  // 次に撮った値札写真は handlePhotoCapture の既存分岐で ocrPhotoUri（スワップ候補）に入る。
   function handleRescan() {
-    setNativeAmount('');
     setScanKey((k) => k + 1);
     setOcrResultCollapsed(false);
-    setPendingPhotoUri(null);
     setOcrPhotoUri(null);
     setPhotoPreviewVisible(false);
-    setShowManualInput(false);
+    scrollToCamera(); // 上のカメラで撮り直すことを示す
   }
 
   async function handleSaveCandidate() {
@@ -517,7 +518,7 @@ export default function CameraScreen() {
                       />
                       <View style={styles.ocrFailSubRow}>
                         <SecondaryButton
-                          title="もう一度読み取る"
+                          title="値札をもう一度読み取る"
                           onPress={handleRescan}
                           style={styles.ocrFailSubBtn}
                         />
@@ -823,7 +824,7 @@ export default function CameraScreen() {
             {/* 再スキャン（成功時のみ。失敗時は失敗ブロック内に置くため重複させない） */}
             {ocrResult != null && ocrResult.prices.length > 0 && (
               <View style={styles.judgmentSection}>
-                <SecondaryButton title="もう一度読み取る" onPress={handleRescan} />
+                <SecondaryButton title="値札をもう一度読み取る" onPress={handleRescan} />
               </View>
             )}
 
