@@ -38,6 +38,7 @@ export const color = {
   darkAlt: '#16211F', // 最濃テキスト/暗面
   darkMuted: '#8FA39E', // 暗面の補助テキスト
   darkSub: '#A9BAB5',
+  productShutter: '#36443F', // 商品写真モードのシャッター（チャコール。価格OCRのteal CTAと区別／純黒は使わない）
 
   // text
   text: '#16211F', // 見出し/本文強

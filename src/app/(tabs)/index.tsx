@@ -24,7 +24,7 @@ import { useHistory } from '@/hooks/use-history';
 import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
-import { statusColor } from '@/theme/tokens';
+import { color, radius, shadow, spacing, statusColor, typography } from '@/theme/tokens';
 import { convert } from '@/utils/currency';
 import { extractMemoLines, extractPriceCandidates } from '@/utils/extract-prices';
 import { formatJpy, formatRate } from '@/utils/format';
@@ -179,6 +179,8 @@ export default function CameraScreen() {
     });
     if (!picked.canceled && picked.assets[0]) {
       setPendingPhotoUri(picked.assets[0].uri);
+      // 写真選択後は手入力カードを開き、金額入力→保存へそのまま進めるようにする
+      setShowManualInput(true);
     }
   }
 
@@ -190,6 +192,8 @@ export default function CameraScreen() {
     });
     if (!captured.canceled && captured.assets[0]) {
       setPendingPhotoUri(captured.assets[0].uri);
+      // 撮影後は手入力カードを開き、金額入力→保存へそのまま進めるようにする
+      setShowManualInput(true);
     }
   }
 
@@ -456,10 +460,32 @@ export default function CameraScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* 中央：カメラ（主役） */}
-            <View style={styles.cameraHero}>
-              {cameraPreview}
-            </View>
+            {/* 中央：価格OCR=カメラ（主役） / 商品写真=商品パネル（OCR導線と二重表示しない） */}
+            {captureMode === 'ocr' ? (
+              <View style={styles.cameraHero}>
+                {cameraPreview}
+              </View>
+            ) : (
+              <View style={styles.productPanel}>
+                <View style={styles.productPurposeBanner}>
+                  <ThemedText style={styles.productPurposeText}>
+                    商品写真を撮ったあと、金額を入力して保存できます。金額の読み取りはしません。
+                  </ThemedText>
+                </View>
+                {Platform.OS !== 'web' && (
+                  <TouchableOpacity
+                    style={styles.productShutterBtn}
+                    onPress={handleTakeProductPhoto}
+                    activeOpacity={0.85}>
+                    <ThemedText style={styles.productShutterText}>商品を撮る</ThemedText>
+                  </TouchableOpacity>
+                )}
+                <SecondaryButton
+                  title="🖼  写真ライブラリから選ぶ"
+                  onPress={handlePickPhotoFromLibrary}
+                />
+              </View>
+            )}
 
             {/* OCR結果カード（Web では表示しない） */}
             {!isWeb && ocrResult != null && (
@@ -882,25 +908,26 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 20,
     fontWeight: '700',
-    color: C.textPrimary,
+    color: color.text,
     letterSpacing: -0.3,
   },
   rateChip: {
     maxWidth: '60%',
-    backgroundColor: C.primarySoft,
-    borderRadius: DT.radius.pill,
-    paddingHorizontal: 12,
+    backgroundColor: color.primarySoft,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
     paddingVertical: 6,
   },
   rateChipText: {
     fontSize: 13,
     fontWeight: '700',
-    color: C.primaryDark,
+    color: color.primaryDark,
+    fontVariant: ['tabular-nums'],
   },
   modeSegment: {
     flexDirection: 'row',
-    backgroundColor: C.borderSoft,
-    borderRadius: DT.radius.md,
+    backgroundColor: color.line2,
+    borderRadius: radius.chip,
     padding: 3,
     gap: 3,
   },
@@ -911,22 +938,61 @@ const styles = StyleSheet.create({
     borderRadius: DT.radius.sm,
   },
   modeSegmentBtnActive: {
-    backgroundColor: C.surface,
-    ...DT.shadow.card,
+    backgroundColor: color.card,
+    ...shadow.card,
   },
   modeSegmentText: {
     fontSize: 14,
     fontWeight: '600',
-    color: C.textMuted,
+    color: color.muted,
   },
   modeSegmentTextActive: {
-    color: C.textPrimary,
+    color: color.text,
     fontWeight: '700',
   },
   cameraHero: {
     borderRadius: DT.radius.lg,
     overflow: 'hidden',
     ...DT.shadow.card,
+  },
+
+  // 商品写真モード（captureMode==='photo'）のパネル
+  productPanel: {
+    gap: spacing.md,
+  },
+  productPurposeBanner: {
+    flexDirection: 'row',
+    backgroundColor: color.candidateSoft2,
+    borderWidth: 1,
+    borderColor: color.candidateBorder,
+    borderRadius: radius.chip,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+  },
+  productPurposeText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '500',
+    color: color.candidateText,
+  },
+  productShutterBtn: {
+    height: 52,
+    borderRadius: radius.button,
+    backgroundColor: color.productShutter, // チャコール（teal CTAと区別・純黒不可）
+    alignItems: 'center',
+    justifyContent: 'center',
+    // 弱い影（CTAグローは使わない）
+    shadowColor: '#10211F',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  productShutterText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#fff',
   },
 
   ocrCard: {
@@ -1205,10 +1271,10 @@ const styles = StyleSheet.create({
   bottomSummary: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: C.surface,
-    borderRadius: DT.radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.border,
+    backgroundColor: color.card,
+    borderRadius: radius.chip,
+    borderWidth: 1,
+    borderColor: color.line,
     paddingVertical: 10,
     marginTop: 2,
   },
@@ -1220,23 +1286,23 @@ const styles = StyleSheet.create({
   bottomSummaryDivider: {
     width: StyleSheet.hairlineWidth,
     alignSelf: 'stretch',
-    backgroundColor: C.border,
+    backgroundColor: color.line,
   },
   bottomSummaryLabel: {
-    fontSize: DT.fontSize.xs,
-    fontWeight: DT.fontWeight.semibold,
-    color: C.textMuted,
+    ...typography.caption,
+    color: color.muted,
   },
   bottomSummaryValue: {
-    fontSize: DT.fontSize.md,
-    fontWeight: DT.fontWeight.bold,
-    color: C.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+    color: color.text,
     letterSpacing: -0.3,
+    fontVariant: ['tabular-nums'],
   },
   bottomSummaryAction: {
-    fontSize: DT.fontSize.sm,
-    fontWeight: DT.fontWeight.bold,
-    color: C.primary,
+    fontSize: 13,
+    fontWeight: '700',
+    color: color.primary,
   },
 
   judgmentSection: {
