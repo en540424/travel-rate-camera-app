@@ -511,7 +511,35 @@ export default function CameraScreen() {
                 <View style={styles.ocrSection}>
                   <ThemedText style={styles.ocrSectionLabel}>価格候補</ThemedText>
                   {ocrResult.prices.length === 0 ? (
-                    <ThemedText style={styles.ocrNoneText}>認識できませんでした</ThemedText>
+                    <View style={styles.ocrFailBlock}>
+                      <View style={styles.ocrFailIconWrap}>
+                        <ThemedText style={styles.ocrFailIcon}>🔍</ThemedText>
+                      </View>
+                      <ThemedText style={styles.ocrFailTitle}>金額を読み取れませんでした</ThemedText>
+                      <ThemedText style={styles.ocrFailDesc}>
+                        明るい場所で撮り直すか、下の欄に金額を手で入力できます。読み取った文字はメモに使えます。
+                      </ThemedText>
+                      <PrimaryButton
+                        title="✎ 手入力で金額を入れる"
+                        onPress={() => {
+                          setShowManualInput(true);
+                          scrollToInputCard();
+                        }}
+                        style={styles.ocrFailPrimary}
+                      />
+                      <View style={styles.ocrFailSubRow}>
+                        <SecondaryButton
+                          title="もう一度読み取る"
+                          onPress={handleRescan}
+                          style={styles.ocrFailSubBtn}
+                        />
+                        <SecondaryButton
+                          title="商品写真を保存"
+                          onPress={handleAddPhoto}
+                          style={styles.ocrFailSubBtn}
+                        />
+                      </View>
+                    </View>
                   ) : ocrResult.prices.length === 1 ? (
                     <TouchableOpacity
                       style={[
@@ -804,8 +832,8 @@ export default function CameraScreen() {
             </View>
             )}
 
-            {/* 再スキャン（読み取り後のみ） */}
-            {ocrResult != null && (
+            {/* 再スキャン（成功時のみ。失敗時は失敗ブロック内に置くため重複させない） */}
+            {ocrResult != null && ocrResult.prices.length > 0 && (
               <View style={styles.judgmentSection}>
                 <SecondaryButton title="もう一度読み取る" onPress={handleRescan} />
               </View>
@@ -1065,9 +1093,47 @@ const styles = StyleSheet.create({
   ocrPriceBtnTextSelected: {
     color: '#fff',
   },
-  ocrNoneText: {
-    fontSize: 13,
+  ocrFailBlock: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.xs,
+  },
+  ocrFailIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.card,
+    backgroundColor: color.candidateSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ocrFailIcon: {
+    fontSize: 24,
+  },
+  ocrFailTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: color.text,
+    textAlign: 'center',
+  },
+  ocrFailDesc: {
+    fontSize: 12.5,
+    lineHeight: 19,
+    fontWeight: '500',
     color: color.muted,
+    textAlign: 'center',
+  },
+  ocrFailPrimary: {
+    alignSelf: 'stretch',
+    marginTop: spacing.xs,
+  },
+  ocrFailSubRow: {
+    flexDirection: 'row',
+    alignSelf: 'stretch',
+    gap: spacing.sm,
+  },
+  ocrFailSubBtn: {
+    flex: 1,
   },
   ocrMemoLineRow: {
     flexDirection: 'row',
