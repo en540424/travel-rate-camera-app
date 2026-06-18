@@ -780,7 +780,13 @@ export default function CameraScreen() {
 
               {/* 保存ボタン（カードの主役アクション） */}
               <PrimaryButton
-                title={saveAsPurchased ? '購入済みとして保存' : '買い物候補に保存'}
+                title={
+                  canSave
+                    ? `${formatJpy(Math.round(jpyAmount))} を${saveAsPurchased ? '購入済みで' : '候補に'}保存`
+                    : saveAsPurchased
+                      ? '購入済みとして保存'
+                      : '買い物候補に保存'
+                }
                 onPress={handleSaveCandidate}
                 disabled={!canSave}
               />
@@ -996,7 +1002,7 @@ const styles = StyleSheet.create({
   },
 
   ocrCard: {
-    gap: DT.spacing.md,
+    gap: spacing.md,
   },
   ocrCardHeader: {
     flexDirection: 'row',
@@ -1004,22 +1010,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   ocrCardTitle: {
-    fontSize: DT.fontSize.xs,
-    fontWeight: DT.fontWeight.semibold,
-    color: C.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    color: color.muted,
     letterSpacing: 0.6,
   },
   ocrCardClose: {
     fontSize: 16,
-    color: C.textMuted,
+    color: color.muted,
   },
   ocrSection: {
     gap: 6,
   },
   ocrSectionLabel: {
-    fontSize: DT.fontSize.xs,
+    fontSize: 11,
     fontWeight: '700',
-    color: C.textMuted,
+    color: color.muted,
     letterSpacing: 0.5,
   },
   ocrPriceRow: {
@@ -1028,8 +1034,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   ocrPriceBtn: {
-    backgroundColor: C.primary,
-    borderRadius: DT.radius.pill,
+    backgroundColor: color.primary,
+    borderRadius: radius.pill,
     paddingHorizontal: 18,
     paddingVertical: 10,
   },
@@ -1038,10 +1044,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     letterSpacing: -0.3,
+    fontVariant: ['tabular-nums'],
   },
   ocrPriceBtnSingle: {
-    backgroundColor: C.primary,
-    borderRadius: DT.radius.md,
+    backgroundColor: color.primary,
+    borderRadius: radius.card,
     paddingVertical: 16,
     alignItems: 'center',
   },
@@ -1050,16 +1057,17 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '700',
     letterSpacing: -0.3,
+    fontVariant: ['tabular-nums'],
   },
   ocrPriceBtnSelected: {
-    backgroundColor: C.primaryDark,
+    backgroundColor: color.primaryDark,
   },
   ocrPriceBtnTextSelected: {
     color: '#fff',
   },
   ocrNoneText: {
     fontSize: 13,
-    color: C.textMuted,
+    color: color.muted,
   },
   ocrMemoLineRow: {
     flexDirection: 'row',
@@ -1070,15 +1078,15 @@ const styles = StyleSheet.create({
   ocrMemoLineText: {
     flex: 1,
     fontSize: 13,
-    color: C.textPrimary,
+    color: color.text,
     fontWeight: '500',
   },
   ocrAddMemoBtn: {
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderWidth: 1,
-    borderColor: C.primary,
-    borderRadius: DT.radius.sm,
+    borderColor: color.primary,
+    borderRadius: 8,
   },
   ocrMemoMoreBtn: {
     alignSelf: 'flex-start',
@@ -1086,46 +1094,46 @@ const styles = StyleSheet.create({
   },
   ocrMemoMoreBtnText: {
     fontSize: 12,
-    color: C.primary,
+    color: color.primary,
     fontWeight: '600',
   },
   ocrAddMemoBtnText: {
     fontSize: 12,
-    color: C.primary,
+    color: color.primary,
     fontWeight: '600',
   },
   ocrAddMemoBtnAdded: {
-    borderColor: C.border,
-    backgroundColor: C.borderSoft,
+    borderColor: color.line,
+    backgroundColor: color.line2,
   },
   ocrAddMemoBtnTextAdded: {
-    color: C.textMuted,
+    color: color.muted,
   },
   ocrRawToggle: {
     paddingVertical: 4,
   },
   ocrRawToggleText: {
     fontSize: 12,
-    color: C.textMuted,
+    color: color.muted,
     fontWeight: '600',
   },
   ocrRawText: {
     fontSize: 12,
-    color: C.textSecondary,
+    color: color.body,
     lineHeight: 18,
   },
   ocrCopyBtn: {
     alignSelf: 'flex-start',
     borderWidth: 1,
-    borderColor: C.primary,
-    borderRadius: DT.radius.sm,
+    borderColor: color.primary,
+    borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 6,
     marginTop: 4,
   },
   ocrCopyBtnText: {
     fontSize: 12,
-    color: C.primary,
+    color: color.primary,
     fontWeight: '600',
   },
 
@@ -1133,25 +1141,25 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   reflectedBanner: {
-    backgroundColor: C.primarySoft,
-    borderRadius: DT.radius.sm,
+    backgroundColor: color.primarySoft,
+    borderRadius: 8,
     paddingVertical: 6,
     paddingHorizontal: 10,
   },
   reflectedBannerText: {
     fontSize: 13,
     fontWeight: '700',
-    color: C.primaryDark,
+    color: color.primaryDark,
   },
   cardDivider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: C.border,
+    backgroundColor: color.line2,
   },
   inputModeRow: {
     flexDirection: 'row',
-    borderRadius: DT.radius.sm,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: C.border,
+    borderColor: color.line,
     overflow: 'hidden',
   },
   inputModeBtn: {
@@ -1160,12 +1168,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   inputModeBtnActive: {
-    backgroundColor: C.primary,
+    backgroundColor: color.primary,
   },
   inputModeBtnText: {
     fontSize: 13,
     fontWeight: '600',
-    color: C.textSecondary,
+    color: color.body,
   },
   inputModeBtnTextActive: {
     color: '#fff',
@@ -1179,14 +1187,14 @@ const styles = StyleSheet.create({
     fontSize: 28,
     lineHeight: 36,
     fontWeight: '700',
-    color: C.textPrimary,
+    color: color.text,
   },
   inputAmountField: {
     flex: 1,
     fontSize: 36,
     lineHeight: 44,
     fontWeight: '800',
-    color: C.textPrimary,
+    color: color.text,
     paddingVertical: 0,
   },
   pendingPhotoBlock: {
@@ -1206,22 +1214,22 @@ const styles = StyleSheet.create({
   ocrPhotoSwapText: {
     fontSize: 11,
     fontWeight: '500',
-    color: C.textMuted,
+    color: color.muted,
   },
   ocrPhotoSwapBtnText: {
     fontSize: 12,
     fontWeight: '600',
-    color: C.primary,
+    color: color.primary,
   },
   pendingPhotoThumb: {
     width: 40,
     height: 30,
-    borderRadius: DT.radius.sm,
-    backgroundColor: C.background,
+    borderRadius: 8,
+    backgroundColor: color.bgScreen,
   },
   pendingPhotoLabel: {
     fontSize: 11,
-    color: C.textMuted,
+    color: color.muted,
     fontWeight: '500',
     flex: 1,
   },
@@ -1232,18 +1240,18 @@ const styles = StyleSheet.create({
   pendingPhotoActionText: {
     fontSize: 12,
     fontWeight: '600',
-    color: C.primary,
+    color: color.primary,
   },
   pendingPhotoActionTextMuted: {
     fontSize: 12,
     fontWeight: '600',
-    color: C.textMuted,
+    color: color.muted,
   },
   memoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: C.background,
-    borderRadius: DT.radius.sm,
+    backgroundColor: color.bgScreen,
+    borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 2,
     gap: 8,
@@ -1251,20 +1259,20 @@ const styles = StyleSheet.create({
   memoLabel: {
     fontSize: 12,
     fontWeight: '700',
-    color: C.textMuted,
+    color: color.muted,
     letterSpacing: 0.4,
     minWidth: 28,
   },
   memoInput: {
     flex: 1,
     fontSize: 14,
-    color: C.textPrimary,
+    color: color.text,
     paddingVertical: 10,
   },
   memoAddedHint: {
     fontSize: 12,
     fontWeight: '600',
-    color: C.primaryDark,
+    color: color.primaryDark,
     paddingLeft: 4,
   },
 
