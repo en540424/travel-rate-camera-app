@@ -7,14 +7,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { EmptyState } from '@/components/ui';
 import { FALLBACK_BUDGET_JPY } from '@/constants/camera-screen';
-import { DT } from '@/constants/designTokens';
 import { CURRENCIES } from '@/constants/currencies';
 import { FREE_HISTORY_LIMIT } from '@/db/queries/history';
 import type { HistoryRow } from '@/db/queries/history';
 import { useHistory } from '@/hooks/use-history';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
-import { color, statusColor } from '@/theme/tokens';
+import { color, radius, shadow, statusColor } from '@/theme/tokens';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
@@ -265,7 +264,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: color.bgScreen },
   safe: { flex: 1 },
   listContent: {
-    paddingHorizontal: 18,
+    paddingHorizontal: 15,
     paddingBottom: 96,
     maxWidth: 430,
     width: '100%',
@@ -285,16 +284,16 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1,
-    fontSize: 26,
+    fontSize: 23,
     fontWeight: '700',
     color: color.text,
     letterSpacing: -0.5,
-    lineHeight: 32,
+    lineHeight: 29,
   },
   rateChip: {
     maxWidth: '58%',
     backgroundColor: color.primarySoft,
-    borderRadius: DT.radius.pill,
+    borderRadius: radius.pill,
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
@@ -319,11 +318,11 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   budgetValue: {
-    fontSize: 38,
+    fontSize: 33,
     fontWeight: '700',
     color: color.text,
-    letterSpacing: -1.2,
-    lineHeight: 44,
+    letterSpacing: -1.0,
+    lineHeight: 39,
     fontVariant: ['tabular-nums'],
   },
   statusTotals: {
@@ -349,10 +348,10 @@ const styles = StyleSheet.create({
 
   proBanner: {
     backgroundColor: color.primarySoft,
-    borderRadius: DT.radius.md,
+    borderRadius: radius.chip,
     paddingVertical: 12,
     paddingHorizontal: 14,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     borderColor: color.primaryBorder,
   },
   proBannerText: {
@@ -365,42 +364,42 @@ const styles = StyleSheet.create({
   segment: {
     flexDirection: 'row',
     backgroundColor: color.line2,
-    borderRadius: DT.radius.md,
+    borderRadius: radius.chip,
     padding: 3,
     gap: 3,
   },
   segmentBtn: {
     flex: 1,
-    paddingVertical: 9,
+    paddingVertical: 8,
     alignItems: 'center',
-    borderRadius: DT.radius.sm,
+    borderRadius: 8,
   },
   segmentBtnActive: {
     backgroundColor: color.card,
-    ...DT.shadow.card,
+    ...shadow.card,
   },
-  segmentText: { fontSize: 13.5, fontWeight: '600', color: color.muted },
+  segmentText: { fontSize: 12.5, fontWeight: '600', color: color.muted },
   segmentTextActive: { color: color.text, fontWeight: '700' },
-  segmentCount: { fontSize: 13.5, fontWeight: '600', color: color.faint2 },
+  segmentCount: { fontSize: 12.5, fontWeight: '600', color: color.faint2 },
   segmentCountActive: { color: color.muted },
 
   cardGap: { height: 10 },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 11,
     backgroundColor: color.card,
-    borderRadius: DT.radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.card,
+    borderWidth: 1,
     borderColor: color.line,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    ...DT.shadow.card,
+    paddingVertical: 9,
+    paddingHorizontal: 9,
+    ...shadow.card,
   },
   thumb: {
     width: 58,
     height: 58,
-    borderRadius: DT.radius.md,
+    borderRadius: radius.chip,
     overflow: 'hidden',
     flexShrink: 0,
   },
@@ -414,41 +413,41 @@ const styles = StyleSheet.create({
   },
   thumbPlaceholderText: { fontSize: 10, fontWeight: '600', color: color.faint2 },
   cardMid: { flex: 1, minWidth: 0, gap: 3 },
-  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   cardTitle: {
     flexShrink: 1,
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '600',
     color: color.text,
     letterSpacing: -0.2,
   },
   cardTitleMuted: { fontWeight: '600', color: color.faint },
   chip: {
-    borderRadius: DT.radius.pill,
-    paddingHorizontal: 9,
-    paddingVertical: 3,
+    borderRadius: radius.pill,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
     flexShrink: 0,
   },
-  chipText: { fontSize: 11, fontWeight: '700' },
+  chipText: { fontSize: 9, fontWeight: '700' },
   cardSub: {
-    fontSize: 12.5,
+    fontSize: 11,
     fontWeight: '500',
     color: color.muted,
     fontVariant: ['tabular-nums'],
   },
   cardRight: { alignItems: 'flex-end', flexShrink: 0 },
   cardJpy: {
-    fontSize: 19,
+    fontSize: 17,
     fontWeight: '700',
     color: color.text,
     letterSpacing: -0.4,
     fontVariant: ['tabular-nums'],
   },
-  cardJpyLabel: { fontSize: 11, fontWeight: '500', color: color.faint2, marginTop: 1 },
+  cardJpyLabel: { fontSize: 10, fontWeight: '500', color: color.faint2, marginTop: 1 },
 
   empty: { paddingTop: 40 },
   noTripTitleRow: {
-    paddingHorizontal: 18,
+    paddingHorizontal: 15,
     paddingTop: 8,
     maxWidth: 430,
     width: '100%',
