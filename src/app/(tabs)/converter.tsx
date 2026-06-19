@@ -24,6 +24,16 @@ import { formatJpy, formatRate } from '@/utils/format';
 
 const CARD_MAX_WIDTH = 430;
 
+async function copySelectedImageToPhotos(uri: string): Promise<string | undefined> {
+  const docsDir = FileSystem.documentDirectory;
+  if (!docsDir) return undefined;
+  const photosDir = `${docsDir}photos/`;
+  await FileSystem.makeDirectoryAsync(photosDir, { intermediates: true });
+  const destUri = `${photosDir}${Date.now()}.jpg`;
+  await FileSystem.copyAsync({ from: uri, to: destUri });
+  return destUri;
+}
+
 export default function ConverterScreen() {
   const [amountText, setAmountText] = useState('');
   const [direction, setDirection] = useState<ConversionDirection>('TO_JPY');
@@ -64,12 +74,7 @@ export default function ConverterScreen() {
     if (!hasResult || isReverse) return;
     let savedUri: string | undefined;
     if (selectedImageUri && Platform.OS !== 'web') {
-      const docsDir = FileSystem.documentDirectory;
-      const photosDir = `${docsDir}photos/`;
-      await FileSystem.makeDirectoryAsync(photosDir, { intermediates: true });
-      const destUri = `${photosDir}${Date.now()}.jpg`;
-      await FileSystem.copyAsync({ from: selectedImageUri, to: destUri });
-      savedUri = destUri;
+      savedUri = await copySelectedImageToPhotos(selectedImageUri);
     }
     await addEntry(selectedCurrency, amount, result, effectiveRate, undefined, savedUri, saveAsPurchased);
     if (Platform.OS !== 'web') {
