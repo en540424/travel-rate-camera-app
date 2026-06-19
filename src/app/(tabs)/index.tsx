@@ -738,46 +738,42 @@ export default function CameraScreen() {
                   )}
                 </View>
 
-                {/* メモ候補 */}
+                {/* メモ候補（行全体タップで追加。右端は状態表示。見出し右にさらに◯件） */}
                 {ocrResult.memoLines.length > 0 && (
                   <View style={styles.ocrSection}>
-                    <ThemedText style={styles.ocrSectionLabel}>
-                      メモ候補（タップで追加）
-                    </ThemedText>
+                    <View style={styles.ocrSectionHeader}>
+                      <ThemedText style={styles.ocrSectionLabel}>メモ候補</ThemedText>
+                      {ocrResult.memoLines.length > MEMO_PREVIEW_COUNT && (
+                        <TouchableOpacity
+                          onPress={() => setMemoExpanded((v) => !v)}
+                          hitSlop={8}
+                          activeOpacity={0.6}>
+                          <ThemedText style={styles.ocrSectionMore}>
+                            {memoExpanded ? '閉じる' : `さらに${ocrResult.memoLines.length - MEMO_PREVIEW_COUNT}件`}
+                          </ThemedText>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                     {(memoExpanded
                       ? ocrResult.memoLines
                       : ocrResult.memoLines.slice(0, MEMO_PREVIEW_COUNT)
                     ).map((line) => {
                       const added = addedMemoLines.has(line);
                       return (
-                      <View key={line} style={styles.ocrMemoLineRow}>
-                        <ThemedText style={styles.ocrMemoLineText} numberOfLines={1}>
-                          {line}
-                        </ThemedText>
                         <TouchableOpacity
-                          style={[styles.ocrAddMemoBtn, added && styles.ocrAddMemoBtnAdded]}
+                          key={line}
+                          style={styles.ocrMemoLineRow}
                           onPress={() => handleAddMemoLine(line)}
-                          activeOpacity={0.75}>
-                          <ThemedText style={[styles.ocrAddMemoBtnText, added && styles.ocrAddMemoBtnTextAdded]}>
-                            {added ? '✓ 追加済み' : '＋メモ'}
+                          activeOpacity={0.7}>
+                          <ThemedText style={styles.ocrMemoLineText} numberOfLines={1}>
+                            {line}
+                          </ThemedText>
+                          <ThemedText style={[styles.ocrMemoStatus, added && styles.ocrMemoStatusAdded]}>
+                            {added ? '✓ 追加済み' : '＋'}
                           </ThemedText>
                         </TouchableOpacity>
-                      </View>
                       );
                     })}
-                    {ocrResult.memoLines.length > MEMO_PREVIEW_COUNT && (
-                      <TouchableOpacity
-                        style={styles.ocrMemoMoreBtn}
-                        onPress={() => setMemoExpanded((v) => !v)}
-                        hitSlop={8}
-                        activeOpacity={0.6}>
-                        <ThemedText style={styles.ocrMemoMoreBtnText}>
-                          {memoExpanded
-                            ? '閉じる'
-                            : `さらに${ocrResult.memoLines.length - MEMO_PREVIEW_COUNT}件表示`}
-                        </ThemedText>
-                      </TouchableOpacity>
-                    )}
                   </View>
                 )}
 
@@ -787,7 +783,7 @@ export default function CameraScreen() {
                   onPress={() => setOcrRawExpanded((v) => !v)}
                   activeOpacity={0.7}>
                   <ThemedText style={styles.ocrRawToggleText}>
-                    {ocrRawExpanded ? '▼ 読み取った文字（全文）' : '▶ 読み取った文字（全文）'}
+                    {ocrRawExpanded ? '▾ 読み取った文字（全文）' : '▸ 読み取った文字（全文）'}
                   </ThemedText>
                 </TouchableOpacity>
                 {ocrRawExpanded && (
@@ -1333,17 +1329,6 @@ const styles = StyleSheet.create({
     width: '100%',
     // 高さは aspectRatio（実寸比）で決まる。枠より高ければ縦スクロールで上下を見渡せる。
   },
-  ocrPhotoPreviewBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.xs,
-  },
-  ocrPhotoPreviewHint: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: color.faint,
-  },
   ocrPhotoPreviewRescan: {
     fontSize: 13,
     fontWeight: '700',
@@ -1428,25 +1413,6 @@ const styles = StyleSheet.create({
   resultStatusChipTextFail: {
     color: color.candidateText,
   },
-  // 折りたたみ中の横並び小アクションカード（候補を表示 / 手入力で調整）
-  actionCardRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  actionCard: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: color.line,
-    borderRadius: radius.chip,
-    backgroundColor: color.card,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  actionCardText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: color.body,
-  },
   resultPanelHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1521,15 +1487,6 @@ const styles = StyleSheet.create({
     color: color.muted,
     letterSpacing: 0.4,
   },
-  manualAdjustToggle: {
-    alignSelf: 'flex-start',
-    paddingVertical: 4,
-  },
-  manualAdjustToggleText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: color.muted,
-  },
   // OCR成功時の逆換算への補助リンク（円から入力する / 外貨から入力する）
   reverseLink: {
     alignSelf: 'flex-start',
@@ -1578,38 +1535,6 @@ const styles = StyleSheet.create({
   },
   ocrSectionWrap: {
     gap: 10,
-  },
-  ocrSectionWrapHeader: {
-    alignItems: 'flex-end',
-  },
-  ocrReshowBtn: {
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderColor: color.primary,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  ocrReshowText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: color.primary,
-  },
-  ocrCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  ocrCardTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: color.muted,
-    letterSpacing: 0.6,
-  },
-  ocrCardClose: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: color.muted,
   },
   ocrSection: {
     gap: 6,
@@ -1713,7 +1638,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingVertical: 2,
+    paddingVertical: 6, // 行全体タップのため少し広めのタップ領域
   },
   ocrMemoLineText: {
     flex: 1,
@@ -1721,32 +1646,14 @@ const styles = StyleSheet.create({
     color: color.text,
     fontWeight: '500',
   },
-  ocrAddMemoBtn: {
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderWidth: 1,
-    borderColor: color.primary,
-    borderRadius: 8,
-  },
-  ocrMemoMoreBtn: {
-    alignSelf: 'flex-start',
-    paddingVertical: 4,
-  },
-  ocrMemoMoreBtnText: {
-    fontSize: 12,
+  // 行右端の状態表示（未追加＝＋ / 追加済み＝✓ 追加済み）。ボタンではなくステータス。
+  ocrMemoStatus: {
+    fontSize: 13,
+    fontWeight: '700',
     color: color.primary,
-    fontWeight: '600',
   },
-  ocrAddMemoBtnText: {
+  ocrMemoStatusAdded: {
     fontSize: 12,
-    color: color.primary,
-    fontWeight: '600',
-  },
-  ocrAddMemoBtnAdded: {
-    borderColor: color.line,
-    backgroundColor: color.line2,
-  },
-  ocrAddMemoBtnTextAdded: {
     color: color.muted,
   },
   ocrRawToggle: {
