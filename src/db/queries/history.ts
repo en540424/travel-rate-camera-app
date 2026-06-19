@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
+import { FREE_LIMITS } from '@/config/limits';
 import type { CurrencyCode } from '@/constants/currencies';
 
 export interface HistoryRow {
@@ -18,8 +19,8 @@ export interface HistoryRow {
   entry_date: string | null;
 }
 
-/** 無料版の最大保存件数 */
-export const FREE_HISTORY_LIMIT = 10;
+/** 無料版の最大保存件数（config/limits.ts の FREE_LIMITS.saves を正とする） */
+export const FREE_HISTORY_LIMIT = FREE_LIMITS.saves;
 
 /** 履歴を新しい順で取得（全件） */
 export async function getHistory(
