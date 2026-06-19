@@ -6,6 +6,7 @@ import { ActivityIndicator, Linking, Platform, StyleSheet, TouchableOpacity, Vie
 
 import { ThemedText } from '@/components/themed-text';
 import type { CurrencyCode } from '@/constants/currencies';
+import { color } from '@/theme/tokens';
 
 export interface CameraPreviewProps {
   currency: CurrencyCode;
@@ -96,35 +97,52 @@ export function CameraPreview({ onOcrResult, onPhotoCapture }: CameraPreviewProp
   }
 
   return (
-    <View style={styles.wrapper}>
-      {/* カメラフィード */}
-      <CameraView ref={cameraRef} style={styles.camera} zoom={zoom} />
+    <View style={styles.root}>
+      {/* カメラ枠（映像・ガイド・倍率・読み取り中表示のみ） */}
+      <View style={styles.previewFrame}>
+        {/* カメラフィード */}
+        <CameraView ref={cameraRef} style={styles.camera} zoom={zoom} />
 
-      {/* ビューファインダー四隅 */}
-      <View style={[styles.corner, styles.cornerTL]} />
-      <View style={[styles.corner, styles.cornerTR]} />
-      <View style={[styles.corner, styles.cornerBL]} />
-      <View style={[styles.corner, styles.cornerBR]} />
+        {/* ビューファインダー四隅（外側＝白ベース＋薄いティールのグロー） */}
+        <View style={[styles.corner, styles.cornerTL]} />
+        <View style={[styles.corner, styles.cornerTR]} />
+        <View style={[styles.corner, styles.cornerBL]} />
+        <View style={[styles.corner, styles.cornerBR]} />
 
-      {/* スキャン案内文 */}
-      <View style={styles.scanHint}>
-        <ThemedText style={styles.scanHintText}>値札をここに合わせる</ThemedText>
+        {/* 内側の四隅（薄いティール・控えめ） */}
+        <View style={[styles.innerCorner, styles.innerCornerTL]} />
+        <View style={[styles.innerCorner, styles.innerCornerTR]} />
+        <View style={[styles.innerCorner, styles.innerCornerBL]} />
+        <View style={[styles.innerCorner, styles.innerCornerBR]} />
+
+        {/* スキャン案内文 */}
+        <View style={styles.scanHint}>
+          <ThemedText style={styles.scanHintText}>値札をここに合わせる</ThemedText>
+        </View>
+
+        {/* ズームボタン（右上） */}
+        <TouchableOpacity style={styles.zoomBtn} onPress={cycleZoom} activeOpacity={0.75}>
+          <ThemedText style={styles.zoomBtnText}>{ZOOM_LABELS[zoom]}</ThemedText>
+        </TouchableOpacity>
+
+        {/* 読み取り中オーバーレイ（表示専用・scanning 連動・タップは奪わない） */}
+        {scanning && (
+          <View pointerEvents="none" style={styles.scanningOverlay}>
+            <ActivityIndicator color="#fff" size="small" />
+            <ThemedText style={styles.scanningText}>値札を読み取り中…</ThemedText>
+          </View>
+        )}
       </View>
 
-      {/* ズームボタン（右上） */}
-      <TouchableOpacity style={styles.zoomBtn} onPress={cycleZoom} activeOpacity={0.75}>
-        <ThemedText style={styles.zoomBtnText}>{ZOOM_LABELS[zoom]}</ThemedText>
-      </TouchableOpacity>
-
-      {/* 読み取りボタン */}
+      {/* 読み取るCTA（カメラ枠の外・下の大きい teal ボタン） */}
       <TouchableOpacity
-        style={[styles.scanBtn, scanning && styles.scanBtnBusy]}
+        style={[styles.scanCta, scanning && styles.scanCtaBusy]}
         onPress={handleScan}
         disabled={scanning}
-        activeOpacity={0.8}>
+        activeOpacity={0.85}>
         {scanning
-          ? <ActivityIndicator color="#fff" size="small" />
-          : <ThemedText style={styles.scanBtnText}>読み取る</ThemedText>
+          ? <ActivityIndicator color="#fff" />
+          : <ThemedText style={styles.scanCtaText}>読み取る</ThemedText>
         }
       </TouchableOpacity>
     </View>
@@ -133,18 +151,25 @@ export function CameraPreview({ onOcrResult, onPhotoCapture }: CameraPreviewProp
 
 const CORNER = 28;
 const CORNER_W = 3;
-const CORNER_COLOR = 'rgba(255,255,255,0.85)';
+const CORNER_COLOR = 'rgba(255,255,255,0.88)'; // 外側＝白ベース
+const CORNER_GLOW = 'rgba(14,148,136,0.35)'; // 外側のごく薄いティールのグロー
+const INNER = 20;
+const INNER_W = 2;
+const INNER_COLOR = 'rgba(14,148,136,0.40)'; // 内側＝薄いティール（撮影後プレビューで見えやすい中心範囲の目安）
 
 const styles = StyleSheet.create({
-  wrapper: {
+  root: {
+    gap: 12, // カメラ枠と読み取るCTAの間隔
+  },
+  previewFrame: {
     borderRadius: 16,
     overflow: 'hidden',
-    aspectRatio: 4 / 3,
+    aspectRatio: 3 / 4, // v2: 縦長でカメラ主役（従来 4/3 横長から変更）
     backgroundColor: '#111',
     position: 'relative',
   },
   camera: { ...StyleSheet.absoluteFill },
-  placeholder: { aspectRatio: 4 / 3, backgroundColor: '#111' },
+  placeholder: { aspectRatio: 3 / 4, backgroundColor: '#111' },
   permissionBox: {
     aspectRatio: 4 / 3,
     borderRadius: 16,
@@ -161,11 +186,28 @@ const styles = StyleSheet.create({
   },
   permissionBtnText: { color: '#fff', fontWeight: '700' },
 
-  corner: { position: 'absolute', width: CORNER, height: CORNER },
-  cornerTL: { top: 14, left: 14, borderTopWidth: CORNER_W, borderLeftWidth: CORNER_W, borderColor: CORNER_COLOR },
-  cornerTR: { top: 14, right: 14, borderTopWidth: CORNER_W, borderRightWidth: CORNER_W, borderColor: CORNER_COLOR },
-  cornerBL: { bottom: 14, left: 14, borderBottomWidth: CORNER_W, borderLeftWidth: CORNER_W, borderColor: CORNER_COLOR },
-  cornerBR: { bottom: 14, right: 14, borderBottomWidth: CORNER_W, borderRightWidth: CORNER_W, borderColor: CORNER_COLOR },
+  corner: {
+    position: 'absolute',
+    width: CORNER,
+    height: CORNER,
+    // 外側にごく薄いティールのグロー（iOS）。Android は elevation 色が出ないため控えめ。
+    shadowColor: CORNER_GLOW,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 6,
+  },
+  cornerTL: { top: 14, left: 14, borderTopWidth: CORNER_W, borderLeftWidth: CORNER_W, borderColor: CORNER_COLOR, borderTopLeftRadius: 8 },
+  cornerTR: { top: 14, right: 14, borderTopWidth: CORNER_W, borderRightWidth: CORNER_W, borderColor: CORNER_COLOR, borderTopRightRadius: 8 },
+  cornerBL: { bottom: 14, left: 14, borderBottomWidth: CORNER_W, borderLeftWidth: CORNER_W, borderColor: CORNER_COLOR, borderBottomLeftRadius: 8 },
+  cornerBR: { bottom: 14, right: 14, borderBottomWidth: CORNER_W, borderRightWidth: CORNER_W, borderColor: CORNER_COLOR, borderBottomRightRadius: 8 },
+
+  // 撮影後の小さい（横長）プレビューで見えやすい中心範囲の目安として、中央寄りの横長ボックスの四隅に配置。
+  // 横: 16%〜84%（中央56%幅）/ 縦: 33%〜67%（中央34%高）＝外側より明確に小さい中央範囲。
+  innerCorner: { position: 'absolute', width: INNER, height: INNER },
+  innerCornerTL: { top: '33%', left: '16%', borderTopWidth: INNER_W, borderLeftWidth: INNER_W, borderColor: INNER_COLOR, borderTopLeftRadius: 6 },
+  innerCornerTR: { top: '33%', right: '16%', borderTopWidth: INNER_W, borderRightWidth: INNER_W, borderColor: INNER_COLOR, borderTopRightRadius: 6 },
+  innerCornerBL: { bottom: '33%', left: '16%', borderBottomWidth: INNER_W, borderLeftWidth: INNER_W, borderColor: INNER_COLOR, borderBottomLeftRadius: 6 },
+  innerCornerBR: { bottom: '33%', right: '16%', borderBottomWidth: INNER_W, borderRightWidth: INNER_W, borderColor: INNER_COLOR, borderBottomRightRadius: 6 },
 
   scanHint: {
     ...StyleSheet.absoluteFill,
@@ -175,7 +217,7 @@ const styles = StyleSheet.create({
   scanHintText: {
     fontSize: 12,
     fontWeight: '600',
-    color: 'rgba(255,255,255,0.45)',
+    color: 'rgba(255,255,255,0.82)',
     letterSpacing: 0.4,
   },
 
@@ -194,23 +236,35 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  scanBtn: {
-    position: 'absolute',
-    bottom: 14,
-    alignSelf: 'center',
-    backgroundColor: 'rgba(32,138,239,0.92)',
-    borderRadius: 20,
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    minWidth: 100,
+  scanCta: {
+    height: 52,
+    borderRadius: 15,
+    backgroundColor: color.primary, // v2 teal CTA（枠の外・下・フルワイド）
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  scanBtnBusy: {
-    backgroundColor: 'rgba(32,138,239,0.55)',
+  scanCtaBusy: {
+    opacity: 0.7, // scanning 中は少し薄く
   },
-  scanBtnText: {
+  scanCtaText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
+  },
+  scanningOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(17,32,30,0.38)', // 暗すぎない薄幕
+  },
+  scanningText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#fff',
   },
 });
