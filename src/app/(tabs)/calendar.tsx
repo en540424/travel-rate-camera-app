@@ -1,6 +1,6 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -87,11 +87,7 @@ export default function CalendarScreen() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const { history, tripMap, togglePurchased, removeEntry, reload } = useAllHistory();
-  const togglePurchasedRef = useRef(togglePurchased);
-  const removeEntryRef = useRef(removeEntry);
   const [photoModalUri, setPhotoModalUri] = useState<string | null>(null);
-  togglePurchasedRef.current = togglePurchased;
-  removeEntryRef.current = removeEntry;
 
   function handleDeleteItem(item: HistoryRow) {
     Alert.alert(
@@ -108,7 +104,7 @@ export default function CalendarScreen() {
                 await FileSystem.deleteAsync(item.image_uri, { idempotent: true });
               } catch {}
             }
-            removeEntryRef.current(item.id);
+            removeEntry(item.id);
           },
         },
       ],
@@ -374,7 +370,7 @@ export default function CalendarScreen() {
                                     <TouchableOpacity
                                       style={[styles.badge, isPurchased && styles.badgePurchased]}
                                       onPress={() =>
-                                        togglePurchasedRef.current(item.id, item.is_purchased ?? 0)
+                                        togglePurchased(item.id, item.is_purchased ?? 0)
                                       }
                                       hitSlop={8}>
                                       <ThemedText
