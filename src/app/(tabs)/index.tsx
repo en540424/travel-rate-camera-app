@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, InputAccessoryView, Keyboard, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, InputAccessoryView, Keyboard, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CameraPreview } from '@/components/camera/CameraPreview';
@@ -32,12 +32,16 @@ import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
 const C = DT.colors;
 const MEMO_PREVIEW_COUNT = 3;
+const PRICE_PREVIEW_COUNT = 4;
 const INPUT_ACCESSORY_ID_AMOUNT = 'camera-input-accessory-amount';
 const INPUT_ACCESSORY_ID_MEMO = 'camera-input-accessory-memo';
 const NEAR_SAVE_LIMIT = FREE_LIMITS.saves - 5;
 
 /** 撮影前メイン画面の撮影モード。価格OCR（既定）/ 商品写真（補助） */
 type CaptureMode = 'ocr' | 'photo';
+
+/** 価格OCRモードの表示フェーズ。scanning は CameraPreview 内部 state のため camera に含める。 */
+type Phase = 'camera' | 'scanning' | 'result';
 
 // iOS専用: キーボード上に「キーボードを閉じる」ボタンを表示するツールバー。
 // 同じ inputAccessoryViewID を複数のTextInputで共有すると、
@@ -75,16 +79,20 @@ export default function CameraScreen() {
   const [selectedPrice, setSelectedPrice] = useState<string | null>(null);
   const [addedMemoLines, setAddedMemoLines] = useState<Set<string>>(new Set());
   const [memoExpanded, setMemoExpanded] = useState(false);
+  const [pricesExpanded, setPricesExpanded] = useState(false);
+  const [manualAdjustExpanded, setManualAdjustExpanded] = useState(false);
   const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
   const [captureMode, setCaptureMode] = useState<CaptureMode>('ocr');
   const [showManualInput, setShowManualInput] = useState(false);
   const [photoSheetVisible, setPhotoSheetVisible] = useState(false);
-  // OCR候補カードを一時的に閉じる表示制御（ocrResult 自体は破棄しない）
-  const [ocrResultCollapsed, setOcrResultCollapsed] = useState(false);
-  // OCR抽出中オーバーレイの表示制御（表示専用。CameraPreview/OCR処理には影響しない）
-  const [ocrProcessing, setOcrProcessing] = useState(false);
   // 再スキャンで得たOCR写真を「保存写真に使う」案内の表示制御（自動上書きせず明示操作のみ）
   const [ocrPhotoSuggestionDismissed, setOcrPhotoSuggestionDismissed] = useState(false);
+  // カメラ表示の切替：true=大きいライブカメラ / false=撮影済みOCR写真プレビュー（表示専用）
+  const [cameraLive, setCameraLive] = useState(true);
+  // 撮影済みOCR写真を拡大表示するモーダル
+  const [ocrPhotoZoomVisible, setOcrPhotoZoomVisible] = useState(false);
+  // 撮影した値札写真の縦横比（width/height）。読み込み時に確定し、プレビュー高さを実寸に合わせる。
+  const [ocrImgAspect, setOcrImgAspect] = useState(0.75);
 
   const scrollViewRef = useRef<ScrollView>(null);
   const inputCardYRef = useRef(0);
@@ -172,13 +180,39 @@ export default function CameraScreen() {
     pendingPhotoUri !== ocrPhotoUri &&
     !ocrPhotoSuggestionDismissed;
 
+  // 撮影後に見せる「読み取った値札」プレビュー画像（ヘッダー小サムネ／拡大モーダル用）。
+  // 初回スキャンは pendingPhotoUri に、再スキャン以降は ocrPhotoUri に直近の撮影が入る（handlePhotoCapture の既存分岐）。
+  const ocrPreviewUri = ocrPhotoUri ?? pendingPhotoUri;
+  // 撮影後はライブカメラの代わりに「読み取った値札」プレビュー（ドラッグ/ズーム/拡大）を出す
+  const showOcrPhotoPreview =
+    !isWeb &&
+    captureMode === 'ocr' &&
+    !cameraLive &&
+    ocrResult != null &&
+    ocrPreviewUri != null;
+  // 手入力で調整：OCR失敗 or 手入力モードは既定で開く / OCR成功時は折りたたむ
+  const manualOpenByDefault = ocrResult == null || ocrResult.prices.length === 0;
+  const manualOpen = manualOpenByDefault || manualAdjustExpanded;
+  const ocrSuccess = ocrResult != null && ocrResult.prices.length > 0;
+
+  // 表示フェーズ（価格OCRモードのカメラ↔結果確認）。
+  // 'scanning' は CameraPreview 内部 state のため index 側からは観測せず 'camera' に含める
+  // （カメラ表示中＝フッター非表示なので、読み取るCTAを隠す問題は起きない）。
+  // result = ライブカメラを撮影済みプレビューに切替済み（cameraLive=false）かつ OCR結果あり。
+  const phase: Phase = !cameraLive && ocrResult != null ? 'result' : 'camera';
+  const isPriceOcrMode = captureMode === 'ocr';
+  // 固定フッターは「価格OCRモードで結果確認中、かつOCR成功（価格候補あり）」のときだけ。
+  // → カメラ表示中・スキャン中・商品写真モード中・OCR失敗時は出さない。
+  const showFooter = !isWeb && isPriceOcrMode && phase === 'result' && ocrSuccess;
+  // 価格未選択（＝金額未確定）なら保存ボタンだけ disabled。手入力で金額が入れば canSave で有効化される。
+  const saveDisabled = !canSave;
+
   function switchInputMode(mode: ConversionDirection) {
     setInputMode(mode);
     setNativeAmount('');
   }
 
   function handlePhotoCapture(uri: string) {
-    setOcrProcessing(true); // OCR抽出中オーバーレイを表示（表示専用・既存分岐は不変）
     if (pendingPhotoUri == null) {
       setPendingPhotoUri(uri);
     } else {
@@ -264,17 +298,18 @@ export default function CameraScreen() {
   }
 
   function handleOcrResult(raw: string) {
-    setOcrProcessing(false); // OCR完了/エラーで必ずオーバーレイを消す
     if (isWeb) return;
+    setCameraLive(false); // 読み取り完了→ライブカメラを撮影済みプレビューに切替（表示専用）
     setOcrResult({
       raw,
       prices: extractPriceCandidates(raw, isJpyMode),
       memoLines: extractMemoLines(raw),
     });
-    setOcrResultCollapsed(false); // 新しい読み取り結果は必ず展開して見せる
     setSelectedPrice(null);
     setAddedMemoLines(new Set());
     setMemoExpanded(false);
+    setPricesExpanded(false); // 価格候補も初期は4件まで
+    setManualAdjustExpanded(false); // 成功時は手入力を畳む
   }
 
   function scrollToInputCard() {
@@ -320,6 +355,7 @@ export default function CameraScreen() {
     setMemo('');
     setAddedMemoLines(new Set());
     setSaveAsPurchased(false);
+    setCameraLive(true); // 入力リセット後は撮影前のライブカメラ表示に戻す
   }
 
   function openManualInput() {
@@ -345,8 +381,7 @@ export default function CameraScreen() {
   // 次に撮った値札写真は handlePhotoCapture の既存分岐で ocrPhotoUri（スワップ候補）に入る。
   function handleRescan() {
     setScanKey((k) => k + 1);
-    setOcrResultCollapsed(false);
-    setOcrProcessing(false); // 念のため：読み取り中オーバーレイを残さない
+    setCameraLive(true); // 再撮影＝大きいライブカメラへ戻す（表示専用）
     setOcrPhotoUri(null);
     setPhotoPreviewVisible(false);
     scrollToCamera(); // 上のカメラで撮り直すことを示す
@@ -396,7 +431,7 @@ export default function CameraScreen() {
     setNativeAmount('');
     setMemo('');
     setOcrResult(null);
-    setOcrResultCollapsed(false);
+    setCameraLive(true); // 保存後は撮影前のライブカメラ表示に戻す
     setOcrRawExpanded(false);
     setPendingPhotoUri(null);
     setOcrPhotoUri(null);
@@ -430,7 +465,7 @@ export default function CameraScreen() {
         <ScrollView
           ref={scrollViewRef}
           style={styles.scrollView}
-          contentContainerStyle={styles.scroll}
+          contentContainerStyle={[styles.scroll, showFooter && styles.scrollWithFooter]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
@@ -480,7 +515,7 @@ export default function CameraScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modeSegmentBtn, captureMode === 'photo' && styles.modeSegmentBtnActive]}
-                onPress={() => { setCaptureMode('photo'); setOcrProcessing(false); }}
+                onPress={() => setCaptureMode('photo')}
                 activeOpacity={0.8}>
                 <ThemedText
                   style={[styles.modeSegmentText, captureMode === 'photo' && styles.modeSegmentTextActive]}>
@@ -489,20 +524,51 @@ export default function CameraScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* 中央：価格OCR=カメラ（主役） / 商品写真=商品パネル（OCR導線と二重表示しない） */}
+            {/* 中央：価格OCR=ライブカメラ / 撮影後=読み取った値札プレビュー（実用：元画像と候補を見比べる） / 商品写真=商品パネル */}
             {captureMode === 'ocr' ? (
-              <View style={styles.cameraHero}>
-                {cameraPreview}
-                {/* OCR抽出中の薄いオーバーレイ（表示専用・native/OCRモードのみ）。
-                    pointerEvents="none" で下のUIのタップを奪わない。二重撮影防止は
-                    CameraPreview 既存の disabled={scanning} に任せる。 */}
-                {ocrProcessing && !isWeb ? (
-                  <View pointerEvents="none" style={styles.scanningOverlay}>
-                    <ActivityIndicator color="#fff" />
-                    <ThemedText style={styles.scanningText}>値札を読み取り中…</ThemedText>
+              showOcrPhotoPreview && ocrPreviewUri != null ? (
+                <View style={styles.ocrPhotoPreview}>
+                  {/* 見出し（左）＋ 拡大・再読み取り（右上に集約） */}
+                  <View style={styles.ocrPhotoPreviewHeader}>
+                    <ThemedText style={styles.ocrPhotoPreviewLabel}>読み取った値札</ThemedText>
+                    <View style={styles.ocrPhotoPreviewActions}>
+                      <TouchableOpacity
+                        onPress={() => setOcrPhotoZoomVisible(true)}
+                        hitSlop={8}
+                        activeOpacity={0.7}>
+                        <ThemedText style={styles.ocrPhotoPreviewZoom}>拡大</ThemedText>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={handleRescan} hitSlop={8} activeOpacity={0.7}>
+                        <ThemedText style={styles.ocrPhotoPreviewRescan}>再読み取り</ThemedText>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                ) : null}
-              </View>
+                  {/* 横長コンパクト。全幅(実寸比)で表示し縦スクロール／iOSピンチで全体確認。枠内クリップ。 */}
+                  <View style={styles.ocrPhotoPreviewFrame}>
+                    <ScrollView
+                      style={StyleSheet.absoluteFill}
+                      contentContainerStyle={styles.ocrPhotoPreviewScrollContent}
+                      nestedScrollEnabled
+                      showsVerticalScrollIndicator
+                      minimumZoomScale={1}
+                      maximumZoomScale={3}
+                      centerContent>
+                      <Image
+                        source={{ uri: ocrPreviewUri }}
+                        style={[styles.ocrPhotoPreviewImg, { aspectRatio: ocrImgAspect }]}
+                        contentFit="contain"
+                        onLoad={(e) => {
+                          const w = e?.source?.width;
+                          const h = e?.source?.height;
+                          if (w && h) setOcrImgAspect(w / h);
+                        }}
+                      />
+                    </ScrollView>
+                  </View>
+                </View>
+              ) : (
+                cameraPreview
+              )
             ) : (
               <View style={styles.productPanel}>
                 <View style={styles.productPurposeBanner}>
@@ -525,22 +591,87 @@ export default function CameraScreen() {
               </View>
             )}
 
-            {/* OCR結果カード（Web では表示しない。閉じても ocrResult は残す） */}
-            {!isWeb && ocrResult != null && !ocrResultCollapsed && (
-              <SectionCard style={styles.ocrCard}>
-                {/* ヘッダー */}
-                <View style={styles.ocrCardHeader}>
-                  <ThemedText style={styles.ocrCardTitle}>読み取り結果</ThemedText>
-                  <TouchableOpacity
-                    onPress={() => setOcrResultCollapsed(true)}
-                    hitSlop={8}>
-                    <ThemedText style={styles.ocrCardClose}>候補を閉じる</ThemedText>
-                  </TouchableOpacity>
+            {/* OCR結果＋保存を1枚にまとめた結果パネル（v2：1枚で完結） */}
+            {showInputCard && (
+            <View onLayout={(e) => { inputCardYRef.current = e.nativeEvent.layout.y; }}>
+            <SectionCard style={styles.resultPanel}>
+              {/* 1. 読み取りステータス（控えめなチップ）＋ ヒーロー右上の「金額を修正」小アクション。
+                  撮り直すは上の値札プレビューが担う。 */}
+              {ocrResult != null && (
+                <View style={styles.resultStatusRow}>
+                  <View style={[styles.resultStatusChip, ocrResult.prices.length === 0 && styles.resultStatusChipFail]}>
+                    <ThemedText
+                      style={[styles.resultStatusChipText, ocrResult.prices.length === 0 && styles.resultStatusChipTextFail]}>
+                      {ocrResult.prices.length > 0 ? '✓ 読み取り完了' : '読み取りできませんでした'}
+                    </ThemedText>
+                  </View>
+                  {/* OCR成功時のみ。独立行を作らずヒーロー上部の右に置く（手入力の開閉） */}
+                  {ocrSuccess && (
+                    <TouchableOpacity
+                      style={styles.heroEditLink}
+                      onPress={() => setManualAdjustExpanded((v) => !v)}
+                      hitSlop={8}
+                      activeOpacity={0.7}>
+                      <ThemedText style={styles.heroEditLinkText}>
+                        {manualOpen ? '修正を閉じる' : '✎ 金額を修正'}
+                      </ThemedText>
+                    </TouchableOpacity>
+                  )}
                 </View>
+              )}
 
-                {/* 価格候補 */}
+              {/* 2. 円換算ヒーロー（パネル最上部の主役）＋ 残予算pill */}
+              {(jpyAmount > 0 || (ocrResult != null && ocrResult.prices.length > 0)) && (
+                <View style={styles.heroBlock}>
+                  {jpyAmount > 0 ? (
+                    isJpyMode ? (
+                      <View style={styles.heroJpy}>
+                        <ThemedText style={styles.heroJpyLabel}>日本円で</ThemedText>
+                        <ThemedText style={styles.heroJpyValue}>{formatJpy(Math.round(jpyAmount))}</ThemedText>
+                      </View>
+                    ) : (
+                      <PriceResultCard
+                        jpyAmount={jpyAmount}
+                        foreignAmount={foreignAmount}
+                        currency={currencyForDisplay}
+                        rate={rate}
+                      />
+                    )
+                  ) : (
+                    <View style={styles.heroJpy}>
+                      <ThemedText style={styles.heroJpyLabel}>日本円で</ThemedText>
+                      <ThemedText style={styles.heroPlaceholderValue}>¥—</ThemedText>
+                      <ThemedText style={styles.heroPlaceholderHint}>下の価格候補を選ぶと換算されます</ThemedText>
+                    </View>
+                  )}
+                  {tripBudgetJpy > 0 && (
+                    <View style={styles.budgetPill}>
+                      <ThemedText style={styles.budgetPillText}>
+                        残り {formatJpy(remainingIfSaved != null ? remainingIfSaved : stats.remainingBudget)}
+                      </ThemedText>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* 読み取り結果セクション（Web非表示）。価格候補をヒーロー直下に置く（独立した「候補を少なく表示」行は撤去） */}
+              {!isWeb && ocrResult != null && (
+              <View style={styles.ocrSectionWrap}>
+                {/* 価格候補（ヒーロー直下）。見出し右に「さらに表示」 */}
                 <View style={styles.ocrSection}>
-                  <ThemedText style={styles.ocrSectionLabel}>価格候補</ThemedText>
+                  <View style={styles.ocrSectionHeader}>
+                    <ThemedText style={styles.ocrSectionLabel}>価格候補</ThemedText>
+                    {ocrResult.prices.length > PRICE_PREVIEW_COUNT && (
+                      <TouchableOpacity
+                        onPress={() => setPricesExpanded((v) => !v)}
+                        hitSlop={8}
+                        activeOpacity={0.6}>
+                        <ThemedText style={styles.ocrSectionMore}>
+                          {pricesExpanded ? '閉じる' : `さらに${ocrResult.prices.length - PRICE_PREVIEW_COUNT}件表示`}
+                        </ThemedText>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                   {ocrResult.prices.length === 0 ? (
                     <View style={styles.ocrFailBlock}>
                       <View style={styles.ocrFailIconWrap}>
@@ -588,19 +719,21 @@ export default function CameraScreen() {
                       </ThemedText>
                     </TouchableOpacity>
                   ) : (
-                    <View style={styles.ocrPriceRow}>
-                      {ocrResult.prices.map((p) => (
-                        <TouchableOpacity
-                          key={p}
-                          style={[styles.ocrPriceBtn, p === selectedPrice && styles.ocrPriceBtnSelected]}
-                          onPress={() => handlePickPrice(p)}
-                          activeOpacity={0.75}>
-                          <ThemedText
-                            style={[styles.ocrPriceBtnText, p === selectedPrice && styles.ocrPriceBtnTextSelected]}>
-                            {p === selectedPrice ? '✓ ' : ''}{c.symbol}{p}
-                          </ThemedText>
-                        </TouchableOpacity>
-                      ))}
+                    <View style={styles.ocrPriceWrap}>
+                      <View style={styles.ocrPriceRow}>
+                        {(pricesExpanded ? ocrResult.prices : ocrResult.prices.slice(0, PRICE_PREVIEW_COUNT)).map((p) => (
+                          <TouchableOpacity
+                            key={p}
+                            style={[styles.ocrPriceBtn, p === selectedPrice && styles.ocrPriceBtnSelected]}
+                            onPress={() => handlePickPrice(p)}
+                            activeOpacity={0.75}>
+                            <ThemedText
+                              style={[styles.ocrPriceBtnText, p === selectedPrice && styles.ocrPriceBtnTextSelected]}>
+                              {p === selectedPrice ? '✓ ' : ''}{c.symbol}{p}
+                            </ThemedText>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
                     </View>
                   )}
                 </View>
@@ -672,79 +805,73 @@ export default function CameraScreen() {
                     </TouchableOpacity>
                   </View>
                 )}
-              </SectionCard>
-            )}
-
-            {/* 読み取り候補を再表示（候補カードを閉じている間だけ。撮り直し不要で復元） */}
-            {!isWeb && ocrResult != null && ocrResultCollapsed && (
-              <SecondaryButton
-                title="読み取り候補を再表示"
-                onPress={() => setOcrResultCollapsed(false)}
-              />
-            )}
-
-            {/* 金額入力カード（保存確認カード）: 撮影前は非表示。OCR後 or 手入力で記録のときだけ表示 */}
-            {showInputCard && (
-            <View onLayout={(e) => { inputCardYRef.current = e.nativeEvent.layout.y; }}>
-            <SectionCard style={styles.inputCard}>
-
-              {/* 価格反映フィードバック */}
-              {selectedPrice != null && nativeAmount === selectedPrice && (
-                <View style={styles.reflectedBanner}>
-                  <ThemedText style={styles.reflectedBannerText}>
-                    ✓ {isReverse ? '¥' : c.symbol}{selectedPrice} を入力しました
-                  </ThemedText>
-                </View>
-              )}
-
-              {/* 入力モード切り替え（JPY モードでは非表示） */}
-              {!isJpyMode && (
-                <View style={styles.inputModeRow}>
-                  <TouchableOpacity
-                    style={[styles.inputModeBtn, !isReverse && styles.inputModeBtnActive]}
-                    onPress={() => switchInputMode('TO_JPY')}
-                    activeOpacity={0.75}>
-                    <ThemedText style={[styles.inputModeBtnText, !isReverse && styles.inputModeBtnTextActive]}>
-                      {currencyForDisplay} → JPY
-                    </ThemedText>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.inputModeBtn, isReverse && styles.inputModeBtnActive]}
-                    onPress={() => switchInputMode('FROM_JPY')}
-                    activeOpacity={0.75}>
-                    <ThemedText style={[styles.inputModeBtnText, isReverse && styles.inputModeBtnTextActive]}>
-                      JPY → {currencyForDisplay}
-                    </ThemedText>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {/* 金額（カードの主役） */}
-              <View style={styles.inputAmountRow}>
-                <ThemedText style={styles.inputCurrencySymbol}>
-                  {isReverse ? '¥' : c.symbol}
-                </ThemedText>
-                <TextInput
-                  style={styles.inputAmountField}
-                  value={nativeAmount}
-                  onChangeText={setNativeAmount}
-                  placeholder="0"
-                  placeholderTextColor={DT.colors.textMuted}
-                  keyboardType="decimal-pad"
-                  inputMode="decimal"
-                  selectTextOnFocus
-                  inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID_AMOUNT : undefined}
-                />
               </View>
+              )}
 
-              {/* 円換算結果（v4: 大きな表示） */}
-              {!isJpyMode && jpyAmount > 0 && (
-                <PriceResultCard
-                  jpyAmount={jpyAmount}
-                  foreignAmount={foreignAmount}
-                  currency={currencyForDisplay}
-                  rate={rate}
-                />
+              {/* OCR結果と入力セクションの区切り（OCR結果がある時のみ） */}
+              {ocrResult != null && <View style={styles.cardDivider} />}
+
+              {/* ===== 手入力で調整 =====
+                  OCR成功時の開閉はヒーロー右上の「金額を修正」が担う（重複行を作らない）。
+                  失敗・手入力主導時のみ、ここにラベルを出して開いた状態で見せる。 */}
+              {manualOpenByDefault && (
+                <ThemedText style={styles.manualAdjustLabel}>手入力で調整</ThemedText>
+              )}
+
+              {/* 入力モード切り替え（JPY モードでは非表示・開いている時のみ） */}
+              {/* OCR成功時は読み取った通貨側のみ既定表示。逆換算は小リンクで補助的に切替（既存 switchInputMode 流用）。 */}
+              {/* OCR失敗・手入力主導時は従来の2ボタン切替を維持。 */}
+              {manualOpen && !isJpyMode && (
+                manualOpenByDefault ? (
+                  <View style={styles.inputModeRow}>
+                    <TouchableOpacity
+                      style={[styles.inputModeBtn, !isReverse && styles.inputModeBtnActive]}
+                      onPress={() => switchInputMode('TO_JPY')}
+                      activeOpacity={0.75}>
+                      <ThemedText style={[styles.inputModeBtnText, !isReverse && styles.inputModeBtnTextActive]}>
+                        {currencyForDisplay} → JPY
+                      </ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.inputModeBtn, isReverse && styles.inputModeBtnActive]}
+                      onPress={() => switchInputMode('FROM_JPY')}
+                      activeOpacity={0.75}>
+                      <ThemedText style={[styles.inputModeBtnText, isReverse && styles.inputModeBtnTextActive]}>
+                        JPY → {currencyForDisplay}
+                      </ThemedText>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.reverseLink}
+                    onPress={() => switchInputMode(isReverse ? 'TO_JPY' : 'FROM_JPY')}
+                    hitSlop={8}
+                    activeOpacity={0.7}>
+                    <ThemedText style={styles.reverseLinkText}>
+                      {isReverse ? `${currencyForDisplay}から入力する` : '円から入力する'}
+                    </ThemedText>
+                  </TouchableOpacity>
+                )
+              )}
+
+              {/* 金額（手入力・補助。主役は上部の円換算ヒーロー。開いている時のみ） */}
+              {manualOpen && (
+                <View style={styles.inputAmountRow}>
+                  <ThemedText style={styles.inputCurrencySymbol}>
+                    {isReverse ? '¥' : c.symbol}
+                  </ThemedText>
+                  <TextInput
+                    style={styles.inputAmountField}
+                    value={nativeAmount}
+                    onChangeText={setNativeAmount}
+                    placeholder="0"
+                    placeholderTextColor={DT.colors.textMuted}
+                    keyboardType="decimal-pad"
+                    inputMode="decimal"
+                    selectTextOnFocus
+                    inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID_AMOUNT : undefined}
+                  />
+                </View>
               )}
 
               <View style={styles.cardDivider} />
@@ -860,18 +987,32 @@ export default function CameraScreen() {
                 <SaveLimitBanner currentCount={totalCount} isPro={isPro} />
               )}
 
-              {/* 保存ボタン（カードの主役アクション） */}
-              <PrimaryButton
-                title={
-                  canSave
-                    ? `${formatJpy(Math.round(jpyAmount))} を${saveAsPurchased ? '購入済みで' : '候補に'}保存`
-                    : saveAsPurchased
-                      ? '購入済みとして保存'
-                      : '買い物候補に保存'
-                }
-                onPress={handleSaveCandidate}
-                disabled={!canSave}
-              />
+              {/* 保存ボタン（カードの主役アクション）。
+                  OCR成功時は固定フッターへ移すため、ここでは非表示（重複回避）。 */}
+              {!showFooter && (
+                <PrimaryButton
+                  title={
+                    canSave
+                      ? `${formatJpy(Math.round(jpyAmount))} を${saveAsPurchased ? '購入済みで' : '候補に'}保存`
+                      : saveAsPurchased
+                        ? '購入済みとして保存'
+                        : '買い物候補に保存'
+                  }
+                  onPress={handleSaveCandidate}
+                  disabled={saveDisabled}
+                />
+              )}
+
+              {/* 保存しないで次を撮る（v2 secondary・撮影に戻る）。
+                  固定フッター表示時はフッター内に置くため、ここでは非表示。 */}
+              {ocrResult != null && !showFooter && (
+                <TouchableOpacity
+                  style={styles.nextShotBtn}
+                  onPress={handleRescan}
+                  activeOpacity={0.7}>
+                  <ThemedText style={styles.nextShotText}>保存しないで次を撮る →</ThemedText>
+                </TouchableOpacity>
+              )}
 
               {/* 入力をリセット（控えめなサブボタン） */}
               {hasInputToReset && (
@@ -886,15 +1027,8 @@ export default function CameraScreen() {
             </View>
             )}
 
-            {/* 再スキャン（成功時のみ。失敗時は失敗ブロック内に置くため重複させない） */}
-            {ocrResult != null && ocrResult.prices.length > 0 && (
-              <View style={styles.judgmentSection}>
-                <SecondaryButton title="値札をもう一度読み取る" onPress={handleRescan} />
-              </View>
-            )}
-
-            {/* 下部：小さな予算サマリー ＋ 手入力サブ導線（撮影を邪魔しない） */}
-            {activeTrip && (
+            {/* 下部：小さな予算サマリー ＋ 手入力サブ導線（撮影前のみ。結果パネル表示中は隠す） */}
+            {activeTrip && !showInputCard && (
               <View style={styles.bottomSummary}>
                 <View style={styles.bottomSummaryItem}>
                   <ThemedText style={styles.bottomSummaryLabel}>残り</ThemedText>
@@ -920,6 +1054,30 @@ export default function CameraScreen() {
           </View>
         </ScrollView>
       </SafeAreaView>
+
+      {/* 価格OCR・結果確認中のみ表示する画面下固定の保存フッター（縦長緩和）。
+          下タブの上に収まる位置。価格未選択でも消さず保存ボタンだけ disabled。保存処理は既存ハンドラを呼ぶだけ。 */}
+      {showFooter && (
+        <View style={styles.saveFooter}>
+          <PrimaryButton
+            title={
+              canSave
+                ? `${formatJpy(Math.round(jpyAmount))} を${saveAsPurchased ? '購入済みで' : '候補に'}保存`
+                : saveAsPurchased
+                  ? '購入済みとして保存'
+                  : '買い物候補に保存'
+            }
+            onPress={handleSaveCandidate}
+            disabled={saveDisabled}
+          />
+          <TouchableOpacity
+            style={styles.footerNextShot}
+            onPress={handleRescan}
+            activeOpacity={0.7}>
+            <ThemedText style={styles.footerNextShotText}>保存しないで次を撮る →</ThemedText>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* キーボード上の「完了」ボタン（iOSのみ、入力欄ごとに用意） */}
       {Platform.OS === 'ios' && (
@@ -955,6 +1113,40 @@ export default function CameraScreen() {
             <TouchableOpacity
               style={styles.photoPreviewCloseBtn}
               onPress={() => setPhotoPreviewVisible(false)}
+              activeOpacity={0.75}>
+              <ThemedText style={styles.photoPreviewCloseBtnText}>閉じる</ThemedText>
+            </TouchableOpacity>
+          </View>
+        </Modal>
+      )}
+
+      {/* 読み取った値札の拡大表示（OCR確認用・contain・暗背景）。
+          ※ピンチズーム/ドラッグは将来TODO。今回は contain 表示と閉じる導線のみ。 */}
+      {ocrPreviewUri != null && Platform.OS !== 'web' && (
+        <Modal
+          visible={ocrPhotoZoomVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setOcrPhotoZoomVisible(false)}>
+          <View style={styles.photoPreviewOverlay}>
+            <ScrollView
+              key={ocrPhotoZoomVisible ? 'ocr-zoom-open' : 'ocr-zoom-closed'}
+              style={styles.photoPreviewScroll}
+              contentContainerStyle={styles.photoPreviewScrollContent}
+              minimumZoomScale={1}
+              maximumZoomScale={3}
+              centerContent
+              showsHorizontalScrollIndicator={false}
+              showsVerticalScrollIndicator={false}>
+              <Image
+                source={{ uri: ocrPreviewUri }}
+                style={styles.photoPreviewImage}
+                contentFit="contain"
+              />
+            </ScrollView>
+            <TouchableOpacity
+              style={styles.photoPreviewCloseBtn}
+              onPress={() => setOcrPhotoZoomVisible(false)}
               activeOpacity={0.75}>
               <ThemedText style={styles.photoPreviewCloseBtnText}>閉じる</ThemedText>
             </TouchableOpacity>
@@ -1032,6 +1224,9 @@ const styles = StyleSheet.create({
     paddingBottom: 64, // 下タブとの距離（安全側。窮屈にならない範囲で圧縮）
     paddingHorizontal: 15, // v2 基準の画面左右余白
   },
+  scrollWithFooter: {
+    paddingBottom: 150, // 固定フッター（保存CTA＋次を撮る）に隠れないための余白
+  },
   container: {
     width: '100%',
     maxWidth: 430,
@@ -1092,27 +1287,67 @@ const styles = StyleSheet.create({
     color: color.text,
     fontWeight: '700',
   },
-  cameraHero: {
-    position: 'relative',
-    borderRadius: radius.card, // v2 カメラ枠角丸（16）
-    overflow: 'hidden',
-    ...shadow.card,
+  // 撮影後の「読み取った値札」静止プレビュー（OCR確認用・指でドラッグ可・保存写真とは別）
+  ocrPhotoPreview: {
+    backgroundColor: color.card,
+    borderWidth: 1,
+    borderColor: color.line,
+    borderRadius: radius.card,
+    padding: spacing.sm,
+    gap: spacing.sm,
   },
-  scanningOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+  ocrPhotoPreviewHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: 'rgba(17, 32, 30, 0.38)', // 暗すぎない薄幕（color.dark ベース）
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.xs,
   },
-  scanningText: {
+  ocrPhotoPreviewLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: color.muted,
+  },
+  ocrPhotoPreviewActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  ocrPhotoPreviewZoom: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#fff',
+    fontWeight: '700',
+    color: color.primary,
+  },
+  ocrPhotoPreviewFrame: {
+    height: 110, // 横長コンパクト（従来200→150→110）。拡大で全体確認できるため低めでOK。戻す場合はここを調整。
+    borderRadius: radius.chip,
+    overflow: 'hidden',
+    backgroundColor: '#111',
+    position: 'relative',
+  },
+  ocrPhotoPreviewScrollContent: {
+    // 画像が枠より小さいときは中央、大きいときは縦スクロールで全体を確認
+    minHeight: '100%',
+    justifyContent: 'center',
+  },
+  ocrPhotoPreviewImg: {
+    width: '100%',
+    // 高さは aspectRatio（実寸比）で決まる。枠より高ければ縦スクロールで上下を見渡せる。
+  },
+  ocrPhotoPreviewBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.xs,
+  },
+  ocrPhotoPreviewHint: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: color.faint,
+  },
+  ocrPhotoPreviewRescan: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: color.primary,
   },
 
   // 商品写真モード（captureMode==='photo'）のパネル
@@ -1157,6 +1392,209 @@ const styles = StyleSheet.create({
   ocrCard: {
     gap: spacing.md,
   },
+  // OCR結果＋保存を1枚にまとめた結果パネル
+  resultPanel: {
+    gap: 10,
+  },
+  // 読み取りステータス（控えめなチップ）
+  resultStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  heroEditLink: {
+    paddingVertical: 2,
+  },
+  heroEditLinkText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: color.primary,
+  },
+  resultStatusChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: color.primarySoft,
+    borderRadius: radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  resultStatusChipFail: {
+    backgroundColor: color.candidateSoft,
+  },
+  resultStatusChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: color.primaryDark,
+  },
+  resultStatusChipTextFail: {
+    color: color.candidateText,
+  },
+  // 折りたたみ中の横並び小アクションカード（候補を表示 / 手入力で調整）
+  actionCardRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionCard: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: color.line,
+    borderRadius: radius.chip,
+    backgroundColor: color.card,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  actionCardText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: color.body,
+  },
+  resultPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  resultHeaderThumb: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: color.line2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resultHeaderThumbIcon: { fontSize: 18 },
+  resultPanelTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+    color: color.text,
+    letterSpacing: -0.2,
+  },
+  resultPanelRescan: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: color.primary,
+  },
+  // 円換算ヒーロー（パネル最上部の主役）＋ 残予算pill
+  heroBlock: {
+    gap: 6,
+  },
+  heroJpy: {
+    alignItems: 'flex-start',
+  },
+  heroJpyLabel: {
+    ...typography.overline,
+    color: color.muted,
+    marginBottom: spacing.xs,
+  },
+  heroJpyValue: {
+    ...typography.display,
+    color: color.text,
+    fontVariant: ['tabular-nums'],
+  },
+  heroPlaceholderValue: {
+    fontSize: 40,
+    fontWeight: '700',
+    color: color.faint2,
+    letterSpacing: -1.2,
+  },
+  heroPlaceholderHint: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: color.muted,
+    marginTop: 2,
+  },
+  budgetPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: color.primarySoft,
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  budgetPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: color.primaryDark,
+    fontVariant: ['tabular-nums'],
+  },
+  manualAdjustLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: color.muted,
+    letterSpacing: 0.4,
+  },
+  manualAdjustToggle: {
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+  },
+  manualAdjustToggleText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: color.muted,
+  },
+  // OCR成功時の逆換算への補助リンク（円から入力する / 外貨から入力する）
+  reverseLink: {
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+  },
+  reverseLinkText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: color.primary,
+  },
+  // OCR成功時の画面下固定 保存フッター
+  saveFooter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: color.card,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: color.line,
+    paddingHorizontal: 15,
+    paddingTop: 10,
+    paddingBottom: 12,
+    gap: 4,
+    ...shadow.card,
+  },
+  footerNextShot: {
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  footerNextShotText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: color.body,
+  },
+  ocrPriceWrap: {
+    gap: 8,
+  },
+  nextShotBtn: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  nextShotText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: color.body,
+  },
+  ocrSectionWrap: {
+    gap: 10,
+  },
+  ocrSectionWrapHeader: {
+    alignItems: 'flex-end',
+  },
+  ocrReshowBtn: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: color.primary,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  ocrReshowText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: color.primary,
+  },
   ocrCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1182,39 +1620,49 @@ const styles = StyleSheet.create({
     color: color.muted,
     letterSpacing: 0.5,
   },
+  ocrSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  ocrSectionMore: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: color.primary,
+  },
   ocrPriceRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
   ocrPriceBtn: {
-    backgroundColor: color.primary,
+    backgroundColor: color.primarySoft, // 未選択＝淡teal
     borderRadius: radius.pill,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
   ocrPriceBtnText: {
-    color: '#fff',
-    fontSize: 18,
+    color: color.primaryDark, // 未選択＝淡teal地に濃teal文字
+    fontSize: 16,
     fontWeight: '700',
     letterSpacing: -0.3,
     fontVariant: ['tabular-nums'],
   },
   ocrPriceBtnSingle: {
     backgroundColor: color.primary,
-    borderRadius: radius.card,
-    paddingVertical: 16,
+    borderRadius: radius.button,
+    paddingVertical: 12,
     alignItems: 'center',
   },
   ocrPriceBtnSingleText: {
     color: '#fff',
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
     letterSpacing: -0.3,
     fontVariant: ['tabular-nums'],
   },
   ocrPriceBtnSelected: {
-    backgroundColor: color.primaryDark,
+    backgroundColor: color.primary, // 選択中＝濃teal（✓は本文で付与）
   },
   ocrPriceBtnTextSelected: {
     color: '#fff',
@@ -1376,16 +1824,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   inputCurrencySymbol: {
-    fontSize: 28,
-    lineHeight: 36,
+    fontSize: 18,
+    lineHeight: 26,
     fontWeight: '700',
-    color: color.text,
+    color: color.muted,
   },
   inputAmountField: {
     flex: 1,
-    fontSize: 36,
-    lineHeight: 44,
-    fontWeight: '800',
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '700',
     color: color.text,
     paddingVertical: 0,
   },
