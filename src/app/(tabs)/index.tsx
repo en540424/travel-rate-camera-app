@@ -1,6 +1,7 @@
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, InputAccessoryView, Keyboard, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -98,6 +99,8 @@ export default function CameraScreen() {
 
   const scrollViewRef = useRef<ScrollView>(null);
   const inputCardYRef = useRef(0);
+  // 「✎ 金額を修正」展開時のスクロール先（編集パネルのSectionCard内オフセット）
+  const manualAdjustYRef = useRef(0);
 
   const { rates } = useRates();
   const { selectedCurrency, setSelectedCurrency, isPro } = useSettingsStore();
@@ -136,6 +139,10 @@ export default function CameraScreen() {
   // 価格候補セクションを畳んだときの見出しサブ情報用（選択済み金額の円換算・表示専用）
   const selectedPriceNum = selectedPrice != null ? Number(selectedPrice) : NaN;
   const selectedPriceJpy = rate > 0 && isFinite(selectedPriceNum) ? convert(selectedPriceNum, rate, 'TO_JPY') : 0;
+
+  // 円ヒーローの外貨額・レート表示用：6桁（10万円）以上は縦を使う2段ではなく1行にまとめる（表示判定のみ）
+  const jpyDigits = jpyAmount > 0 ? Math.round(jpyAmount).toString().length : 0;
+  const isLargeJpyAmount = jpyDigits >= 6;
 
   // 価格候補の初期プレビュー（最大PRICE_PREVIEW_COUNT件）。選択済みが4件目以降でも、
   // 最後の1件と入れ替えて必ず含める（選択状態が隠れないようにする・表示専用、並び替えは保存に影響しない）
@@ -338,6 +345,17 @@ export default function CameraScreen() {
     }, 250);
   }
 
+  // 「✎ 金額を修正」展開時に編集パネルまでスクロール。
+  // manualAdjustYRefはSectionCard内オフセット（resultPanelの padding=spacing.lg 分を加算）。
+  function scrollToManualAdjust() {
+    setTimeout(() => {
+      scrollViewRef.current?.scrollTo({
+        y: Math.max(inputCardYRef.current + spacing.lg + manualAdjustYRef.current - 16, 0),
+        animated: true,
+      });
+    }, 250);
+  }
+
   // 上部のカメラ位置へ戻す（「もう一度読み取る」で撮り直し先を示す）
   function scrollToCamera() {
     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
@@ -518,25 +536,39 @@ export default function CameraScreen() {
               />
             )}
 
-            {/* モード切替セグメント（価格OCR / 商品写真） */}
+            {/* モード切替セグメント（価格OCR / 商品写真）。選択中＝白背景＋少し強めの影＋tealアイコン */}
             <View style={styles.modeSegment}>
               <TouchableOpacity
                 style={[styles.modeSegmentBtn, captureMode === 'ocr' && styles.modeSegmentBtnActive]}
                 onPress={() => setCaptureMode('ocr')}
                 activeOpacity={0.8}>
-                <ThemedText
-                  style={[styles.modeSegmentText, captureMode === 'ocr' && styles.modeSegmentTextActive]}>
-                  価格OCR
-                </ThemedText>
+                <View style={styles.modeSegmentBtnContent}>
+                  <SymbolView
+                    name={{ ios: 'viewfinder', android: 'document_scanner', web: 'document_scanner' }}
+                    tintColor={captureMode === 'ocr' ? color.primaryDark : color.muted}
+                    size={16}
+                  />
+                  <ThemedText
+                    style={[styles.modeSegmentText, captureMode === 'ocr' && styles.modeSegmentTextActive]}>
+                    価格OCR
+                  </ThemedText>
+                </View>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modeSegmentBtn, captureMode === 'photo' && styles.modeSegmentBtnActive]}
                 onPress={() => setCaptureMode('photo')}
                 activeOpacity={0.8}>
-                <ThemedText
-                  style={[styles.modeSegmentText, captureMode === 'photo' && styles.modeSegmentTextActive]}>
-                  商品写真
-                </ThemedText>
+                <View style={styles.modeSegmentBtnContent}>
+                  <SymbolView
+                    name={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }}
+                    tintColor={captureMode === 'photo' ? color.primaryDark : color.muted}
+                    size={16}
+                  />
+                  <ThemedText
+                    style={[styles.modeSegmentText, captureMode === 'photo' && styles.modeSegmentTextActive]}>
+                    商品写真
+                  </ThemedText>
+                </View>
               </TouchableOpacity>
             </View>
 
@@ -618,7 +650,12 @@ export default function CameraScreen() {
                   {ocrSuccess && (
                     <TouchableOpacity
                       style={styles.heroEditLink}
-                      onPress={() => setManualAdjustExpanded((v) => !v)}
+                      onPress={() => {
+                        // 開く時だけ編集パネルへスクロール（閉じる時は無理にスクロールしない）
+                        const opening = !manualAdjustExpanded;
+                        setManualAdjustExpanded(opening);
+                        if (opening) scrollToManualAdjust();
+                      }}
                       hitSlop={8}
                       activeOpacity={0.7}>
                       <ThemedText style={styles.heroEditLinkText}>
@@ -626,7 +663,8 @@ export default function CameraScreen() {
                       </ThemedText>
                     </TouchableOpacity>
                   )}
-                  {/* 円換算ヒーロー：日本円で・¥xxx の横に外貨額＋レートを並べ、縦の消費を減らす。
+                  {/* 円換算ヒーロー：円金額は左、外貨額＋レートはヒーロー右端へ逃がす。
+                      小さい金額＝右端に2段、大きい金額（6桁以上）＝縦を使わず1行にまとめる。
                       狭い画面・長い文字列は自然に折り返す。保存時のcurrency/rate計算には触れない（表示のみ）。 */}
                   <View style={styles.heroJpy}>
                     <ThemedText style={styles.heroJpyLabel}>日本円で</ThemedText>
@@ -635,9 +673,20 @@ export default function CameraScreen() {
                         {jpyAmount > 0 ? formatJpy(jpyAmount) : '¥—'}
                       </ThemedText>
                       {jpyAmount > 0 && !isJpyMode && rate > 0 && (
-                        <ThemedText style={styles.heroRateSub} numberOfLines={2}>
-                          {formatForeign(foreignAmount, currencyForDisplay)}{'　・　'}{formatRate(rate, currencyForDisplay)}
-                        </ThemedText>
+                        isLargeJpyAmount ? (
+                          <ThemedText style={styles.heroRateSubInline} numberOfLines={1}>
+                            {formatForeign(foreignAmount, currencyForDisplay)}{'・'}{formatRate(rate, currencyForDisplay)}
+                          </ThemedText>
+                        ) : (
+                          <View style={styles.heroRateSubWrap}>
+                            <ThemedText style={styles.heroRateSub} numberOfLines={1}>
+                              {formatForeign(foreignAmount, currencyForDisplay)}
+                            </ThemedText>
+                            <ThemedText style={styles.heroRateSub} numberOfLines={1}>
+                              {formatRate(rate, currencyForDisplay)}
+                            </ThemedText>
+                          </View>
+                        )
                       )}
                     </View>
                     {jpyAmount <= 0 && (
@@ -841,7 +890,9 @@ export default function CameraScreen() {
                   OCR成功時はヒーロー右上の「金額を修正」で開閉。失敗・手入力主導時は既定で開く。
                   入力state（nativeAmount）・切替（switchInputMode）・計算ロジックは一切変更しない。 */}
               {manualOpen && (
-                <View style={styles.editPanel}>
+                <View
+                  style={styles.editPanel}
+                  onLayout={(e) => { manualAdjustYRef.current = e.nativeEvent.layout.y; }}>
                   <View style={styles.editPanelHead}>
                     <ThemedText style={styles.editPanelTitle}>金額を手入力</ThemedText>
                     {ocrSuccess && (
@@ -1306,9 +1357,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: DT.radius.sm,
   },
+  modeSegmentBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   modeSegmentBtnActive: {
     backgroundColor: color.card,
-    ...shadow.card,
+    shadowColor: '#10211F',
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
   },
   modeSegmentText: {
     fontSize: 14,
@@ -1444,12 +1504,14 @@ const styles = StyleSheet.create({
     color: color.muted,
     marginBottom: spacing.xs,
   },
-  // 値とレート情報（外貨額・レート）を横並びに。狭い画面・長い文字列は自然に折り返す
+  // 円価格（主役・左）とレート補足情報（右端）を分ける。alignSelf:'stretch'でヒーロー全幅を確保し、
+  // justifyContent:'space-between'で右端へ逃がす（stretchがないとrowが内容幅にしか広がらず右に逃げない）
   heroValueRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
     flexWrap: 'wrap',
-    gap: 8,
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    alignSelf: 'stretch',
   },
   heroJpyValue: {
     fontSize: 44,
@@ -1459,11 +1521,27 @@ const styles = StyleSheet.create({
     color: color.text,
     fontVariant: ['tabular-nums'],
   },
-  heroRateSub: {
+  // 小さい金額用：外貨額・レートの2行を右端でまとめる（主役の円価格と窮屈に並べない）
+  heroRateSubWrap: {
+    alignItems: 'flex-end',
     flexShrink: 1,
+    paddingLeft: 12,
+    paddingBottom: 2,
+  },
+  heroRateSub: {
     fontSize: 13,
     fontWeight: '500',
     color: color.muted,
+    textAlign: 'right',
+    fontVariant: ['tabular-nums'],
+  },
+  // 大きい金額用：外貨額＋レートを1行にまとめ、縦を無駄に使わない
+  heroRateSubInline: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: color.muted,
+    paddingLeft: 12,
+    paddingBottom: 2,
     fontVariant: ['tabular-nums'],
   },
   heroPlaceholderValue: {
