@@ -595,17 +595,10 @@ export default function CameraScreen() {
             {showInputCard && (
             <View onLayout={(e) => { inputCardYRef.current = e.nativeEvent.layout.y; }}>
             <SectionCard style={styles.resultPanel}>
-              {/* 1. 読み取りステータス（控えめなチップ）＋ ヒーロー右上の「金額を修正」小アクション。
-                  撮り直すは上の値札プレビューが担う。 */}
-              {ocrResult != null && (
-                <View style={styles.resultStatusRow}>
-                  <View style={[styles.resultStatusChip, ocrResult.prices.length === 0 && styles.resultStatusChipFail]}>
-                    <ThemedText
-                      style={[styles.resultStatusChipText, ocrResult.prices.length === 0 && styles.resultStatusChipTextFail]}>
-                      {ocrResult.prices.length > 0 ? '✓ 読み取り完了' : '読み取りできませんでした'}
-                    </ThemedText>
-                  </View>
-                  {/* OCR成功時のみ。独立行を作らずヒーロー上部の右に置く（手入力の開閉） */}
+              {/* 円換算ヒーロー（確認画面の主役）。「✎ 金額を修正」はヒーロー右上の自然なアクション
+                  （手入力パネルの開閉）。読み取りステータスはヒーロー＝成功 / 下の失敗ブロック＝失敗で表現。 */}
+              {(jpyAmount > 0 || (ocrResult != null && ocrResult.prices.length > 0)) && (
+                <View style={styles.heroBlock}>
                   {ocrSuccess && (
                     <TouchableOpacity
                       style={styles.heroEditLink}
@@ -613,16 +606,10 @@ export default function CameraScreen() {
                       hitSlop={8}
                       activeOpacity={0.7}>
                       <ThemedText style={styles.heroEditLinkText}>
-                        {manualOpen ? '修正を閉じる' : '✎ 金額を修正'}
+                        {manualOpen ? '閉じる' : '✎ 金額を修正'}
                       </ThemedText>
                     </TouchableOpacity>
                   )}
-                </View>
-              )}
-
-              {/* 2. 円換算ヒーロー（パネル最上部の主役）＋ 残予算pill */}
-              {(jpyAmount > 0 || (ocrResult != null && ocrResult.prices.length > 0)) && (
-                <View style={styles.heroBlock}>
                   {jpyAmount > 0 ? (
                     isJpyMode ? (
                       <View style={styles.heroJpy}>
@@ -742,7 +729,7 @@ export default function CameraScreen() {
                 {ocrResult.memoLines.length > 0 && (
                   <View style={styles.ocrSection}>
                     <View style={styles.ocrSectionHeader}>
-                      <ThemedText style={styles.ocrSectionLabel}>メモ候補</ThemedText>
+                      <ThemedText style={styles.ocrSectionLabel}>メモ候補（タップで追加）</ThemedText>
                       {ocrResult.memoLines.length > MEMO_PREVIEW_COUNT && (
                         <TouchableOpacity
                           onPress={() => setMemoExpanded((v) => !v)}
@@ -769,7 +756,7 @@ export default function CameraScreen() {
                             {line}
                           </ThemedText>
                           <ThemedText style={[styles.ocrMemoStatus, added && styles.ocrMemoStatusAdded]}>
-                            {added ? '✓ 追加済み' : '＋'}
+                            {added ? '✓ 追加済み' : '＋メモ'}
                           </ThemedText>
                         </TouchableOpacity>
                       );
@@ -804,73 +791,79 @@ export default function CameraScreen() {
               </View>
               )}
 
-              {/* OCR結果と入力セクションの区切り（OCR結果がある時のみ） */}
+              {/* 読み取り結果（OCR）と保存確認の区切り */}
               {ocrResult != null && <View style={styles.cardDivider} />}
 
-              {/* ===== 手入力で調整 =====
-                  OCR成功時の開閉はヒーロー右上の「金額を修正」が担う（重複行を作らない）。
-                  失敗・手入力主導時のみ、ここにラベルを出して開いた状態で見せる。 */}
-              {manualOpenByDefault && (
-                <ThemedText style={styles.manualAdjustLabel}>手入力で調整</ThemedText>
-              )}
-
-              {/* 入力モード切り替え（JPY モードでは非表示・開いている時のみ） */}
-              {/* OCR成功時は読み取った通貨側のみ既定表示。逆換算は小リンクで補助的に切替（既存 switchInputMode 流用）。 */}
-              {/* OCR失敗・手入力主導時は従来の2ボタン切替を維持。 */}
-              {manualOpen && !isJpyMode && (
-                manualOpenByDefault ? (
-                  <View style={styles.inputModeRow}>
-                    <TouchableOpacity
-                      style={[styles.inputModeBtn, !isReverse && styles.inputModeBtnActive]}
-                      onPress={() => switchInputMode('TO_JPY')}
-                      activeOpacity={0.75}>
-                      <ThemedText style={[styles.inputModeBtnText, !isReverse && styles.inputModeBtnTextActive]}>
-                        {currencyForDisplay} → JPY
-                      </ThemedText>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.inputModeBtn, isReverse && styles.inputModeBtnActive]}
-                      onPress={() => switchInputMode('FROM_JPY')}
-                      activeOpacity={0.75}>
-                      <ThemedText style={[styles.inputModeBtnText, isReverse && styles.inputModeBtnTextActive]}>
-                        JPY → {currencyForDisplay}
-                      </ThemedText>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.reverseLink}
-                    onPress={() => switchInputMode(isReverse ? 'TO_JPY' : 'FROM_JPY')}
-                    hitSlop={8}
-                    activeOpacity={0.7}>
-                    <ThemedText style={styles.reverseLinkText}>
-                      {isReverse ? `${currencyForDisplay}から入力する` : '円から入力する'}
-                    </ThemedText>
-                  </TouchableOpacity>
-                )
-              )}
-
-              {/* 金額（手入力・補助。主役は上部の円換算ヒーロー。開いている時のみ） */}
+              {/* ===== 金額の手入力（コンパクト編集パネル） =====
+                  OCR成功時はヒーロー右上の「金額を修正」で開閉。失敗・手入力主導時は既定で開く。
+                  入力state（nativeAmount）・切替（switchInputMode）・計算ロジックは一切変更しない。 */}
               {manualOpen && (
-                <View style={styles.inputAmountRow}>
-                  <ThemedText style={styles.inputCurrencySymbol}>
-                    {isReverse ? '¥' : c.symbol}
-                  </ThemedText>
-                  <TextInput
-                    style={styles.inputAmountField}
-                    value={nativeAmount}
-                    onChangeText={setNativeAmount}
-                    placeholder="0"
-                    placeholderTextColor={DT.colors.textMuted}
-                    keyboardType="decimal-pad"
-                    inputMode="decimal"
-                    selectTextOnFocus
-                    inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID_AMOUNT : undefined}
-                  />
+                <View style={styles.editPanel}>
+                  <View style={styles.editPanelHead}>
+                    <ThemedText style={styles.editPanelTitle}>金額を手入力</ThemedText>
+                    {ocrSuccess && (
+                      <TouchableOpacity
+                        onPress={() => setManualAdjustExpanded(false)}
+                        hitSlop={8}
+                        activeOpacity={0.7}>
+                        <ThemedText style={styles.editPanelClose}>閉じる</ThemedText>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* 入力モード切替（JPYモードでは非表示）。失敗・手入力主導は2ボタン / OCR成功は逆換算リンク。 */}
+                  {!isJpyMode && (
+                    manualOpenByDefault ? (
+                      <View style={styles.inputModeRow}>
+                        <TouchableOpacity
+                          style={[styles.inputModeBtn, !isReverse && styles.inputModeBtnActive]}
+                          onPress={() => switchInputMode('TO_JPY')}
+                          activeOpacity={0.75}>
+                          <ThemedText style={[styles.inputModeBtnText, !isReverse && styles.inputModeBtnTextActive]}>
+                            {currencyForDisplay} → JPY
+                          </ThemedText>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.inputModeBtn, isReverse && styles.inputModeBtnActive]}
+                          onPress={() => switchInputMode('FROM_JPY')}
+                          activeOpacity={0.75}>
+                          <ThemedText style={[styles.inputModeBtnText, isReverse && styles.inputModeBtnTextActive]}>
+                            JPY → {currencyForDisplay}
+                          </ThemedText>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.reverseLink}
+                        onPress={() => switchInputMode(isReverse ? 'TO_JPY' : 'FROM_JPY')}
+                        hitSlop={8}
+                        activeOpacity={0.7}>
+                        <ThemedText style={styles.reverseLinkText}>
+                          {isReverse ? `${currencyForDisplay}から入力する` : '円から入力する'}
+                        </ThemedText>
+                      </TouchableOpacity>
+                    )
+                  )}
+
+                  {/* 金額入力（外貨/円）。記号＋数字で「読み取った値の調整」として見せる。 */}
+                  <View style={styles.inputAmountRow}>
+                    <ThemedText style={styles.inputCurrencySymbol}>
+                      {isReverse ? '¥' : c.symbol}
+                    </ThemedText>
+                    <TextInput
+                      style={styles.inputAmountField}
+                      value={nativeAmount}
+                      onChangeText={setNativeAmount}
+                      placeholder="0"
+                      placeholderTextColor={DT.colors.textMuted}
+                      keyboardType="decimal-pad"
+                      inputMode="decimal"
+                      selectTextOnFocus
+                      inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID_AMOUNT : undefined}
+                    />
+                  </View>
                 </View>
               )}
-
-              <View style={styles.cardDivider} />
 
               {/* メモ（補助情報） */}
               <View style={styles.memoRow}>
@@ -1381,60 +1374,16 @@ const styles = StyleSheet.create({
   resultPanel: {
     gap: 10,
   },
-  // 読み取りステータス（控えめなチップ）
-  resultStatusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
+  // ヒーロー右上の「✎ 金額を修正」（手入力パネルの開閉）
   heroEditLink: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    zIndex: 2,
     paddingVertical: 2,
+    paddingLeft: 8,
   },
   heroEditLinkText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: color.primary,
-  },
-  resultStatusChip: {
-    alignSelf: 'flex-start',
-    backgroundColor: color.primarySoft,
-    borderRadius: radius.pill,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-  },
-  resultStatusChipFail: {
-    backgroundColor: color.candidateSoft,
-  },
-  resultStatusChipText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: color.primaryDark,
-  },
-  resultStatusChipTextFail: {
-    color: color.candidateText,
-  },
-  resultPanelHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  resultHeaderThumb: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    backgroundColor: color.line2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  resultHeaderThumbIcon: { fontSize: 18 },
-  resultPanelTitle: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '700',
-    color: color.text,
-    letterSpacing: -0.2,
-  },
-  resultPanelRescan: {
     fontSize: 13,
     fontWeight: '700',
     color: color.primary,
@@ -1442,6 +1391,7 @@ const styles = StyleSheet.create({
   // 円換算ヒーロー（パネル最上部の主役）＋ 残予算pill
   heroBlock: {
     gap: 6,
+    position: 'relative',
   },
   heroJpy: {
     alignItems: 'flex-start',
@@ -1481,11 +1431,28 @@ const styles = StyleSheet.create({
     color: color.primaryDark,
     fontVariant: ['tabular-nums'],
   },
-  manualAdjustLabel: {
+  // 金額の手入力（コンパクト編集パネル）。淡背景の囲みで「フォーム」ではなく「調整パネル」に見せる
+  editPanel: {
+    backgroundColor: color.bgScreen,
+    borderRadius: radius.chip,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  editPanelHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  editPanelTitle: {
     fontSize: 11,
     fontWeight: '700',
     color: color.muted,
     letterSpacing: 0.4,
+  },
+  editPanelClose: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: color.primary,
   },
   // OCR成功時の逆換算への補助リンク（円から入力する / 外貨から入力する）
   reverseLink: {
@@ -1561,14 +1528,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   ocrPriceBtn: {
-    backgroundColor: color.primarySoft, // 未選択＝淡teal
+    backgroundColor: color.primary, // v2＝ソリッドteal地に白文字
     borderRadius: radius.pill,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
   },
   ocrPriceBtnText: {
-    color: color.primaryDark, // 未選択＝淡teal地に濃teal文字
-    fontSize: 16,
+    color: '#fff',
+    fontSize: 18,
     fontWeight: '700',
     letterSpacing: -0.3,
     fontVariant: ['tabular-nums'],
@@ -1587,7 +1554,7 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   ocrPriceBtnSelected: {
-    backgroundColor: color.primary, // 選択中＝濃teal（✓は本文で付与）
+    backgroundColor: color.primaryDark, // 選択中＝濃teal（✓は本文で付与）
   },
   ocrPriceBtnTextSelected: {
     color: '#fff',
@@ -1648,12 +1615,19 @@ const styles = StyleSheet.create({
   },
   // 行右端の状態表示（未追加＝＋ / 追加済み＝✓ 追加済み）。ボタンではなくステータス。
   ocrMemoStatus: {
-    fontSize: 13,
-    fontWeight: '700',
+    borderWidth: 1,
+    borderColor: color.primary,
+    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    fontSize: 12,
+    fontWeight: '600',
     color: color.primary,
+    overflow: 'hidden',
   },
   ocrMemoStatusAdded: {
-    fontSize: 12,
+    borderColor: color.line,
+    backgroundColor: color.line2,
     color: color.muted,
   },
   ocrRawToggle: {
@@ -1684,20 +1658,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  inputCard: {
-    gap: 10,
-  },
-  reflectedBanner: {
-    backgroundColor: color.primarySoft,
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-  },
-  reflectedBannerText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: color.primaryDark,
-  },
   cardDivider: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: color.line2,
