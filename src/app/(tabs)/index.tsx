@@ -33,9 +33,8 @@ import { getTripStatsForDisplay } from '@/utils/trip-stats';
 const C = DT.colors;
 const MEMO_PREVIEW_COUNT = 3;
 const PRICE_PREVIEW_COUNT = 3;
-// 1つのIDを両方のTextInputで共有する（iOSで複数InputAccessoryViewを同時マウントすると
-// 2つ目以降が表示されないことがあるため、単一インスタンスに統一）
-const INPUT_ACCESSORY_ID = 'camera-input-accessory-done';
+// 金額入力（数字キーボード）専用。メモ入力はiOS標準の青い完了キーで閉じられるため対象外。
+const AMOUNT_INPUT_ACCESSORY_ID = 'camera-input-accessory-amount';
 const NEAR_SAVE_LIMIT = FREE_LIMITS.saves - 5;
 // OCR写真プレビュー枠の高さ（styles.ocrPhotoPreviewFrameと一致させる・中心スクロール計算に使用）
 const OCR_PHOTO_PREVIEW_FRAME_HEIGHT = 110;
@@ -46,18 +45,19 @@ type CaptureMode = 'ocr' | 'photo';
 /** 価格OCRモードの表示フェーズ。scanning は CameraPreview 内部 state のため camera に含める。 */
 type Phase = 'camera' | 'scanning' | 'result';
 
-// iOS専用: キーボード上に「キーボードを閉じる」ボタンを表示するツールバー。
-// 全TextInputで同じ INPUT_ACCESSORY_ID / 同じインスタンスを共有する（1画面1個のみマウント）。
-function KeyboardDoneBar({ nativeID }: { nativeID: string }) {
+// iOS専用: 金額入力（数字キーボード）にだけ出す薄いツールバー。
+// メモ入力はiOS標準の「完了」キーで閉じられるため、こちらは付けない。
+function AmountKeyboardBar() {
   return (
-    <InputAccessoryView nativeID={nativeID}>
+    <InputAccessoryView nativeID={AMOUNT_INPUT_ACCESSORY_ID}>
       <View style={styles.accessoryContainer}>
+        <ThemedText style={styles.accessoryLabel}>金額を修正</ThemedText>
         <TouchableOpacity
           onPress={() => Keyboard.dismiss()}
           hitSlop={8}
           style={styles.accessoryButton}
-          activeOpacity={0.7}>
-          <ThemedText style={styles.accessoryButtonText}>⌄ キーボードを閉じる</ThemedText>
+          activeOpacity={0.6}>
+          <ThemedText style={styles.accessoryButtonText}>閉じる</ThemedText>
         </TouchableOpacity>
       </View>
     </InputAccessoryView>
@@ -997,13 +997,13 @@ export default function CameraScreen() {
                       selectTextOnFocus
                       returnKeyType="done"
                       onSubmitEditing={() => Keyboard.dismiss()}
-                      inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID : undefined}
+                      inputAccessoryViewID={Platform.OS === 'ios' ? AMOUNT_INPUT_ACCESSORY_ID : undefined}
                     />
                   </View>
                 </View>
               )}
 
-              {/* メモ（補助情報）。キーボードを閉じる導線はInputAccessoryViewに統一。
+              {/* メモ（補助情報）。iOS標準の「完了」キーで閉じられるため独自バーは出さない。
                   onLayoutのYはmemoRowYRef（自由入力タップ時のスクロール先）に保持する。 */}
               <View
                 style={styles.memoRow}
@@ -1019,7 +1019,6 @@ export default function CameraScreen() {
                   returnKeyType="done"
                   onSubmitEditing={() => Keyboard.dismiss()}
                   maxLength={100}
-                  inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID : undefined}
                 />
               </View>
               {addedMemoLines.size > 0 && (
@@ -1211,8 +1210,8 @@ export default function CameraScreen() {
         </View>
       )}
 
-      {/* キーボード上の「完了」ボタン（iOSのみ・全TextInput共通の単一インスタンス） */}
-      {Platform.OS === 'ios' && <KeyboardDoneBar nativeID={INPUT_ACCESSORY_ID} />}
+      {/* 金額入力（数字キーボード）専用のキーボード上バー（iOSのみ）。メモ入力では出さない。 */}
+      {Platform.OS === 'ios' && <AmountKeyboardBar />}
 
       {/* 保存写真プレビュー */}
       {pendingPhotoUri != null && Platform.OS !== 'web' && (
@@ -2220,17 +2219,23 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
 
-  // キーボード上部バー。背景と同化しないよう薄グレー＋上ボーダーで区切り、teal文字でタップ可能なことを示す
+  // 金額入力専用のキーボード上バー。iOS標準ツールバーに寄せた控えめな高さ・薄い背景。
+  // 枠付きボタンにはせず、左ラベル＋右teal文字のみでタップ可能なことを示す。
   accessoryContainer: {
     width: '100%',
-    height: 40,
+    height: 36,
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
     backgroundColor: color.bgScreen,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: color.line,
+  },
+  accessoryLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: color.muted,
   },
   accessoryButton: {
     paddingHorizontal: 12,
