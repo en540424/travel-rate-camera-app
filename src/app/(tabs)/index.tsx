@@ -3,7 +3,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, InputAccessoryView, Keyboard, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Keyboard, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CameraPreview } from '@/components/camera/CameraPreview';
@@ -33,8 +33,6 @@ import { getTripStatsForDisplay } from '@/utils/trip-stats';
 const C = DT.colors;
 const MEMO_PREVIEW_COUNT = 3;
 const PRICE_PREVIEW_COUNT = 3;
-// 金額入力（数字キーボード）専用。メモ入力はiOS標準の青い完了キーで閉じられるため対象外。
-const AMOUNT_INPUT_ACCESSORY_ID = 'camera-input-accessory-amount';
 const NEAR_SAVE_LIMIT = FREE_LIMITS.saves - 5;
 // OCR写真プレビュー枠の高さ（styles.ocrPhotoPreviewFrameと一致させる・中心スクロール計算に使用）
 const OCR_PHOTO_PREVIEW_FRAME_HEIGHT = 110;
@@ -44,25 +42,6 @@ type CaptureMode = 'ocr' | 'photo';
 
 /** 価格OCRモードの表示フェーズ。scanning は CameraPreview 内部 state のため camera に含める。 */
 type Phase = 'camera' | 'scanning' | 'result';
-
-// iOS専用: 金額入力（数字キーボード）にだけ出す薄いツールバー。
-// メモ入力はiOS標準の「完了」キーで閉じられるため、こちらは付けない。
-function AmountKeyboardBar() {
-  return (
-    <InputAccessoryView nativeID={AMOUNT_INPUT_ACCESSORY_ID}>
-      <View style={styles.accessoryContainer}>
-        <ThemedText style={styles.accessoryLabel}>金額を修正</ThemedText>
-        <TouchableOpacity
-          onPress={() => Keyboard.dismiss()}
-          hitSlop={8}
-          style={styles.accessoryButton}
-          activeOpacity={0.6}>
-          <ThemedText style={styles.accessoryButtonText}>閉じる</ThemedText>
-        </TouchableOpacity>
-      </View>
-    </InputAccessoryView>
-  );
-}
 
 export default function CameraScreen() {
   const [nativeAmount, setNativeAmount] = useState('');
@@ -936,14 +915,23 @@ export default function CameraScreen() {
                   onLayout={(e) => { manualAdjustYRef.current = e.nativeEvent.layout.y; }}>
                   <View style={styles.editPanelHead}>
                     <ThemedText style={styles.editPanelTitle}>金額を手入力</ThemedText>
-                    {ocrSuccess && (
+                    <View style={styles.editPanelHeadActions}>
+                      {/* 数字キーボードには分かりやすい完了導線がないため、確実に見える位置に常設する */}
                       <TouchableOpacity
-                        onPress={() => setManualAdjustExpanded(false)}
+                        onPress={() => Keyboard.dismiss()}
                         hitSlop={8}
                         activeOpacity={0.7}>
-                        <ThemedText style={styles.editPanelClose}>閉じる</ThemedText>
+                        <ThemedText style={styles.editPanelClose}>キーボードを閉じる</ThemedText>
                       </TouchableOpacity>
-                    )}
+                      {ocrSuccess && (
+                        <TouchableOpacity
+                          onPress={() => setManualAdjustExpanded(false)}
+                          hitSlop={8}
+                          activeOpacity={0.7}>
+                          <ThemedText style={styles.editPanelClose}>閉じる</ThemedText>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
 
                   {/* 入力モード切替（JPYモードでは非表示）。失敗・手入力主導は2ボタン / OCR成功は逆換算リンク。 */}
@@ -981,7 +969,7 @@ export default function CameraScreen() {
                   )}
 
                   {/* 金額入力（外貨/円）。記号＋数字で「読み取った値の調整」として見せる。
-                      キーボードを閉じる導線はキーボード上部のInputAccessoryViewに統一（画面内ボタンは置かない）。 */}
+                      キーボードを閉じる導線はeditPanelHead内の「キーボードを閉じる」テキストボタンが主役。 */}
                   <View style={styles.inputAmountRow}>
                     <ThemedText style={styles.inputCurrencySymbol}>
                       {isReverse ? '¥' : c.symbol}
@@ -997,7 +985,6 @@ export default function CameraScreen() {
                       selectTextOnFocus
                       returnKeyType="done"
                       onSubmitEditing={() => Keyboard.dismiss()}
-                      inputAccessoryViewID={Platform.OS === 'ios' ? AMOUNT_INPUT_ACCESSORY_ID : undefined}
                     />
                   </View>
                 </View>
@@ -1209,9 +1196,6 @@ export default function CameraScreen() {
           </TouchableOpacity>
         </View>
       )}
-
-      {/* 金額入力（数字キーボード）専用のキーボード上バー（iOSのみ）。メモ入力では出さない。 */}
-      {Platform.OS === 'ios' && <AmountKeyboardBar />}
 
       {/* 保存写真プレビュー */}
       {pendingPhotoUri != null && Platform.OS !== 'web' && (
@@ -1630,6 +1614,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: color.muted,
     letterSpacing: 0.4,
+  },
+  // 「キーボードを閉じる」「閉じる」を並べる（両方出る場合のみ間隔をあける）
+  editPanelHeadActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   editPanelClose: {
     fontSize: 12.5,
@@ -2217,33 +2207,5 @@ const styles = StyleSheet.create({
     fontSize: DT.fontSize.md,
     fontWeight: DT.fontWeight.semibold,
     color: '#fff',
-  },
-
-  // 金額入力専用のキーボード上バー。iOS標準ツールバーに寄せた控えめな高さ・薄い背景。
-  // 枠付きボタンにはせず、左ラベル＋右teal文字のみでタップ可能なことを示す。
-  accessoryContainer: {
-    width: '100%',
-    height: 36,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    backgroundColor: color.bgScreen,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: color.line,
-  },
-  accessoryLabel: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: color.muted,
-  },
-  accessoryButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  accessoryButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: color.primary,
   },
 });
