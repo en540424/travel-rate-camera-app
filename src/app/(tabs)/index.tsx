@@ -8,7 +8,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraPreview } from '@/components/camera/CameraPreview';
 import { ThemedText } from '@/components/themed-text';
 import {
-  PriceResultCard,
   SaveLimitBanner,
 } from '@/components/domain';
 import { ActionSheet, EmptyState, SectionCard, SecondaryButton, PrimaryButton } from '@/components/ui';
@@ -27,7 +26,7 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { color, radius, shadow, spacing, statusColor, typography } from '@/theme/tokens';
 import { convert } from '@/utils/currency';
 import { extractMemoLines, extractPriceCandidates } from '@/utils/extract-prices';
-import { formatJpy, formatRate } from '@/utils/format';
+import { formatForeign, formatJpy, formatRate } from '@/utils/format';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
 const C = DT.colors;
@@ -610,27 +609,24 @@ export default function CameraScreen() {
                       </ThemedText>
                     </TouchableOpacity>
                   )}
-                  {jpyAmount > 0 ? (
-                    isJpyMode ? (
-                      <View style={styles.heroJpy}>
-                        <ThemedText style={styles.heroJpyLabel}>日本円で</ThemedText>
-                        <ThemedText style={styles.heroJpyValue}>{formatJpy(Math.round(jpyAmount))}</ThemedText>
-                      </View>
-                    ) : (
-                      <PriceResultCard
-                        jpyAmount={jpyAmount}
-                        foreignAmount={foreignAmount}
-                        currency={currencyForDisplay}
-                        rate={rate}
-                      />
-                    )
-                  ) : (
-                    <View style={styles.heroJpy}>
-                      <ThemedText style={styles.heroJpyLabel}>日本円で</ThemedText>
-                      <ThemedText style={styles.heroPlaceholderValue}>¥—</ThemedText>
-                      <ThemedText style={styles.heroPlaceholderHint}>下の価格候補を選ぶと換算されます</ThemedText>
+                  {/* 円換算ヒーロー：日本円で・¥xxx の横に外貨額＋レートを並べ、縦の消費を減らす。
+                      狭い画面・長い文字列は自然に折り返す。保存時のcurrency/rate計算には触れない（表示のみ）。 */}
+                  <View style={styles.heroJpy}>
+                    <ThemedText style={styles.heroJpyLabel}>日本円で</ThemedText>
+                    <View style={styles.heroValueRow}>
+                      <ThemedText style={jpyAmount > 0 ? styles.heroJpyValue : styles.heroPlaceholderValue}>
+                        {jpyAmount > 0 ? formatJpy(jpyAmount) : '¥—'}
+                      </ThemedText>
+                      {jpyAmount > 0 && !isJpyMode && rate > 0 && (
+                        <ThemedText style={styles.heroRateSub} numberOfLines={2}>
+                          {formatForeign(foreignAmount, currencyForDisplay)}{'　・　'}{formatRate(rate, currencyForDisplay)}
+                        </ThemedText>
+                      )}
                     </View>
-                  )}
+                    {jpyAmount <= 0 && (
+                      <ThemedText style={styles.heroPlaceholderHint}>下の価格候補を選ぶと換算されます</ThemedText>
+                    )}
+                  </View>
                   {tripBudgetJpy > 0 && (
                     <View style={styles.budgetPill}>
                       <ThemedText style={styles.budgetPillText}>
@@ -689,38 +685,31 @@ export default function CameraScreen() {
                         />
                       </View>
                     </View>
-                  ) : ocrResult.prices.length === 1 ? (
-                    <TouchableOpacity
-                      style={[
-                        styles.ocrPriceBtnSingle,
-                        ocrResult.prices[0] === selectedPrice && styles.ocrPriceBtnSelected,
-                      ]}
-                      onPress={() => handlePickPrice(ocrResult.prices[0])}
-                      activeOpacity={0.75}>
-                      <ThemedText
-                        style={[
-                          styles.ocrPriceBtnSingleText,
-                          ocrResult.prices[0] === selectedPrice && styles.ocrPriceBtnTextSelected,
-                        ]}>
-                        {ocrResult.prices[0] === selectedPrice ? '✓ ' : ''}{c.symbol}{ocrResult.prices[0]}
-                      </ThemedText>
-                    </TouchableOpacity>
                   ) : (
-                    <View style={styles.ocrPriceWrap}>
-                      <View style={styles.ocrPriceRow}>
-                        {(pricesExpanded ? ocrResult.prices : ocrResult.prices.slice(0, PRICE_PREVIEW_COUNT)).map((p) => (
+                    <View style={styles.ocrPriceRow}>
+                      {(pricesExpanded ? ocrResult.prices : ocrResult.prices.slice(0, PRICE_PREVIEW_COUNT)).map((p) => {
+                        const isSelected = p === selectedPrice;
+                        const numP = Number(p);
+                        const jpyForP = rate > 0 && isFinite(numP) ? convert(numP, rate, 'TO_JPY') : 0;
+                        return (
                           <TouchableOpacity
                             key={p}
-                            style={[styles.ocrPriceBtn, p === selectedPrice && styles.ocrPriceBtnSelected]}
+                            style={[styles.priceCard, isSelected && styles.priceCardSelected]}
                             onPress={() => handlePickPrice(p)}
-                            activeOpacity={0.75}>
+                            activeOpacity={0.8}>
                             <ThemedText
-                              style={[styles.ocrPriceBtnText, p === selectedPrice && styles.ocrPriceBtnTextSelected]}>
-                              {p === selectedPrice ? '✓ ' : ''}{c.symbol}{p}
+                              style={[styles.priceCardForeign, isSelected && styles.priceCardForeignSelected]}>
+                              {isSelected ? '✓ ' : ''}{c.symbol}{p}
                             </ThemedText>
+                            {!isJpyMode && jpyForP > 0 && (
+                              <ThemedText
+                                style={[styles.priceCardJpy, isSelected && styles.priceCardJpySelected]}>
+                                {formatJpy(jpyForP)}
+                              </ThemedText>
+                            )}
                           </TouchableOpacity>
-                        ))}
-                      </View>
+                        );
+                      })}
                     </View>
                   )}
                 </View>
@@ -1401,13 +1390,31 @@ const styles = StyleSheet.create({
     color: color.muted,
     marginBottom: spacing.xs,
   },
+  // 値とレート情報（外貨額・レート）を横並びに。狭い画面・長い文字列は自然に折り返す
+  heroValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
   heroJpyValue: {
-    ...typography.display,
+    fontSize: 44,
+    lineHeight: 46,
+    fontWeight: '700',
+    letterSpacing: -1.6,
     color: color.text,
     fontVariant: ['tabular-nums'],
   },
+  heroRateSub: {
+    flexShrink: 1,
+    fontSize: 13,
+    fontWeight: '500',
+    color: color.muted,
+    fontVariant: ['tabular-nums'],
+  },
   heroPlaceholderValue: {
-    fontSize: 48,
+    fontSize: 44,
+    lineHeight: 46,
     fontWeight: '700',
     color: color.faint2,
     letterSpacing: -1.6,
@@ -1488,9 +1495,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: color.body,
   },
-  ocrPriceWrap: {
-    gap: 8,
-  },
   nextShotBtn: {
     alignItems: 'center',
     paddingVertical: 4,
@@ -1527,37 +1531,39 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
   },
-  ocrPriceBtn: {
-    backgroundColor: color.primary, // v2＝ソリッドteal地に白文字
-    borderRadius: radius.pill,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-  },
-  ocrPriceBtnText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-    fontVariant: ['tabular-nums'],
-  },
-  ocrPriceBtnSingle: {
-    backgroundColor: color.primary,
-    borderRadius: radius.button,
-    paddingVertical: 12,
+  // 価格候補カード（外貨額＋円換算の2段）。未選択＝淡teal地に濃teal文字、選択中＝濃teal地に白文字＋CTAグロー
+  priceCard: {
+    flexBasis: '31%',
+    flexGrow: 0,
     alignItems: 'center',
+    backgroundColor: color.primarySoft,
+    borderRadius: radius.chip,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    gap: 2,
   },
-  ocrPriceBtnSingleText: {
-    color: '#fff',
-    fontSize: 20,
+  priceCardSelected: {
+    backgroundColor: color.primaryDark,
+    ...shadow.cta,
+  },
+  priceCardForeign: {
+    color: color.primaryDark,
+    fontSize: 17,
     fontWeight: '700',
     letterSpacing: -0.3,
     fontVariant: ['tabular-nums'],
   },
-  ocrPriceBtnSelected: {
-    backgroundColor: color.primaryDark, // 選択中＝濃teal（✓は本文で付与）
-  },
-  ocrPriceBtnTextSelected: {
+  priceCardForeignSelected: {
     color: '#fff',
+  },
+  priceCardJpy: {
+    color: color.body,
+    fontSize: 12,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
+  priceCardJpySelected: {
+    color: color.primaryAccent,
   },
   ocrFailBlock: {
     alignItems: 'center',
