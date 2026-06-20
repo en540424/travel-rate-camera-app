@@ -31,7 +31,7 @@ import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
 const C = DT.colors;
 const MEMO_PREVIEW_COUNT = 3;
-const PRICE_PREVIEW_COUNT = 4;
+const PRICE_PREVIEW_COUNT = 3;
 const INPUT_ACCESSORY_ID_AMOUNT = 'camera-input-accessory-amount';
 const INPUT_ACCESSORY_ID_MEMO = 'camera-input-accessory-memo';
 const NEAR_SAVE_LIMIT = FREE_LIMITS.saves - 5;
@@ -136,6 +136,14 @@ export default function CameraScreen() {
   // 価格候補セクションを畳んだときの見出しサブ情報用（選択済み金額の円換算・表示専用）
   const selectedPriceNum = selectedPrice != null ? Number(selectedPrice) : NaN;
   const selectedPriceJpy = rate > 0 && isFinite(selectedPriceNum) ? convert(selectedPriceNum, rate, 'TO_JPY') : 0;
+
+  // 価格候補の初期プレビュー（最大PRICE_PREVIEW_COUNT件）。選択済みが4件目以降でも、
+  // 最後の1件と入れ替えて必ず含める（選択状態が隠れないようにする・表示専用、並び替えは保存に影響しない）
+  const pricePreviewBase = ocrResult != null ? ocrResult.prices.slice(0, PRICE_PREVIEW_COUNT) : [];
+  const pricePreview =
+    selectedPrice != null && !pricePreviewBase.includes(selectedPrice)
+      ? [...pricePreviewBase.slice(0, PRICE_PREVIEW_COUNT - 1), selectedPrice]
+      : pricePreviewBase;
 
   // 「入力をリセット」は入力欄だけを消す操作なので、入力系の有無だけで判定する
   // （OCR結果・保存写真だけが残っている状態ではボタンを出さない）
@@ -716,7 +724,7 @@ export default function CameraScreen() {
                     </View>
                   ) : pricesSectionOpen ? (
                     <View style={styles.ocrPriceRow}>
-                      {(pricesExpanded ? ocrResult.prices : ocrResult.prices.slice(0, PRICE_PREVIEW_COUNT)).map((p) => {
+                      {(pricesExpanded ? ocrResult.prices : pricePreview).map((p) => {
                         const isSelected = p === selectedPrice;
                         const numP = Number(p);
                         const jpyForP = rate > 0 && isFinite(numP) ? convert(numP, rate, 'TO_JPY') : 0;
