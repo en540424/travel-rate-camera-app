@@ -1457,10 +1457,10 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   heroPlaceholderValue: {
-    fontSize: 40,
+    fontSize: 48,
     fontWeight: '700',
     color: color.faint2,
-    letterSpacing: -1.2,
+    letterSpacing: -1.6,
   },
   heroPlaceholderHint: {
     fontSize: 12,
@@ -1526,7 +1526,7 @@ const styles = StyleSheet.create({
   },
   nextShotBtn: {
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 4,
   },
   nextShotText: {
     fontSize: 13,
@@ -1731,16 +1731,17 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   inputCurrencySymbol: {
-    fontSize: 18,
-    lineHeight: 26,
+    fontSize: 24,
+    lineHeight: 32,
     fontWeight: '700',
-    color: color.muted,
+    color: color.text,
   },
   inputAmountField: {
     flex: 1,
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: '700',
+    fontSize: 32,
+    lineHeight: 38,
+    fontWeight: '800',
+    letterSpacing: -0.5,
     color: color.text,
     paddingVertical: 0,
   },
