@@ -79,6 +79,9 @@ export default function CameraScreen() {
   const [addedMemoLines, setAddedMemoLines] = useState<Set<string>>(new Set());
   const [memoExpanded, setMemoExpanded] = useState(false);
   const [pricesExpanded, setPricesExpanded] = useState(false);
+  // 候補一覧セクション自体の開閉（タップでは閉じない・手動操作のみ）。OCR成功直後は開いている。
+  const [pricesSectionOpen, setPricesSectionOpen] = useState(true);
+  const [memoSectionOpen, setMemoSectionOpen] = useState(true);
   const [manualAdjustExpanded, setManualAdjustExpanded] = useState(false);
   const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
   const [captureMode, setCaptureMode] = useState<CaptureMode>('ocr');
@@ -129,6 +132,10 @@ export default function CameraScreen() {
     ? !!activeTrip && inputNum > 0
     : !!activeTrip && rate > 0 && foreignAmount > 0 && jpyAmount > 0;
   const c = CURRENCIES[currencyForDisplay];
+
+  // 価格候補セクションを畳んだときの見出しサブ情報用（選択済み金額の円換算・表示専用）
+  const selectedPriceNum = selectedPrice != null ? Number(selectedPrice) : NaN;
+  const selectedPriceJpy = rate > 0 && isFinite(selectedPriceNum) ? convert(selectedPriceNum, rate, 'TO_JPY') : 0;
 
   // 「入力をリセット」は入力欄だけを消す操作なので、入力系の有無だけで判定する
   // （OCR結果・保存写真だけが残っている状態ではボタンを出さない）
@@ -308,6 +315,8 @@ export default function CameraScreen() {
     setAddedMemoLines(new Set());
     setMemoExpanded(false);
     setPricesExpanded(false); // 価格候補も初期は4件まで
+    setPricesSectionOpen(true); // 新しいOCR結果では候補セクションを開いた状態に戻す
+    setMemoSectionOpen(true);
     setManualAdjustExpanded(false); // 成功時は手入力を畳む
   }
 
@@ -640,19 +649,39 @@ export default function CameraScreen() {
               {/* 読み取り結果セクション（Web非表示）。価格候補をヒーロー直下に置く（独立した「候補を少なく表示」行は撤去） */}
               {!isWeb && ocrResult != null && (
               <View style={styles.ocrSectionWrap}>
-                {/* 価格候補（ヒーロー直下）。見出し右に「さらに表示」 */}
+                {/* 価格候補（ヒーロー直下）。見出し右に「さらに表示」＋セクション自体の開閉（手動のみ・タップでは閉じない） */}
                 <View style={styles.ocrSection}>
                   <View style={styles.ocrSectionHeader}>
-                    <ThemedText style={styles.ocrSectionLabel}>価格候補</ThemedText>
-                    {ocrResult.prices.length > PRICE_PREVIEW_COUNT && (
-                      <TouchableOpacity
-                        onPress={() => setPricesExpanded((v) => !v)}
-                        hitSlop={8}
-                        activeOpacity={0.6}>
-                        <ThemedText style={styles.ocrSectionMore}>
-                          {pricesExpanded ? '閉じる' : `さらに${ocrResult.prices.length - PRICE_PREVIEW_COUNT}件表示`}
+                    <View style={styles.ocrSectionLabelGroup}>
+                      <ThemedText style={styles.ocrSectionLabel}>価格候補</ThemedText>
+                      {!pricesSectionOpen && ocrResult.prices.length > 0 && selectedPrice != null && (
+                        <ThemedText style={styles.ocrSectionSubInfo} numberOfLines={1}>
+                          選択中 {c.symbol}{selectedPrice}
+                          {!isJpyMode && selectedPriceJpy > 0 ? ` / ${formatJpy(selectedPriceJpy)}` : ''}
                         </ThemedText>
-                      </TouchableOpacity>
+                      )}
+                    </View>
+                    {ocrResult.prices.length > 0 && (
+                      <View style={styles.ocrSectionActions}>
+                        {pricesSectionOpen && ocrResult.prices.length > PRICE_PREVIEW_COUNT && (
+                          <TouchableOpacity
+                            onPress={() => setPricesExpanded((v) => !v)}
+                            hitSlop={8}
+                            activeOpacity={0.6}>
+                            <ThemedText style={styles.ocrSectionMore}>
+                              {pricesExpanded ? '少なく表示' : `さらに${ocrResult.prices.length - PRICE_PREVIEW_COUNT}件`}
+                            </ThemedText>
+                          </TouchableOpacity>
+                        )}
+                        <TouchableOpacity
+                          onPress={() => setPricesSectionOpen((v) => !v)}
+                          hitSlop={8}
+                          activeOpacity={0.6}>
+                          <ThemedText style={styles.ocrSectionMore}>
+                            {pricesSectionOpen ? '閉じる' : '候補を見る'}
+                          </ThemedText>
+                        </TouchableOpacity>
+                      </View>
                     )}
                   </View>
                   {ocrResult.prices.length === 0 ? (
@@ -685,7 +714,7 @@ export default function CameraScreen() {
                         />
                       </View>
                     </View>
-                  ) : (
+                  ) : pricesSectionOpen ? (
                     <View style={styles.ocrPriceRow}>
                       {(pricesExpanded ? ocrResult.prices : ocrResult.prices.slice(0, PRICE_PREVIEW_COUNT)).map((p) => {
                         const isSelected = p === selectedPrice;
@@ -711,26 +740,43 @@ export default function CameraScreen() {
                         );
                       })}
                     </View>
-                  )}
+                  ) : null}
                 </View>
 
-                {/* メモ候補（行全体タップで追加。右端は状態表示。見出し右にさらに◯件） */}
+                {/* メモ候補（行全体タップで追加。右端は状態表示。見出し右にさらに◯件＋セクション開閉） */}
                 {ocrResult.memoLines.length > 0 && (
                   <View style={styles.ocrSection}>
                     <View style={styles.ocrSectionHeader}>
-                      <ThemedText style={styles.ocrSectionLabel}>メモ候補（タップで追加）</ThemedText>
-                      {ocrResult.memoLines.length > MEMO_PREVIEW_COUNT && (
+                      <View style={styles.ocrSectionLabelGroup}>
+                        <ThemedText style={styles.ocrSectionLabel}>メモ候補（タップで追加）</ThemedText>
+                        {!memoSectionOpen && addedMemoLines.size > 0 && (
+                          <ThemedText style={styles.ocrSectionSubInfo}>
+                            追加済み{addedMemoLines.size}件
+                          </ThemedText>
+                        )}
+                      </View>
+                      <View style={styles.ocrSectionActions}>
+                        {memoSectionOpen && ocrResult.memoLines.length > MEMO_PREVIEW_COUNT && (
+                          <TouchableOpacity
+                            onPress={() => setMemoExpanded((v) => !v)}
+                            hitSlop={8}
+                            activeOpacity={0.6}>
+                            <ThemedText style={styles.ocrSectionMore}>
+                              {memoExpanded ? '少なく表示' : `さらに${ocrResult.memoLines.length - MEMO_PREVIEW_COUNT}件`}
+                            </ThemedText>
+                          </TouchableOpacity>
+                        )}
                         <TouchableOpacity
-                          onPress={() => setMemoExpanded((v) => !v)}
+                          onPress={() => setMemoSectionOpen((v) => !v)}
                           hitSlop={8}
                           activeOpacity={0.6}>
                           <ThemedText style={styles.ocrSectionMore}>
-                            {memoExpanded ? '閉じる' : `さらに${ocrResult.memoLines.length - MEMO_PREVIEW_COUNT}件`}
+                            {memoSectionOpen ? '閉じる' : '候補を見る'}
                           </ThemedText>
                         </TouchableOpacity>
-                      )}
+                      </View>
                     </View>
-                    {(memoExpanded
+                    {memoSectionOpen && (memoExpanded
                       ? ocrResult.memoLines
                       : ocrResult.memoLines.slice(0, MEMO_PREVIEW_COUNT)
                     ).map((line) => {
@@ -1520,6 +1566,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
+  },
+  // 見出しラベル＋畳んだ時のサブ情報（選択中の金額／追加済み件数）
+  ocrSectionLabelGroup: {
+    flex: 1,
+    flexShrink: 1,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+  },
+  ocrSectionSubInfo: {
+    flexShrink: 1,
+    fontSize: 11,
+    fontWeight: '600',
+    color: color.muted,
+  },
+  // 「さらに◯件」と「閉じる／候補を見る」を並べる
+  ocrSectionActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   ocrSectionMore: {
     fontSize: 12,
