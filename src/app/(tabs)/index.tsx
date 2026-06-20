@@ -33,8 +33,9 @@ import { getTripStatsForDisplay } from '@/utils/trip-stats';
 const C = DT.colors;
 const MEMO_PREVIEW_COUNT = 3;
 const PRICE_PREVIEW_COUNT = 3;
-const INPUT_ACCESSORY_ID_AMOUNT = 'camera-input-accessory-amount';
-const INPUT_ACCESSORY_ID_MEMO = 'camera-input-accessory-memo';
+// 1つのIDを両方のTextInputで共有する（iOSで複数InputAccessoryViewを同時マウントすると
+// 2つ目以降が表示されないことがあるため、単一インスタンスに統一）
+const INPUT_ACCESSORY_ID = 'camera-input-accessory-done';
 const NEAR_SAVE_LIMIT = FREE_LIMITS.saves - 5;
 // OCR写真プレビュー枠の高さ（styles.ocrPhotoPreviewFrameと一致させる・中心スクロール計算に使用）
 const OCR_PHOTO_PREVIEW_FRAME_HEIGHT = 110;
@@ -46,8 +47,7 @@ type CaptureMode = 'ocr' | 'photo';
 type Phase = 'camera' | 'scanning' | 'result';
 
 // iOS専用: キーボード上に「キーボードを閉じる」ボタンを表示するツールバー。
-// 同じ inputAccessoryViewID を複数のTextInputで共有すると、
-// 2つ目以降の入力欄で表示されないことがあるため、入力欄ごとに用意する。
+// 全TextInputで同じ INPUT_ACCESSORY_ID / 同じインスタンスを共有する（1画面1個のみマウント）。
 function KeyboardDoneBar({ nativeID }: { nativeID: string }) {
   return (
     <InputAccessoryView nativeID={nativeID}>
@@ -105,6 +105,8 @@ export default function CameraScreen() {
   const manualAdjustYRef = useRef(0);
   // メモ候補の「自由入力」チップから既存メモ入力欄へフォーカスするための参照
   const memoInputRef = useRef<TextInput>(null);
+  // メモ行のスクロール先（SectionCard内オフセット）。自由入力タップ時にここまでスクロールする
+  const memoRowYRef = useRef(0);
   // OCR写真プレビュー（読み取った値札）の縦スクロールを中心位置にするための参照
   const ocrPhotoPreviewScrollRef = useRef<ScrollView>(null);
 
@@ -357,6 +359,17 @@ export default function CameraScreen() {
     setTimeout(() => {
       scrollViewRef.current?.scrollTo({
         y: Math.max(inputCardYRef.current + spacing.lg + manualAdjustYRef.current - 16, 0),
+        animated: true,
+      });
+    }, 250);
+  }
+
+  // メモ候補の「自由入力」タップ時、メモ入力欄が見える位置までスクロール（フォーカスはonPress側で実行）。
+  // memoRowYRefもSectionCard内オフセット（同上）。
+  function scrollToMemoInput() {
+    setTimeout(() => {
+      scrollViewRef.current?.scrollTo({
+        y: Math.max(inputCardYRef.current + spacing.lg + memoRowYRef.current - 16, 0),
         animated: true,
       });
     }, 250);
@@ -870,7 +883,10 @@ export default function CameraScreen() {
                         })}
                         <TouchableOpacity
                           style={styles.memoChipFreeInput}
-                          onPress={() => memoInputRef.current?.focus()}
+                          onPress={() => {
+                            memoInputRef.current?.focus();
+                            scrollToMemoInput();
+                          }}
                           activeOpacity={0.75}>
                           <ThemedText style={styles.memoChipFreeInputText} numberOfLines={1}>
                             自由入力
@@ -981,20 +997,24 @@ export default function CameraScreen() {
                       selectTextOnFocus
                       returnKeyType="done"
                       onSubmitEditing={() => Keyboard.dismiss()}
-                      inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID_AMOUNT : undefined}
+                      inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID : undefined}
                     />
                     <TouchableOpacity
+                      style={styles.inputDismissBtn}
                       onPress={() => Keyboard.dismiss()}
                       hitSlop={8}
                       activeOpacity={0.7}>
-                      <ThemedText style={styles.inputDismissBtn}>⌄</ThemedText>
+                      <ThemedText style={styles.inputDismissBtnText}>完了</ThemedText>
                     </TouchableOpacity>
                   </View>
                 </View>
               )}
 
-              {/* メモ（補助情報）。右端の⌄は確実なキーボード閉じる導線。 */}
-              <View style={styles.memoRow}>
+              {/* メモ（補助情報）。右端の「完了」は確実なキーボード閉じる導線。
+                  onLayoutのYはmemoRowYRef（自由入力タップ時のスクロール先）に保持する。 */}
+              <View
+                style={styles.memoRow}
+                onLayout={(e) => { memoRowYRef.current = e.nativeEvent.layout.y; }}>
                 <ThemedText style={styles.memoLabel}>メモ</ThemedText>
                 <TextInput
                   ref={memoInputRef}
@@ -1006,13 +1026,14 @@ export default function CameraScreen() {
                   returnKeyType="done"
                   onSubmitEditing={() => Keyboard.dismiss()}
                   maxLength={100}
-                  inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID_MEMO : undefined}
+                  inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID : undefined}
                 />
                 <TouchableOpacity
+                  style={styles.inputDismissBtn}
                   onPress={() => Keyboard.dismiss()}
                   hitSlop={8}
                   activeOpacity={0.7}>
-                  <ThemedText style={styles.inputDismissBtn}>⌄</ThemedText>
+                  <ThemedText style={styles.inputDismissBtnText}>完了</ThemedText>
                 </TouchableOpacity>
               </View>
               {addedMemoLines.size > 0 && (
@@ -1204,13 +1225,8 @@ export default function CameraScreen() {
         </View>
       )}
 
-      {/* キーボード上の「完了」ボタン（iOSのみ、入力欄ごとに用意） */}
-      {Platform.OS === 'ios' && (
-        <>
-          <KeyboardDoneBar nativeID={INPUT_ACCESSORY_ID_AMOUNT} />
-          <KeyboardDoneBar nativeID={INPUT_ACCESSORY_ID_MEMO} />
-        </>
-      )}
+      {/* キーボード上の「完了」ボタン（iOSのみ・全TextInput共通の単一インスタンス） */}
+      {Platform.OS === 'ios' && <KeyboardDoneBar nativeID={INPUT_ACCESSORY_ID} />}
 
       {/* 保存写真プレビュー */}
       {pendingPhotoUri != null && Platform.OS !== 'web' && (
@@ -1918,12 +1934,20 @@ const styles = StyleSheet.create({
     color: color.text,
     paddingVertical: 0,
   },
-  // 金額修正・メモ入力の右端に常設する、確実にキーボードを閉じるための小さな導線
+  // 金額修正・メモ入力の右端に常設する、確実にキーボードを閉じるための導線。
+  // 「⌄」だけだと装飾文字に見えて気づかれにくいため、枠＋背景で明確にボタンと分かる見た目にする。
   inputDismissBtn: {
-    fontSize: 18,
+    borderWidth: 1,
+    borderColor: color.line,
+    borderRadius: radius.chip,
+    backgroundColor: color.bgScreen,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  inputDismissBtnText: {
+    fontSize: 12,
     fontWeight: '700',
-    color: color.muted,
-    paddingHorizontal: 2,
+    color: color.body,
   },
   pendingPhotoBlock: {
     gap: 4,
