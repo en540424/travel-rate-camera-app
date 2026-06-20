@@ -36,6 +36,8 @@ const PRICE_PREVIEW_COUNT = 3;
 const INPUT_ACCESSORY_ID_AMOUNT = 'camera-input-accessory-amount';
 const INPUT_ACCESSORY_ID_MEMO = 'camera-input-accessory-memo';
 const NEAR_SAVE_LIMIT = FREE_LIMITS.saves - 5;
+// OCR写真プレビュー枠の高さ（styles.ocrPhotoPreviewFrameと一致させる・中心スクロール計算に使用）
+const OCR_PHOTO_PREVIEW_FRAME_HEIGHT = 110;
 
 /** 撮影前メイン画面の撮影モード。価格OCR（既定）/ 商品写真（補助） */
 type CaptureMode = 'ocr' | 'photo';
@@ -101,6 +103,10 @@ export default function CameraScreen() {
   const inputCardYRef = useRef(0);
   // 「✎ 金額を修正」展開時のスクロール先（編集パネルのSectionCard内オフセット）
   const manualAdjustYRef = useRef(0);
+  // メモ候補の「自由入力」チップから既存メモ入力欄へフォーカスするための参照
+  const memoInputRef = useRef<TextInput>(null);
+  // OCR写真プレビュー（読み取った値札）の縦スクロールを中心位置にするための参照
+  const ocrPhotoPreviewScrollRef = useRef<ScrollView>(null);
 
   const { rates } = useRates();
   const { selectedCurrency, setSelectedCurrency, isPro } = useSettingsStore();
@@ -591,9 +597,12 @@ export default function CameraScreen() {
                       </TouchableOpacity>
                     </View>
                   </View>
-                  {/* 横長コンパクト。全幅(実寸比)で表示し縦スクロール／iOSピンチで全体確認。枠内クリップ。 */}
+                  {/* 横長コンパクト。全幅(実寸比)で表示し縦スクロール／iOSピンチで全体確認。枠内クリップ。
+                      撮影時に中心へ合わせた値札がプレビューでも中心付近に見えるよう、画像の高さが確定したら
+                      縦スクロール位置を中央へ補正する（上寄せのまま固定しない）。 */}
                   <View style={styles.ocrPhotoPreviewFrame}>
                     <ScrollView
+                      ref={ocrPhotoPreviewScrollRef}
                       style={StyleSheet.absoluteFill}
                       contentContainerStyle={styles.ocrPhotoPreviewScrollContent}
                       nestedScrollEnabled
@@ -609,6 +618,11 @@ export default function CameraScreen() {
                           const w = e?.source?.width;
                           const h = e?.source?.height;
                           if (w && h) setOcrImgAspect(w / h);
+                        }}
+                        onLayout={(e) => {
+                          const renderedHeight = e.nativeEvent.layout.height;
+                          const centerY = Math.max((renderedHeight - OCR_PHOTO_PREVIEW_FRAME_HEIGHT) / 2, 0);
+                          ocrPhotoPreviewScrollRef.current?.scrollTo({ y: centerY, animated: false });
                         }}
                       />
                     </ScrollView>
@@ -833,26 +847,37 @@ export default function CameraScreen() {
                         </TouchableOpacity>
                       </View>
                     </View>
-                    {memoSectionOpen && (memoExpanded
-                      ? ocrResult.memoLines
-                      : ocrResult.memoLines.slice(0, MEMO_PREVIEW_COUNT)
-                    ).map((line) => {
-                      const added = addedMemoLines.has(line);
-                      return (
+                    {memoSectionOpen && (
+                      <View style={styles.ocrMemoChipRow}>
+                        {(memoExpanded
+                          ? ocrResult.memoLines
+                          : ocrResult.memoLines.slice(0, MEMO_PREVIEW_COUNT)
+                        ).map((line) => {
+                          const added = addedMemoLines.has(line);
+                          return (
+                            <TouchableOpacity
+                              key={line}
+                              style={[styles.memoChip, added && styles.memoChipAdded]}
+                              onPress={() => handleAddMemoLine(line)}
+                              activeOpacity={0.75}>
+                              <ThemedText
+                                style={[styles.memoChipText, added && styles.memoChipTextAdded]}
+                                numberOfLines={1}>
+                                {added ? '✓ ' : '+ '}{line}
+                              </ThemedText>
+                            </TouchableOpacity>
+                          );
+                        })}
                         <TouchableOpacity
-                          key={line}
-                          style={styles.ocrMemoLineRow}
-                          onPress={() => handleAddMemoLine(line)}
-                          activeOpacity={0.7}>
-                          <ThemedText style={styles.ocrMemoLineText} numberOfLines={1}>
-                            {line}
-                          </ThemedText>
-                          <ThemedText style={[styles.ocrMemoStatus, added && styles.ocrMemoStatusAdded]}>
-                            {added ? '✓ 追加済み' : '＋メモ'}
+                          style={styles.memoChipFreeInput}
+                          onPress={() => memoInputRef.current?.focus()}
+                          activeOpacity={0.75}>
+                          <ThemedText style={styles.memoChipFreeInputText} numberOfLines={1}>
+                            自由入力
                           </ThemedText>
                         </TouchableOpacity>
-                      );
-                    })}
+                      </View>
+                    )}
                   </View>
                 )}
 
@@ -939,7 +964,8 @@ export default function CameraScreen() {
                     )
                   )}
 
-                  {/* 金額入力（外貨/円）。記号＋数字で「読み取った値の調整」として見せる。 */}
+                  {/* 金額入力（外貨/円）。記号＋数字で「読み取った値の調整」として見せる。
+                      右端の⌄は確実なキーボード閉じる導線（iOS decimal-padは戻るキーがないため特に必要）。 */}
                   <View style={styles.inputAmountRow}>
                     <ThemedText style={styles.inputCurrencySymbol}>
                       {isReverse ? '¥' : c.symbol}
@@ -953,25 +979,41 @@ export default function CameraScreen() {
                       keyboardType="decimal-pad"
                       inputMode="decimal"
                       selectTextOnFocus
+                      returnKeyType="done"
+                      onSubmitEditing={() => Keyboard.dismiss()}
                       inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID_AMOUNT : undefined}
                     />
+                    <TouchableOpacity
+                      onPress={() => Keyboard.dismiss()}
+                      hitSlop={8}
+                      activeOpacity={0.7}>
+                      <ThemedText style={styles.inputDismissBtn}>⌄</ThemedText>
+                    </TouchableOpacity>
                   </View>
                 </View>
               )}
 
-              {/* メモ（補助情報） */}
+              {/* メモ（補助情報）。右端の⌄は確実なキーボード閉じる導線。 */}
               <View style={styles.memoRow}>
                 <ThemedText style={styles.memoLabel}>メモ</ThemedText>
                 <TextInput
+                  ref={memoInputRef}
                   style={styles.memoInput}
                   value={memo}
                   onChangeText={setMemo}
                   placeholder="モッツァレラ / Tシャツ / お土産"
                   placeholderTextColor={DT.colors.textMuted}
                   returnKeyType="done"
+                  onSubmitEditing={() => Keyboard.dismiss()}
                   maxLength={100}
                   inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID_MEMO : undefined}
                 />
+                <TouchableOpacity
+                  onPress={() => Keyboard.dismiss()}
+                  hitSlop={8}
+                  activeOpacity={0.7}>
+                  <ThemedText style={styles.inputDismissBtn}>⌄</ThemedText>
+                </TouchableOpacity>
               </View>
               {addedMemoLines.size > 0 && (
                 <ThemedText style={styles.memoAddedHint}>
@@ -1410,7 +1452,7 @@ const styles = StyleSheet.create({
     color: color.primary,
   },
   ocrPhotoPreviewFrame: {
-    height: 110, // 横長コンパクト（従来200→150→110）。拡大で全体確認できるため低めでOK。戻す場合はここを調整。
+    height: OCR_PHOTO_PREVIEW_FRAME_HEIGHT, // 横長コンパクト（従来200→150→110）。拡大で全体確認できるため低めでOK。戻す場合はここを調整。
     borderRadius: radius.chip,
     overflow: 'hidden',
     backgroundColor: '#111',
@@ -1760,34 +1802,46 @@ const styles = StyleSheet.create({
   ocrFailSubBtn: {
     flex: 1,
   },
-  ocrMemoLineRow: {
+  // メモ候補（横並びチップ）。未選択＝淡teal地に＋、選択済み＝濃teal地に白文字✓。価格候補カードと同系統の見せ方
+  ocrMemoChipRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 8,
-    paddingVertical: 6, // 行全体タップのため少し広めのタップ領域
   },
-  ocrMemoLineText: {
-    flex: 1,
-    fontSize: 13,
-    color: color.text,
-    fontWeight: '500',
-  },
-  // 行右端の状態表示（未追加＝＋ / 追加済み＝✓ 追加済み）。ボタンではなくステータス。
-  ocrMemoStatus: {
+  memoChip: {
+    maxWidth: '70%',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.chip,
+    backgroundColor: color.primarySoft,
     borderWidth: 1,
-    borderColor: color.primary,
-    borderRadius: 8,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    fontSize: 12,
-    fontWeight: '600',
-    color: color.primary,
-    overflow: 'hidden',
+    borderColor: color.primaryBorder,
   },
-  ocrMemoStatusAdded: {
-    borderColor: color.line,
+  memoChipAdded: {
+    backgroundColor: color.primaryDark,
+    borderColor: color.primaryDark,
+  },
+  memoChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: color.primaryDark,
+  },
+  memoChipTextAdded: {
+    color: '#fff',
+  },
+  // 「自由入力」：既存メモ入力欄へフォーカスする導線。候補チップとは見た目を分けて中立色にする
+  memoChipFreeInput: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.chip,
     backgroundColor: color.line2,
-    color: color.muted,
+    borderWidth: 1,
+    borderColor: color.line,
+  },
+  memoChipFreeInputText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: color.body,
   },
   ocrRawToggle: {
     paddingVertical: 4,
@@ -1863,6 +1917,13 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
     color: color.text,
     paddingVertical: 0,
+  },
+  // 金額修正・メモ入力の右端に常設する、確実にキーボードを閉じるための小さな導線
+  inputDismissBtn: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: color.muted,
+    paddingHorizontal: 2,
   },
   pendingPhotoBlock: {
     gap: 4,
