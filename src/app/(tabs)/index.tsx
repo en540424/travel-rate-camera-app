@@ -981,7 +981,7 @@ export default function CameraScreen() {
                   )}
 
                   {/* 金額入力（外貨/円）。記号＋数字で「読み取った値の調整」として見せる。
-                      右端の⌄は確実なキーボード閉じる導線（iOS decimal-padは戻るキーがないため特に必要）。 */}
+                      キーボードを閉じる導線はキーボード上部のInputAccessoryViewに統一（画面内ボタンは置かない）。 */}
                   <View style={styles.inputAmountRow}>
                     <ThemedText style={styles.inputCurrencySymbol}>
                       {isReverse ? '¥' : c.symbol}
@@ -999,18 +999,11 @@ export default function CameraScreen() {
                       onSubmitEditing={() => Keyboard.dismiss()}
                       inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID : undefined}
                     />
-                    <TouchableOpacity
-                      style={styles.inputDismissBtn}
-                      onPress={() => Keyboard.dismiss()}
-                      hitSlop={8}
-                      activeOpacity={0.7}>
-                      <ThemedText style={styles.inputDismissBtnText}>完了</ThemedText>
-                    </TouchableOpacity>
                   </View>
                 </View>
               )}
 
-              {/* メモ（補助情報）。右端の「完了」は確実なキーボード閉じる導線。
+              {/* メモ（補助情報）。キーボードを閉じる導線はInputAccessoryViewに統一。
                   onLayoutのYはmemoRowYRef（自由入力タップ時のスクロール先）に保持する。 */}
               <View
                 style={styles.memoRow}
@@ -1028,13 +1021,6 @@ export default function CameraScreen() {
                   maxLength={100}
                   inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID : undefined}
                 />
-                <TouchableOpacity
-                  style={styles.inputDismissBtn}
-                  onPress={() => Keyboard.dismiss()}
-                  hitSlop={8}
-                  activeOpacity={0.7}>
-                  <ThemedText style={styles.inputDismissBtnText}>完了</ThemedText>
-                </TouchableOpacity>
               </View>
               {addedMemoLines.size > 0 && (
                 <ThemedText style={styles.memoAddedHint}>
@@ -1934,21 +1920,6 @@ const styles = StyleSheet.create({
     color: color.text,
     paddingVertical: 0,
   },
-  // 金額修正・メモ入力の右端に常設する、確実にキーボードを閉じるための導線。
-  // 「⌄」だけだと装飾文字に見えて気づかれにくいため、枠＋背景で明確にボタンと分かる見た目にする。
-  inputDismissBtn: {
-    borderWidth: 1,
-    borderColor: color.line,
-    borderRadius: radius.chip,
-    backgroundColor: color.bgScreen,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  inputDismissBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: color.body,
-  },
   pendingPhotoBlock: {
     gap: 4,
   },
@@ -2249,24 +2220,25 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
 
+  // キーボード上部バー。背景と同化しないよう薄グレー＋上ボーダーで区切り、teal文字でタップ可能なことを示す
   accessoryContainer: {
     width: '100%',
-    height: 38,
+    height: 40,
     flexDirection: 'row',
     justifyContent: 'flex-end',
     alignItems: 'center',
     paddingHorizontal: 16,
-    backgroundColor: C.surface,
+    backgroundColor: color.bgScreen,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.border,
+    borderTopColor: color.line,
   },
   accessoryButton: {
     paddingHorizontal: 12,
     paddingVertical: 7,
   },
   accessoryButtonText: {
-    fontSize: 13,
-    fontWeight: DT.fontWeight.bold,
-    color: C.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+    color: color.primary,
   },
 });
