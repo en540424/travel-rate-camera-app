@@ -30,7 +30,6 @@ import { extractMemoLines, extractPriceCandidates } from '@/utils/extract-prices
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
-const C = DT.colors;
 const MEMO_PREVIEW_COUNT = 3;
 const PRICE_PREVIEW_COUNT = 3;
 const NEAR_SAVE_LIMIT = FREE_LIMITS.saves - 5;
@@ -1008,24 +1007,35 @@ export default function CameraScreen() {
                   maxLength={100}
                 />
               </View>
-              {addedMemoLines.size > 0 && (
-                <ThemedText style={styles.memoAddedHint}>
-                  ✓ メモを追加しました
-                </ThemedText>
-              )}
+              {/* 保存前チェック（メモ・写真・保存先をまとめた確認カード。state・onPress・保存ロジックは既存のまま、表示のみ整理） */}
+              <View style={styles.savePreviewCard}>
+                <ThemedText style={styles.savePreviewTitle}>保存前チェック</ThemedText>
 
-              {Platform.OS !== 'web' && (
-                pendingPhotoUri != null ? (
-                  <View style={styles.pendingPhotoBlock}>
-                    <View style={styles.pendingPhotoRow}>
-                      <TouchableOpacity onPress={() => setPhotoPreviewVisible(true)} activeOpacity={0.8}>
+                <View style={styles.saveTargetRow}>
+                  <ThemedText style={styles.saveTargetLabel}>メモ</ThemedText>
+                  {memo.trim() ? (
+                    <ThemedText style={styles.savePreviewValue} numberOfLines={1}>
+                      {memo.trim()}
+                    </ThemedText>
+                  ) : (
+                    <ThemedText style={styles.pendingPhotoLabel}>メモなし</ThemedText>
+                  )}
+                </View>
+
+                {Platform.OS !== 'web' && (
+                  pendingPhotoUri != null ? (
+                    <View style={styles.saveTargetRow}>
+                      <ThemedText style={styles.saveTargetLabel}>写真</ThemedText>
+                      <TouchableOpacity
+                        style={styles.savePreviewSpacer}
+                        onPress={() => setPhotoPreviewVisible(true)}
+                        activeOpacity={0.8}>
                         <Image
                           source={{ uri: pendingPhotoUri }}
                           style={styles.pendingPhotoThumb}
                           contentFit="cover"
                         />
                       </TouchableOpacity>
-                      <ThemedText style={styles.pendingPhotoLabel}>保存する写真</ThemedText>
                       <View style={styles.pendingPhotoActions}>
                         <TouchableOpacity onPress={handleChangePhoto} hitSlop={8}>
                           <ThemedText style={styles.pendingPhotoActionText}>変更</ThemedText>
@@ -1035,69 +1045,80 @@ export default function CameraScreen() {
                         </TouchableOpacity>
                       </View>
                     </View>
-                  </View>
-                ) : (
-                  <View style={styles.pendingPhotoRow}>
-                    <ThemedText style={styles.pendingPhotoLabel}>写真なし</ThemedText>
-                    <TouchableOpacity onPress={handleAddPhoto} hitSlop={8}>
-                      <ThemedText style={styles.pendingPhotoActionText}>＋ 商品写真を追加</ThemedText>
-                    </TouchableOpacity>
-                  </View>
-                )
-              )}
+                  ) : (
+                    <View style={styles.saveTargetRow}>
+                      <ThemedText style={styles.saveTargetLabel}>写真</ThemedText>
+                      <ThemedText style={styles.pendingPhotoLabel}>写真なし</ThemedText>
+                      <TouchableOpacity onPress={handleAddPhoto} hitSlop={8}>
+                        <ThemedText style={styles.pendingPhotoActionText}>＋ 商品写真を追加</ThemedText>
+                      </TouchableOpacity>
+                    </View>
+                  )
+                )}
 
-              {/* 再スキャンで得たOCR写真を保存写真に使う案内（自動上書きせず明示操作のみ） */}
-              {canSuggestUsingOcrPhoto && (
-                <View style={styles.ocrPhotoSuggest}>
-                  <ThemedText style={styles.ocrPhotoSuggestTitle}>今読み取った値札写真があります</ThemedText>
-                  <ThemedText style={styles.ocrPhotoSuggestDesc}>
-                    保存写真に使うと、あとで見返しやすくなります。
-                  </ThemedText>
-                  <View style={styles.ocrPhotoSuggestActions}>
+                {/* 再スキャンで得たOCR写真を保存写真に使う案内（自動上書きせず明示操作のみ） */}
+                {canSuggestUsingOcrPhoto && (
+                  <View style={styles.ocrPhotoSuggest}>
+                    <ThemedText style={styles.ocrPhotoSuggestTitle}>今読み取った値札写真があります</ThemedText>
+                    <ThemedText style={styles.ocrPhotoSuggestDesc}>
+                      保存写真に使うと、あとで見返しやすくなります。
+                    </ThemedText>
+                    <View style={styles.ocrPhotoSuggestActions}>
+                      <TouchableOpacity
+                        style={styles.ocrPhotoSuggestUseBtn}
+                        onPress={handleUseOcrPhoto}
+                        activeOpacity={0.8}>
+                        <ThemedText style={styles.ocrPhotoSuggestUseText}>この写真を使う</ThemedText>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => setOcrPhotoSuggestionDismissed(true)}
+                        hitSlop={8}>
+                        <ThemedText style={styles.ocrPhotoSuggestKeepText}>今の写真を維持</ThemedText>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+
+                {/* 保存先（候補 / 購入済み） */}
+                <View style={styles.saveTargetRow}>
+                  <ThemedText style={styles.saveTargetLabel}>保存先</ThemedText>
+                  <View style={styles.saveTargetPills}>
                     <TouchableOpacity
-                      style={styles.ocrPhotoSuggestUseBtn}
-                      onPress={handleUseOcrPhoto}
-                      activeOpacity={0.8}>
-                      <ThemedText style={styles.ocrPhotoSuggestUseText}>この写真を使う</ThemedText>
+                      style={[styles.saveTargetPill, !saveAsPurchased && styles.saveTargetPillCandidateActive]}
+                      onPress={() => setSaveAsPurchased(false)}
+                      activeOpacity={0.75}>
+                      <ThemedText
+                        style={[
+                          styles.saveTargetPillText,
+                          !saveAsPurchased && styles.saveTargetPillTextCandidateActive,
+                        ]}>
+                        候補
+                      </ThemedText>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      onPress={() => setOcrPhotoSuggestionDismissed(true)}
-                      hitSlop={8}>
-                      <ThemedText style={styles.ocrPhotoSuggestKeepText}>今の写真を維持</ThemedText>
+                      style={[styles.saveTargetPill, saveAsPurchased && styles.saveTargetPillPurchasedActive]}
+                      onPress={() => setSaveAsPurchased(true)}
+                      activeOpacity={0.75}>
+                      <ThemedText
+                        style={[
+                          styles.saveTargetPillText,
+                          saveAsPurchased && styles.saveTargetPillTextPurchasedActive,
+                        ]}>
+                        購入済み
+                      </ThemedText>
                     </TouchableOpacity>
                   </View>
                 </View>
-              )}
 
-              {/* 保存先（候補 / 購入済み） */}
-              <View style={styles.saveTargetRow}>
-                <ThemedText style={styles.saveTargetLabel}>保存先</ThemedText>
-                <View style={styles.saveTargetPills}>
+                {/* 入力をリセット（弱いテキストリンク） */}
+                {hasInputToReset && (
                   <TouchableOpacity
-                    style={[styles.saveTargetPill, !saveAsPurchased && styles.saveTargetPillCandidateActive]}
-                    onPress={() => setSaveAsPurchased(false)}
-                    activeOpacity={0.75}>
-                    <ThemedText
-                      style={[
-                        styles.saveTargetPillText,
-                        !saveAsPurchased && styles.saveTargetPillTextCandidateActive,
-                      ]}>
-                      候補
-                    </ThemedText>
+                    style={styles.resetInputBtn}
+                    onPress={handleResetInput}
+                    activeOpacity={0.7}>
+                    <ThemedText style={styles.resetInputBtnText}>入力をリセット</ThemedText>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.saveTargetPill, saveAsPurchased && styles.saveTargetPillPurchasedActive]}
-                    onPress={() => setSaveAsPurchased(true)}
-                    activeOpacity={0.75}>
-                    <ThemedText
-                      style={[
-                        styles.saveTargetPillText,
-                        saveAsPurchased && styles.saveTargetPillTextPurchasedActive,
-                      ]}>
-                      購入済み
-                    </ThemedText>
-                  </TouchableOpacity>
-                </View>
+                )}
               </View>
 
               {/* 保存上限（無料版） */}
@@ -1129,16 +1150,6 @@ export default function CameraScreen() {
                   onPress={handleRescan}
                   activeOpacity={0.7}>
                   <ThemedText style={styles.nextShotText}>保存しないで次を撮る →</ThemedText>
-                </TouchableOpacity>
-              )}
-
-              {/* 入力をリセット（控えめなサブボタン） */}
-              {hasInputToReset && (
-                <TouchableOpacity
-                  style={styles.resetInputBtn}
-                  onPress={handleResetInput}
-                  activeOpacity={0.7}>
-                  <ThemedText style={styles.resetInputBtnText}>↺ 入力をリセット</ThemedText>
                 </TouchableOpacity>
               )}
             </SectionCard>
@@ -1909,18 +1920,6 @@ const styles = StyleSheet.create({
     color: color.text,
     paddingVertical: 0,
   },
-  pendingPhotoBlock: {
-    gap: 4,
-  },
-  pendingPhotoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: color.bgScreen,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    gap: 8,
-  },
   pendingPhotoThumb: {
     width: 40,
     height: 30,
@@ -1969,13 +1968,6 @@ const styles = StyleSheet.create({
     color: color.text,
     paddingVertical: 10,
   },
-  memoAddedHint: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: color.primaryDark,
-    paddingLeft: 4,
-  },
-
   // 再スキャンで得たOCR写真を保存写真に使う案内（淡いティールの控えめカード）
   ocrPhotoSuggest: {
     backgroundColor: color.primarySoft2,
@@ -2060,16 +2052,42 @@ const styles = StyleSheet.create({
     gap: 10,
     alignItems: 'stretch',
   },
+  // 保存前チェック（メモ・写真・保存先を1枚にまとめた確認カード）
+  savePreviewCard: {
+    backgroundColor: color.bgScreen,
+    borderRadius: radius.chip,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    gap: 10,
+  },
+  savePreviewTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: color.muted,
+    letterSpacing: 0.4,
+  },
+  // メモ行の本文プレビュー（入力済みの内容をそのまま1行表示）
+  savePreviewValue: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: color.text,
+  },
+  // 写真サムネの右に変更/削除を寄せるための可変スペーサー
+  savePreviewSpacer: {
+    flex: 1,
+  },
   saveTargetRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
   saveTargetLabel: {
     fontSize: 12,
     fontWeight: '700',
     color: color.muted,
     letterSpacing: 0.4,
+    minWidth: 40,
   },
   saveTargetPills: {
     flexDirection: 'row',
@@ -2105,15 +2123,19 @@ const styles = StyleSheet.create({
     color: statusColor.purchased.text,
     fontWeight: '700',
   },
+  // 保存前チェックの最終行。区切り線＋弱いテキストリンクで目立たせない
   resetInputBtn: {
-    alignSelf: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    marginTop: 2,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: color.line2,
   },
   resetInputBtnText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
-    color: C.primary,
+    color: color.faint,
   },
 
   // 保存写真アクションシート
