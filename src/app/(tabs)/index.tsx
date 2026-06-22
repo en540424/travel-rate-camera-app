@@ -1007,58 +1007,72 @@ export default function CameraScreen() {
                   maxLength={100}
                 />
               </View>
-              {/* 保存内容（写真・名前・金額・保存先を1枚の商品プレビューにまとめる。
-                  state・onPress・保存ロジックは既存のまま、表示のみ再構成） */}
+              {/* この内容で保存（写真・名前・金額・保存ステータスを1枚の保存プレビューカードとして見せる。
+                  state・onPress・保存ロジックは既存のまま、UI構造を作り直し） */}
+              <ThemedText style={styles.savePreviewHeading}>この内容で保存</ThemedText>
               <View style={styles.savePreviewCard}>
-                <ThemedText style={styles.savePreviewTitle}>保存内容</ThemedText>
-
-                <View style={styles.savePreviewItem}>
-                  {Platform.OS !== 'web' && pendingPhotoUri != null && (
-                    <TouchableOpacity
-                      onPress={() => setPhotoPreviewVisible(true)}
-                      activeOpacity={0.8}>
-                      <Image
-                        source={{ uri: pendingPhotoUri }}
-                        style={styles.pendingPhotoThumb}
-                        contentFit="cover"
-                      />
-                    </TouchableOpacity>
-                  )}
-                  <View style={styles.savePreviewItemBody}>
-                    <ThemedText
-                      style={[styles.savePreviewItemTitle, !memo.trim() && styles.savePreviewItemTitleMuted]}
-                      numberOfLines={1}>
-                      {memo.trim() || 'メモなし'}
-                    </ThemedText>
-                    {jpyAmount > 0 && (
-                      <ThemedText style={styles.savePreviewItemPrice}>{formatJpy(jpyAmount)}</ThemedText>
-                    )}
+                <View style={styles.savePreviewHeaderRow}>
+                  <ThemedText
+                    style={[styles.savePreviewItemTitle, !memo.trim() && styles.savePreviewItemTitleMuted]}
+                    numberOfLines={1}>
+                    {memo.trim() || 'メモなし'}
+                  </ThemedText>
+                  <View
+                    style={[
+                      styles.savePreviewStatusBadge,
+                      saveAsPurchased ? styles.savePreviewStatusBadgePurchased : styles.savePreviewStatusBadgeCandidate,
+                    ]}>
                     <ThemedText
                       style={[
-                        styles.savePreviewItemSub,
+                        styles.savePreviewStatusBadgeText,
                         saveAsPurchased ? styles.savePreviewStatusTextPurchased : styles.savePreviewStatusTextCandidate,
                       ]}>
-                      {jpyAmount > 0 && !isJpyMode ? `${formatForeign(foreignAmount, currencyForDisplay)} ・ ` : ''}
                       {saveAsPurchased ? '購入済み' : '候補'}
                     </ThemedText>
-                    {Platform.OS !== 'web' && (
-                      pendingPhotoUri != null ? (
-                        <View style={styles.pendingPhotoActions}>
-                          <TouchableOpacity onPress={handleChangePhoto} hitSlop={8}>
-                            <ThemedText style={styles.pendingPhotoActionText}>写真を変更</ThemedText>
-                          </TouchableOpacity>
-                          <TouchableOpacity onPress={handleRemovePhoto} hitSlop={8}>
-                            <ThemedText style={styles.pendingPhotoActionTextMuted}>削除</ThemedText>
-                          </TouchableOpacity>
-                        </View>
-                      ) : (
-                        <TouchableOpacity style={styles.pendingPhotoAddBtn} onPress={handleAddPhoto} hitSlop={8}>
-                          <ThemedText style={styles.pendingPhotoActionText}>＋ 商品写真を追加</ThemedText>
-                        </TouchableOpacity>
-                      )
-                    )}
                   </View>
                 </View>
+
+                {jpyAmount > 0 && (
+                  <View style={styles.savePreviewPriceBlock}>
+                    <ThemedText style={styles.savePreviewPriceJpy}>{formatJpy(jpyAmount)}</ThemedText>
+                    {!isJpyMode && (
+                      <ThemedText style={styles.savePreviewPriceForeign}>
+                        {formatForeign(foreignAmount, currencyForDisplay)}
+                      </ThemedText>
+                    )}
+                  </View>
+                )}
+
+                {Platform.OS !== 'web' && (
+                  pendingPhotoUri != null ? (
+                    <View style={styles.savePreviewPhotoGroup}>
+                      <TouchableOpacity
+                        onPress={() => setPhotoPreviewVisible(true)}
+                        activeOpacity={0.9}>
+                        <Image
+                          source={{ uri: pendingPhotoUri }}
+                          style={styles.savePreviewPhoto}
+                          contentFit="cover"
+                        />
+                      </TouchableOpacity>
+                      <View style={styles.savePreviewPhotoActionsRow}>
+                        <TouchableOpacity onPress={handleChangePhoto} hitSlop={8}>
+                          <ThemedText style={styles.pendingPhotoActionText}>写真を変更</ThemedText>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={handleRemovePhoto} hitSlop={8}>
+                          <ThemedText style={styles.pendingPhotoActionTextMuted}>写真を外す</ThemedText>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.savePreviewPhotoPlaceholder}
+                      onPress={handleAddPhoto}
+                      activeOpacity={0.85}>
+                      <ThemedText style={styles.pendingPhotoActionText}>＋ 商品写真を追加</ThemedText>
+                    </TouchableOpacity>
+                  )
+                )}
 
                 {/* 再スキャンで得たOCR写真を保存写真に使う案内(自動上書きせず明示操作のみ) */}
                 {canSuggestUsingOcrPhoto && (
@@ -1082,39 +1096,40 @@ export default function CameraScreen() {
                     </View>
                   </View>
                 )}
+              </View>
 
-                <View style={styles.savePreviewFooterRow}>
-                  <ThemedText style={styles.savePreviewFooterLabel}>保存先</ThemedText>
-                  <View style={styles.saveTargetPills}>
-                    <TouchableOpacity
-                      style={[styles.saveTargetPill, !saveAsPurchased && styles.saveTargetPillCandidateActive]}
-                      onPress={() => setSaveAsPurchased(false)}
-                      activeOpacity={0.75}>
-                      <ThemedText
-                        style={[
-                          styles.saveTargetPillText,
-                          !saveAsPurchased && styles.saveTargetPillTextCandidateActive,
-                        ]}>
-                        候補
-                      </ThemedText>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.saveTargetPill, saveAsPurchased && styles.saveTargetPillPurchasedActive]}
-                      onPress={() => setSaveAsPurchased(true)}
-                      activeOpacity={0.75}>
-                      <ThemedText
-                        style={[
-                          styles.saveTargetPillText,
-                          saveAsPurchased && styles.saveTargetPillTextPurchasedActive,
-                        ]}>
-                        購入済み
-                      </ThemedText>
-                    </TouchableOpacity>
-                  </View>
+              {/* 保存先（設定行ではなく、保存ステータスの切替として見せる。カードの外に分離） */}
+              <View style={styles.saveTargetBlock}>
+                <ThemedText style={styles.savePreviewFooterLabel}>保存先</ThemedText>
+                <View style={styles.saveTargetPills}>
+                  <TouchableOpacity
+                    style={[styles.saveTargetPill, !saveAsPurchased && styles.saveTargetPillCandidateActive]}
+                    onPress={() => setSaveAsPurchased(false)}
+                    activeOpacity={0.75}>
+                    <ThemedText
+                      style={[
+                        styles.saveTargetPillText,
+                        !saveAsPurchased && styles.saveTargetPillTextCandidateActive,
+                      ]}>
+                      候補
+                    </ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.saveTargetPill, saveAsPurchased && styles.saveTargetPillPurchasedActive]}
+                    onPress={() => setSaveAsPurchased(true)}
+                    activeOpacity={0.75}>
+                    <ThemedText
+                      style={[
+                        styles.saveTargetPillText,
+                        saveAsPurchased && styles.saveTargetPillTextPurchasedActive,
+                      ]}>
+                      購入済み
+                    </ThemedText>
+                  </TouchableOpacity>
                 </View>
               </View>
 
-              {/* 入力をリセット（弱いテキストリンク。カードの外に控えめに配置） */}
+              {/* 入力をリセット（弱いテキストリンク。カードの主役にしない） */}
               {hasInputToReset && (
                 <TouchableOpacity
                   style={styles.resetInputBtn}
@@ -1923,18 +1938,6 @@ const styles = StyleSheet.create({
     color: color.text,
     paddingVertical: 0,
   },
-  pendingPhotoThumb: {
-    width: 56,
-    height: 56,
-    borderRadius: radius.chip,
-    backgroundColor: color.bgScreen,
-  },
-  pendingPhotoActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginTop: 4,
-  },
   pendingPhotoActionText: {
     fontSize: 12,
     fontWeight: '600',
@@ -1944,9 +1947,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
     color: color.faint,
-  },
-  pendingPhotoAddBtn: {
-    marginTop: 4,
   },
   memoRow: {
     flexDirection: 'row',
@@ -2054,33 +2054,31 @@ const styles = StyleSheet.create({
     gap: 10,
     alignItems: 'stretch',
   },
-  // 保存内容（写真・名前・金額・保存先を1枚の商品プレビューにまとめたカード）
-  savePreviewCard: {
-    backgroundColor: color.bgScreen,
-    borderRadius: radius.chip,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    gap: 8,
-  },
-  savePreviewTitle: {
-    fontSize: 11,
+  // 保存プレビューカードの見出し（カードの外、上に置く）
+  savePreviewHeading: {
+    fontSize: 12,
     fontWeight: '700',
     color: color.muted,
     letterSpacing: 0.4,
   },
-  // 写真サムネ＋名前/金額/保存先を1つの商品プレビューとして並べる行
-  savePreviewItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  // 保存される1件の商品カードとして見せる（写真・名前・金額・保存ステータスをまとめる）
+  savePreviewCard: {
+    backgroundColor: color.bgScreen,
+    borderRadius: radius.cardLg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
     gap: 10,
   },
-  savePreviewItemBody: {
-    flex: 1,
-    gap: 1,
+  savePreviewHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
   },
   // メモ入力欄と同じ見せ方を繰り返さないよう、ここでは「保存される名前」として表示する
   savePreviewItemTitle: {
-    fontSize: 14,
+    flex: 1,
+    fontSize: 16,
     fontWeight: '700',
     color: color.text,
   },
@@ -2088,17 +2086,21 @@ const styles = StyleSheet.create({
     color: color.faint,
     fontWeight: '500',
   },
-  // 金額がカードの主役。保存先（候補/購入済み）は下のsubテキストに弱く添えるだけにする
-  savePreviewItemPrice: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: color.text,
-    marginTop: 1,
+  // 保存ステータスの読み取り表示（操作はしない。切替は下のsaveTargetBlock側）
+  savePreviewStatusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
   },
-  savePreviewItemSub: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 1,
+  savePreviewStatusBadgeCandidate: {
+    backgroundColor: statusColor.candidate.badgeBg,
+  },
+  savePreviewStatusBadgePurchased: {
+    backgroundColor: statusColor.purchased.badgeBg,
+  },
+  savePreviewStatusBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   savePreviewStatusTextCandidate: {
     color: statusColor.candidate.text,
@@ -2106,11 +2108,49 @@ const styles = StyleSheet.create({
   savePreviewStatusTextPurchased: {
     color: statusColor.purchased.text,
   },
-  // 保存先pillはプレビュー本体に詰め込まず、カード最下部の設定行として分離する
-  savePreviewFooterRow: {
+  // 円金額がカードの主役。外貨は補足として小さく添える
+  savePreviewPriceBlock: {
+    gap: 2,
+  },
+  savePreviewPriceJpy: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: color.text,
+    letterSpacing: -0.3,
+  },
+  savePreviewPriceForeign: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: color.muted,
+  },
+  savePreviewPhotoGroup: {
+    gap: 8,
+  },
+  // 小さいアイコンではなく、カード内のプレビューとして見える大きめの写真枠
+  savePreviewPhoto: {
+    width: '100%',
+    height: 160,
+    borderRadius: radius.chip,
+    backgroundColor: color.line2,
+  },
+  savePreviewPhotoActionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  savePreviewPhotoPlaceholder: {
+    width: '100%',
+    height: 72,
+    borderRadius: radius.chip,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: color.inputBorder,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // 保存先切替はカードの外に分離し、設定行ではなくステータス切替として見せる
+  saveTargetBlock: {
+    gap: 6,
   },
   savePreviewFooterLabel: {
     fontSize: 12,
