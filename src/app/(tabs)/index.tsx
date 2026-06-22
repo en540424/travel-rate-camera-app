@@ -1179,16 +1179,55 @@ export default function CameraScreen() {
                         </View>
                         {newPhotoCandidate != null && (
                           <View style={styles.newPhotoCandidateBanner}>
-                            <ThemedText style={styles.newPhotoCandidateText}>
-                              新しく撮った{newPhotoCandidate.source === 'product' ? '商品' : '値札'}写真があります
-                            </ThemedText>
+                            {newPhotoCandidate.source === 'product' ? (
+                              <View style={styles.newPhotoCandidateCompareRow}>
+                                <View style={styles.newPhotoCandidateCompareCol}>
+                                  <View style={styles.newPhotoCandidateThumbWrap}>
+                                    {pendingPhotoUri != null ? (
+                                      <Image
+                                        source={{ uri: pendingPhotoUri }}
+                                        style={styles.newPhotoCandidateThumb}
+                                        contentFit="cover"
+                                      />
+                                    ) : (
+                                      <SymbolView
+                                        name={{ ios: 'photo', android: 'image', web: 'image' }}
+                                        tintColor={color.muted}
+                                        size={20}
+                                      />
+                                    )}
+                                  </View>
+                                  <ThemedText style={styles.newPhotoCandidateCompareLabel}>
+                                    現在の保存写真
+                                  </ThemedText>
+                                </View>
+                                <View style={styles.newPhotoCandidateCompareCol}>
+                                  <View style={styles.newPhotoCandidateThumbWrap}>
+                                    <Image
+                                      source={{ uri: newPhotoCandidate.uri }}
+                                      style={styles.newPhotoCandidateThumb}
+                                      contentFit="cover"
+                                    />
+                                  </View>
+                                  <ThemedText style={styles.newPhotoCandidateCompareLabel}>
+                                    新しく撮った商品写真
+                                  </ThemedText>
+                                </View>
+                              </View>
+                            ) : (
+                              <ThemedText style={styles.newPhotoCandidateText}>
+                                新しく撮った値札写真があります
+                              </ThemedText>
+                            )}
                             <View style={styles.photoSettingsActionsRow}>
                               <TouchableOpacity
                                 style={styles.photoSettingsActionBtn}
                                 onPress={handleUseNewPhotoCandidate}
                                 activeOpacity={0.7}>
                                 <ThemedText style={styles.photoSettingsActionBtnText}>
-                                  新しい写真を使う
+                                  {newPhotoCandidate.source === 'product'
+                                    ? '新しい商品写真を使う'
+                                    : '新しい写真を使う'}
                                 </ThemedText>
                               </TouchableOpacity>
                               <TouchableOpacity
@@ -1196,7 +1235,9 @@ export default function CameraScreen() {
                                 onPress={handleKeepCurrentPhoto}
                                 activeOpacity={0.7}>
                                 <ThemedText style={styles.photoSettingsActionBtnGhostText}>
-                                  今の保存写真を使う
+                                  {newPhotoCandidate.source === 'product'
+                                    ? '現在の保存写真を使い続ける'
+                                    : '今の保存写真を使う'}
                                 </ThemedText>
                               </TouchableOpacity>
                             </View>
@@ -2246,6 +2287,35 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: color.candidateText,
+  },
+  newPhotoCandidateCompareRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  newPhotoCandidateCompareCol: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  newPhotoCandidateThumbWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.chip,
+    backgroundColor: color.line2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  newPhotoCandidateThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.chip,
+  },
+  newPhotoCandidateCompareLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: color.candidateText,
+    textAlign: 'center',
   },
 
   bottomSummary: {
