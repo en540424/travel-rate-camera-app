@@ -57,6 +57,13 @@ export default function CameraScreen() {
   // pendingPhotoUriの出どころ。「履歴に残す写真」カードの文言分岐に使う（値札写真のままか/商品写真等に変えたか）
   const [pendingPhotoSource, setPendingPhotoSource] = useState<'ocr' | 'product' | 'library' | null>(null);
   const [ocrPhotoUri, setOcrPhotoUri] = useState<string | null>(null);
+  // 再読み取り直前のOCR結果一式。「前の結果に戻す」用のバックアップ（保存対象写真pendingPhotoUriは含めない）
+  const [ocrBackup, setOcrBackup] = useState<{
+    ocrPhotoUri: string | null;
+    ocrResult: { raw: string; prices: string[]; memoLines: string[] };
+    selectedPrice: string | null;
+    addedMemoLines: Set<string>;
+  } | null>(null);
   const [saveAsPurchased, setSaveAsPurchased] = useState(false);
   const [selectedPrice, setSelectedPrice] = useState<string | null>(null);
   const [addedMemoLines, setAddedMemoLines] = useState<Set<string>>(new Set());
@@ -87,7 +94,7 @@ export default function CameraScreen() {
   const memoRowYRef = useRef(0);
   // OCR写真プレビュー（読み取った値札）の縦スクロールを中心位置にするための参照
   const ocrPhotoPreviewScrollRef = useRef<ScrollView>(null);
-  // 再読み取りで撮影した直後の写真URI。handleOcrResultで確認が取れるまでocrPhotoUriへは反映しない
+  // 再読み取りで撮影した直後の写真URI。OCR処理が終わりhandleOcrResultが呼ばれるまでocrPhotoUriへは反映しない
   const lastScannedPhotoUriRef = useRef<string | null>(null);
 
   const { rates } = useRates();
@@ -183,7 +190,7 @@ export default function CameraScreen() {
   const isWeb = Platform.OS === 'web';
 
   // 撮影後に見せる「読み取った値札」プレビュー画像（ヘッダー小サムネ／拡大モーダル用）。
-  // 初回スキャンはpendingPhotoUriに、再スキャン以降は確認(handleOcrResult)が取れた分だけocrPhotoUriに入る。
+  // 初回スキャンはpendingPhotoUriに、再スキャン以降はocrPhotoUriに入る（handleOcrResultでOCR完了時に確定）。
   const ocrPreviewUri = ocrPhotoUri ?? pendingPhotoUri;
   // 撮影後はライブカメラの代わりに「読み取った値札」プレビュー（ドラッグ/ズーム/拡大）を出す
   const showOcrPhotoPreview =
@@ -219,7 +226,7 @@ export default function CameraScreen() {
       setPendingPhotoUri(uri);
       setPendingPhotoSource('ocr');
     } else {
-      // 再読み取りの撮影分はOCR結果の確認(handleOcrResult)が済むまでocrPhotoUriへ確定しない
+      // 再読み取りの撮影分はOCR処理(handleOcrResult)が完了するまでocrPhotoUriへ確定しない
       lastScannedPhotoUriRef.current = uri;
     }
   }
@@ -321,39 +328,36 @@ export default function CameraScreen() {
     const newPhotoUri = lastScannedPhotoUriRef.current;
     lastScannedPhotoUriRef.current = null;
 
-    const applyResult = () => {
-      setCameraLive(false); // 読み取り完了→ライブカメラを撮影済みプレビューに切替（表示専用）
-      if (newPhotoUri != null) setOcrPhotoUri(newPhotoUri);
-      setOcrResult({
-        raw,
-        prices: extractPriceCandidates(raw, isJpyMode),
-        memoLines: extractMemoLines(raw),
-      });
-      setSelectedPrice(null);
-      setAddedMemoLines(new Set());
-      setMemoExpanded(false);
-      setPricesExpanded(false); // 価格候補も初期は4件まで
-      setPricesSectionOpen(true); // 新しいOCR結果では候補セクションを開いた状態に戻す
-      setMemoSectionOpen(true);
-      setManualAdjustExpanded(false); // 成功時は手入力を畳む
-    };
-
-    if (ocrResult == null) {
-      // 初回スキャンは確認なしで反映（既存挙動）
-      applyResult();
-      return;
+    if (ocrResult != null) {
+      // 再読み取り：上書き前の結果を退避し、「前の結果に戻す」でいつでも復元できるようにする
+      // （保存対象写真pendingPhotoUriはここでは触らないため退避不要）
+      setOcrBackup({ ocrPhotoUri, ocrResult, selectedPrice, addedMemoLines });
     }
 
-    // 再読み取り：既存のOCR写真・価格候補・選択中価格・メモ候補・全文を即上書きせず確認する
-    Alert.alert(
-      '新しい読み取り結果を使いますか？',
-      '現在の結果を残すこともできます。',
-      [
-        { text: '今の結果を維持する', style: 'cancel', onPress: () => setCameraLive(false) },
-        { text: '新しい結果を使う', onPress: applyResult },
-        { text: 'キャンセル', style: 'cancel', onPress: () => setCameraLive(false) },
-      ],
-    );
+    setCameraLive(false); // 読み取り完了→ライブカメラを撮影済みプレビューに切替（表示専用）
+    if (newPhotoUri != null) setOcrPhotoUri(newPhotoUri);
+    setOcrResult({
+      raw,
+      prices: extractPriceCandidates(raw, isJpyMode),
+      memoLines: extractMemoLines(raw),
+    });
+    setSelectedPrice(null);
+    setAddedMemoLines(new Set());
+    setMemoExpanded(false);
+    setPricesExpanded(false); // 価格候補も初期は4件まで
+    setPricesSectionOpen(true); // 新しいOCR結果では候補セクションを開いた状態に戻す
+    setMemoSectionOpen(true);
+    setManualAdjustExpanded(false); // 成功時は手入力を畳む
+  }
+
+  // 再読み取り直前の結果へ戻す（保存対象写真pendingPhotoUriは対象外＝既存仕様どおり変更しない）
+  function handleRestorePreviousOcrResult() {
+    if (!ocrBackup) return;
+    setOcrPhotoUri(ocrBackup.ocrPhotoUri);
+    setOcrResult(ocrBackup.ocrResult);
+    setSelectedPrice(ocrBackup.selectedPrice);
+    setAddedMemoLines(ocrBackup.addedMemoLines);
+    setOcrBackup(null);
   }
 
   function scrollToInputCard() {
@@ -464,7 +468,7 @@ export default function CameraScreen() {
 
   // もう一度読み取る：価格OCRだけ撮り直す。
   // 保存写真(pendingPhotoUri)・入力中の金額/メモ・入力カードは残す。
-  // 既存のOCR写真・結果はここでは消さない（即上書きせず、新しい結果が出てからhandleOcrResultで確認する）。
+  // 既存のOCR写真・結果はここでは消さない（新しい結果はhandleOcrResultで即反映され、戻す導線はocrBackupで提供する）。
   function handleRescan() {
     setScanKey((k) => k + 1);
     setCameraLive(true); // 再撮影＝大きいライブカメラへ戻す（表示専用）
@@ -521,6 +525,7 @@ export default function CameraScreen() {
     setPendingPhotoUri(null);
     setPendingPhotoSource(null);
     setOcrPhotoUri(null);
+    setOcrBackup(null);
     setPhotoPreviewVisible(false);
     setSaveAsPurchased(false);
     setShowManualInput(false);
@@ -643,6 +648,18 @@ export default function CameraScreen() {
                       </TouchableOpacity>
                     </View>
                   </View>
+                  {/* 再読み取り直後だけ表示。新しい結果は即反映済みで、ここは「前の結果に戻す」導線のみ */}
+                  {ocrBackup != null && (
+                    <View style={styles.ocrRescanBanner}>
+                      <ThemedText style={styles.ocrRescanBannerText}>再読み取り結果を表示中</ThemedText>
+                      <TouchableOpacity
+                        onPress={handleRestorePreviousOcrResult}
+                        hitSlop={8}
+                        activeOpacity={0.7}>
+                        <ThemedText style={styles.ocrRescanBannerAction}>前の結果に戻す</ThemedText>
+                      </TouchableOpacity>
+                    </View>
+                  )}
                   {/* 横長コンパクト。全幅(実寸比)で表示し縦スクロール／iOSピンチで全体確認。枠内クリップ。
                       撮影時に中心へ合わせた値札がプレビューでも中心付近に見えるよう、画像の高さが確定したら
                       縦スクロール位置を中央へ補正する（上寄せのまま固定しない）。 */}
@@ -1540,6 +1557,28 @@ const styles = StyleSheet.create({
   },
   ocrPhotoPreviewRescan: {
     fontSize: 13,
+    fontWeight: '700',
+    color: color.primary,
+  },
+  // 再読み取り直後のみ表示する「前の結果に戻す」バナー
+  ocrRescanBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: color.candidateSoft2,
+    borderWidth: 1,
+    borderColor: color.candidateBorder,
+    borderRadius: radius.chip,
+    paddingVertical: 8,
+    paddingHorizontal: spacing.md,
+  },
+  ocrRescanBannerText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: color.candidateText,
+  },
+  ocrRescanBannerAction: {
+    fontSize: 12,
     fontWeight: '700',
     color: color.primary,
   },
