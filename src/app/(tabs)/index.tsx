@@ -54,6 +54,8 @@ export default function CameraScreen() {
   } | null>(null);
   const [ocrRawExpanded, setOcrRawExpanded] = useState(false);
   const [pendingPhotoUri, setPendingPhotoUri] = useState<string | null>(null);
+  // pendingPhotoUriの出どころ。「履歴に残す写真」カードの文言分岐に使う（値札写真のままか/商品写真等に変えたか）
+  const [pendingPhotoSource, setPendingPhotoSource] = useState<'ocr' | 'product' | 'library' | null>(null);
   const [ocrPhotoUri, setOcrPhotoUri] = useState<string | null>(null);
   const [saveAsPurchased, setSaveAsPurchased] = useState(false);
   const [selectedPrice, setSelectedPrice] = useState<string | null>(null);
@@ -68,8 +70,6 @@ export default function CameraScreen() {
   const [captureMode, setCaptureMode] = useState<CaptureMode>('ocr');
   const [showManualInput, setShowManualInput] = useState(false);
   const [photoSheetVisible, setPhotoSheetVisible] = useState(false);
-  // 再スキャンで得たOCR写真を「保存写真に使う」案内の表示制御（自動上書きせず明示操作のみ）
-  const [ocrPhotoSuggestionDismissed, setOcrPhotoSuggestionDismissed] = useState(false);
   // カメラ表示の切替：true=大きいライブカメラ / false=撮影済みOCR写真プレビュー（表示専用）
   const [cameraLive, setCameraLive] = useState(true);
   // 撮影済みOCR写真を拡大表示するモーダル
@@ -180,13 +180,6 @@ export default function CameraScreen() {
 
   const isWeb = Platform.OS === 'web';
 
-  // 再スキャンで得たOCR写真を、保存写真にまだ使っていないとき案内を出す（自動上書きはしない）
-  const canSuggestUsingOcrPhoto =
-    !isWeb &&
-    !!ocrPhotoUri &&
-    pendingPhotoUri !== ocrPhotoUri &&
-    !ocrPhotoSuggestionDismissed;
-
   // 撮影後に見せる「読み取った値札」プレビュー画像（ヘッダー小サムネ／拡大モーダル用）。
   // 初回スキャンは pendingPhotoUri に、再スキャン以降は ocrPhotoUri に直近の撮影が入る（handlePhotoCapture の既存分岐）。
   const ocrPreviewUri = ocrPhotoUri ?? pendingPhotoUri;
@@ -222,9 +215,9 @@ export default function CameraScreen() {
   function handlePhotoCapture(uri: string) {
     if (pendingPhotoUri == null) {
       setPendingPhotoUri(uri);
+      setPendingPhotoSource('ocr');
     } else {
       setOcrPhotoUri(uri);
-      setOcrPhotoSuggestionDismissed(false); // 新しいOCR写真が来たら「使う」案内を再表示
     }
   }
 
@@ -237,6 +230,7 @@ export default function CameraScreen() {
       });
       if (!picked.canceled && picked.assets[0]) {
         setPendingPhotoUri(picked.assets[0].uri);
+        setPendingPhotoSource('library');
         // 写真選択後は手入力カードを開き、サムネ位置（入力カード）へスクロールして変化を示す
         setShowManualInput(true);
         scrollToInputCard();
@@ -246,6 +240,7 @@ export default function CameraScreen() {
     }
   }
 
+  // 既に保存対象写真があるときは撮影してすぐに上書きせず、ユーザーに使うかどうか選んでもらう。
   async function handleTakeProductPhoto() {
     try {
       const captured = await ImagePicker.launchCameraAsync({
@@ -253,12 +248,24 @@ export default function CameraScreen() {
         quality: 0.8,
         allowsEditing: false,
       });
-      if (!captured.canceled && captured.assets[0]) {
-        setPendingPhotoUri(captured.assets[0].uri);
+      if (captured.canceled || !captured.assets[0]) return;
+      const newUri = captured.assets[0].uri;
+      const applyNewPhoto = () => {
+        setPendingPhotoUri(newUri);
+        setPendingPhotoSource('product');
         // 撮影後は手入力カードを開き、サムネ位置（入力カード）へスクロールして変化を示す
         setShowManualInput(true);
         scrollToInputCard();
+      };
+      if (pendingPhotoUri == null) {
+        applyNewPhoto();
+        return;
       }
+      Alert.alert('撮った写真を保存に使いますか？', undefined, [
+        { text: '今の写真を維持する', style: 'cancel' },
+        { text: '撮った写真を使う', onPress: applyNewPhoto },
+        { text: 'キャンセル', style: 'cancel' },
+      ]);
     } catch (e) {
       console.warn('[camera]', e);
     }
@@ -282,6 +289,7 @@ export default function CameraScreen() {
   function handleUseOcrPhoto() {
     if (!ocrPhotoUri) return;
     setPendingPhotoUri(ocrPhotoUri);
+    setPendingPhotoSource('ocr');
     setOcrPhotoUri(null);
     scrollToInputCard(); // 反映先（入力カードのサムネ）へスクロールして変化を示す
   }
@@ -297,6 +305,7 @@ export default function CameraScreen() {
           style: 'destructive',
           onPress: () => {
             setPendingPhotoUri(null);
+            setPendingPhotoSource(null);
             setPhotoPreviewVisible(false);
           },
         },
@@ -485,6 +494,7 @@ export default function CameraScreen() {
     setCameraLive(true); // 保存後は撮影前のライブカメラ表示に戻す
     setOcrRawExpanded(false);
     setPendingPhotoUri(null);
+    setPendingPhotoSource(null);
     setOcrPhotoUri(null);
     setPhotoPreviewVisible(false);
     setSaveAsPurchased(false);
@@ -795,7 +805,7 @@ export default function CameraScreen() {
                         />
                         <SecondaryButton
                           title="商品写真を保存"
-                          onPress={handleAddPhoto}
+                          onPress={handleTakeProductPhoto}
                           style={styles.ocrFailSubBtn}
                         />
                       </View>
@@ -1033,7 +1043,7 @@ export default function CameraScreen() {
               {/* 保存の設定パネル（商品名・円金額・外貨金額・大きな写真プレビューはここに出さない）。
                   メモ／写真／保存先を1枚のカードにまとめ、区切り線で行を整理する。
                   メモはiOS標準の「完了」キーで閉じられるため独自バーは出さない。
-                  写真の操作は「写真を変更/追加」ボタン1つに集約し、選択肢は既存のphotoSheet(ActionSheet)に委ねる。
+                  写真は「商品写真を撮る」を直接アクション、「他から」でphotoSheet(ActionSheet)に委ねる構成。
                   state・onPress・保存ロジック・メモ編集ロジックは既存のまま、UI構造のみ作り直し。
                   onLayoutのYはmemoRowYRef（自由入力タップ時のスクロール先）に保持する。 */}
               <View onLayout={(e) => { memoRowYRef.current = e.nativeEvent.layout.y; }}>
@@ -1059,7 +1069,10 @@ export default function CameraScreen() {
                     <View>
                       <View style={styles.saveSettingsDivider} />
                       <View style={styles.saveSettingsSection}>
-                        <ThemedText style={styles.saveSettingsSectionLabel}>写真</ThemedText>
+                        <ThemedText style={styles.saveSettingsSectionLabel}>履歴に残す写真</ThemedText>
+                        <ThemedText style={styles.saveSettingsSectionCaption}>
+                          履歴・候補一覧で見返す用
+                        </ThemedText>
                         <View style={styles.photoSettingsRow}>
                           <TouchableOpacity
                             style={styles.photoSettingsThumbWrap}
@@ -1087,26 +1100,32 @@ export default function CameraScreen() {
                             <ThemedText style={styles.photoSettingsRowText}>
                               {pendingPhotoUri == null
                                 ? '写真なし'
-                                : canSuggestUsingOcrPhoto
-                                  ? '保存写真を設定済み'
-                                  : '値札写真を保存に使います'}
+                                : pendingPhotoSource === 'ocr'
+                                  ? 'いまは値札写真を使います'
+                                  : '商品写真を保存に使います'}
                             </ThemedText>
-                            <View style={styles.photoSettingsActionsRow}>
-                              <TouchableOpacity
-                                onPress={pendingPhotoUri != null ? handleChangePhoto : handleAddPhoto}
-                                hitSlop={6}
-                                activeOpacity={0.7}>
-                                <ThemedText style={styles.photoSettingsChangeText}>
-                                  {pendingPhotoUri != null ? '写真を変更' : '写真を追加'}
-                                </ThemedText>
-                              </TouchableOpacity>
-                              {pendingPhotoUri != null && (
-                                <TouchableOpacity onPress={handleRemovePhoto} hitSlop={6} activeOpacity={0.7}>
-                                  <ThemedText style={styles.photoSettingsRemoveText}>写真を外す</ThemedText>
-                                </TouchableOpacity>
-                              )}
-                            </View>
+                            {pendingPhotoUri != null && pendingPhotoSource === 'ocr' && (
+                              <ThemedText style={styles.photoSettingsHint}>
+                                商品写真に変えると履歴で見返しやすくなります
+                              </ThemedText>
+                            )}
                           </View>
+                        </View>
+                        <View style={styles.photoSettingsActionsRow}>
+                          <TouchableOpacity
+                            style={styles.photoSettingsActionBtn}
+                            onPress={handleTakeProductPhoto}
+                            activeOpacity={0.7}>
+                            <ThemedText style={styles.photoSettingsActionBtnText}>
+                              商品写真を撮る
+                            </ThemedText>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.photoSettingsActionBtn, styles.photoSettingsActionBtnGhost]}
+                            onPress={handleChangePhoto}
+                            activeOpacity={0.7}>
+                            <ThemedText style={styles.photoSettingsActionBtnGhostText}>他から</ThemedText>
+                          </TouchableOpacity>
                         </View>
                       </View>
                     </View>
@@ -1323,17 +1342,9 @@ export default function CameraScreen() {
         <View style={styles.photoSheetGrabber} />
         <ThemedText style={styles.photoSheetTitle}>保存する写真</ThemedText>
         <ThemedText style={styles.photoSheetSubtitle}>
-          履歴で見返すための商品写真を選べます。
+          ライブラリの写真や値札写真に切り替えられます。
         </ThemedText>
         <View style={styles.photoSheetList}>
-          <TouchableOpacity
-            style={[styles.photoSheetRow, styles.photoSheetRowPrimary]}
-            onPress={() => closeSheetThen(handleTakeProductPhoto)}
-            activeOpacity={0.7}>
-            <ThemedText style={[styles.photoSheetRowText, styles.photoSheetRowTextPrimary]}>
-              商品写真を撮る
-            </ThemedText>
-          </TouchableOpacity>
           <TouchableOpacity
             style={styles.photoSheetRow}
             onPress={() => closeSheetThen(handlePickPhotoFromLibrary)}
@@ -1346,6 +1357,14 @@ export default function CameraScreen() {
               onPress={() => closeSheetThen(handleUseOcrPhoto)}
               activeOpacity={0.7}>
               <ThemedText style={styles.photoSheetRowText}>値札写真を使う</ThemedText>
+            </TouchableOpacity>
+          )}
+          {pendingPhotoUri != null && (
+            <TouchableOpacity
+              style={styles.photoSheetRow}
+              onPress={() => closeSheetThen(handleRemovePhoto)}
+              activeOpacity={0.7}>
+              <ThemedText style={styles.photoSheetRowText}>写真を外す</ThemedText>
             </TouchableOpacity>
           )}
           <TouchableOpacity
@@ -1753,30 +1772,32 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
   },
-  // 価格候補カード（外貨額＋円換算の2段）。未選択＝淡teal地に濃teal文字、選択中＝濃teal地に白文字＋CTAグロー
+  // 価格候補カード：未選択＝白地+薄いグレー枠、選択中＝淡いミント地+ティール枠+チェック（塗りつぶしは使わない）
   priceCard: {
     flexBasis: '31%',
     flexGrow: 0,
     alignItems: 'center',
-    backgroundColor: color.primarySoft,
+    backgroundColor: color.card,
     borderRadius: radius.chip,
+    borderWidth: 1.5,
+    borderColor: color.line,
     paddingVertical: 10,
     paddingHorizontal: 8,
     gap: 2,
   },
   priceCardSelected: {
-    backgroundColor: color.primaryDark,
-    ...shadow.cta,
+    backgroundColor: color.primarySoft,
+    borderColor: color.primary,
   },
   priceCardForeign: {
-    color: color.primaryDark,
+    color: color.text,
     fontSize: 17,
     fontWeight: '700',
     letterSpacing: -0.3,
     fontVariant: ['tabular-nums'],
   },
   priceCardForeignSelected: {
-    color: '#fff',
+    color: color.primaryDark,
   },
   priceCardJpy: {
     color: color.body,
@@ -1785,29 +1806,31 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   priceCardJpySelected: {
-    color: color.primaryAccent,
+    color: color.primaryDark,
   },
-  // 価格候補を閉じている時の「選択中ボックス」（文字行で終わらせず視覚的に見せる）
+  // 価格候補を閉じている時の「選択中ボックス」。候補カードと同じ縁タイプ・淡い背景で統一する（青系は使わない）
   priceSelectedBox: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
-    backgroundColor: '#EAF4FF',
+    backgroundColor: color.primarySoft,
     borderRadius: radius.chip,
+    borderWidth: 1.5,
+    borderColor: color.primaryBorder,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
   priceSelectedBoxLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1C6EA6',
+    color: color.primaryDark,
   },
   priceSelectedBoxValue: {
     flexShrink: 1,
     fontSize: 14,
     fontWeight: '700',
-    color: '#1C6EA6',
+    color: color.primaryDark,
     fontVariant: ['tabular-nums'],
   },
   ocrFailBlock: {
@@ -2031,6 +2054,11 @@ const styles = StyleSheet.create({
     color: color.muted,
     letterSpacing: 0.4,
   },
+  saveSettingsSectionCaption: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: color.faint,
+  },
   memoInputInline: {
     fontSize: 14,
     color: color.text,
@@ -2057,27 +2085,43 @@ const styles = StyleSheet.create({
   },
   photoSettingsInfo: {
     flex: 1,
-    gap: 6,
+    gap: 4,
   },
   photoSettingsRowText: {
     fontSize: 14,
     fontWeight: '700',
     color: color.text,
   },
+  photoSettingsHint: {
+    fontSize: 11.5,
+    fontWeight: '500',
+    color: color.muted,
+  },
   photoSettingsActionsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
+    gap: 8,
   },
-  photoSettingsChangeText: {
+  photoSettingsActionBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 9,
+    borderRadius: radius.chip,
+    backgroundColor: color.primarySoft,
+  },
+  photoSettingsActionBtnText: {
     fontSize: 13,
     fontWeight: '700',
     color: color.primaryDark,
   },
-  photoSettingsRemoveText: {
+  photoSettingsActionBtnGhost: {
+    backgroundColor: color.card,
+    borderWidth: 1,
+    borderColor: color.line,
+  },
+  photoSettingsActionBtnGhostText: {
     fontSize: 13,
     fontWeight: '700',
-    color: color.danger,
+    color: color.body,
   },
 
   bottomSummary: {
@@ -2202,10 +2246,6 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     alignItems: 'center',
   },
-  photoSheetRowPrimary: {
-    backgroundColor: color.primarySoft,
-    borderColor: color.primaryBorder,
-  },
   photoSheetRowCancel: {
     borderColor: color.inputBorder,
     marginTop: 2,
@@ -2214,9 +2254,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: color.text,
-  },
-  photoSheetRowTextPrimary: {
-    color: color.primaryDark,
   },
   photoSheetRowTextCancel: {
     color: color.body,
