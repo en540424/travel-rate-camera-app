@@ -366,16 +366,36 @@ export default function CameraScreen() {
     scrollToInputCard();
   }
 
-  function handleAddMemoLine(line: string) {
+  // メモ候補のトグル：未追加→追加してチェック、追加済み→メモから取り除いてチェック解除。
+  // 同じ候補の重複追加を防ぐため、addedMemoLinesの有無で分岐する。
+  function handleToggleMemoLine(line: string) {
     const trimmed = line.trim();
     if (!trimmed) return;
-    setMemo((prev) => {
-      const current = prev.trim();
-      if (!current) return trimmed.slice(0, 100);
-      return `${current} ${trimmed}`.slice(0, 100);
-    });
-    setAddedMemoLines((prev) => new Set(prev).add(line));
-    scrollToInputCard();
+    if (addedMemoLines.has(line)) {
+      setMemo((prev) => {
+        if (prev === trimmed) return '';
+        if (prev.startsWith(`${trimmed} `)) return prev.slice(trimmed.length + 1);
+        if (prev.endsWith(` ${trimmed}`)) return prev.slice(0, prev.length - trimmed.length - 1);
+        const middle = ` ${trimmed} `;
+        const idx = prev.indexOf(middle);
+        // 手入力でメモ文面が変わり一致箇所が見つからない場合は本文を変えずチェックだけ外す
+        if (idx === -1) return prev;
+        return prev.slice(0, idx) + ' ' + prev.slice(idx + middle.length);
+      });
+      setAddedMemoLines((prev) => {
+        const next = new Set(prev);
+        next.delete(line);
+        return next;
+      });
+    } else {
+      setMemo((prev) => {
+        const current = prev.trim();
+        if (!current) return trimmed.slice(0, 100);
+        return `${current} ${trimmed}`.slice(0, 100);
+      });
+      setAddedMemoLines((prev) => new Set(prev).add(line));
+      scrollToInputCard();
+    }
   }
 
   // 入力をリセット（軽量）：入力欄だけを消す。
@@ -870,7 +890,7 @@ export default function CameraScreen() {
                             <TouchableOpacity
                               key={line}
                               style={[styles.memoChip, added && styles.memoChipAdded]}
-                              onPress={() => handleAddMemoLine(line)}
+                              onPress={() => handleToggleMemoLine(line)}
                               activeOpacity={0.75}>
                               <ThemedText
                                 style={[styles.memoChipText, added && styles.memoChipTextAdded]}
@@ -1059,26 +1079,35 @@ export default function CameraScreen() {
                               <SymbolView
                                 name={{ ios: 'photo', android: 'image', web: 'image' }}
                                 tintColor={color.muted}
-                                size={18}
+                                size={26}
                               />
                             )}
                           </TouchableOpacity>
-                          <ThemedText style={styles.photoSettingsRowText}>
-                            {pendingPhotoUri == null
-                              ? '写真なし'
-                              : canSuggestUsingOcrPhoto
-                                ? '保存写真を設定済み'
-                                : '値札写真を保存に使います'}
-                          </ThemedText>
+                          <View style={styles.photoSettingsInfo}>
+                            <ThemedText style={styles.photoSettingsRowText}>
+                              {pendingPhotoUri == null
+                                ? '写真なし'
+                                : canSuggestUsingOcrPhoto
+                                  ? '保存写真を設定済み'
+                                  : '値札写真を保存に使います'}
+                            </ThemedText>
+                            <View style={styles.photoSettingsActionsRow}>
+                              <TouchableOpacity
+                                onPress={pendingPhotoUri != null ? handleChangePhoto : handleAddPhoto}
+                                hitSlop={6}
+                                activeOpacity={0.7}>
+                                <ThemedText style={styles.photoSettingsChangeText}>
+                                  {pendingPhotoUri != null ? '写真を変更' : '写真を追加'}
+                                </ThemedText>
+                              </TouchableOpacity>
+                              {pendingPhotoUri != null && (
+                                <TouchableOpacity onPress={handleRemovePhoto} hitSlop={6} activeOpacity={0.7}>
+                                  <ThemedText style={styles.photoSettingsRemoveText}>写真を外す</ThemedText>
+                                </TouchableOpacity>
+                              )}
+                            </View>
+                          </View>
                         </View>
-                        <TouchableOpacity
-                          style={styles.photoSettingsChangeRow}
-                          onPress={pendingPhotoUri != null ? handleChangePhoto : handleAddPhoto}
-                          activeOpacity={0.7}>
-                          <ThemedText style={styles.photoSettingsChangeText}>
-                            {pendingPhotoUri != null ? '写真を変更' : '写真を追加'}
-                          </ThemedText>
-                        </TouchableOpacity>
                       </View>
                     </View>
                   )}
@@ -1309,24 +1338,14 @@ export default function CameraScreen() {
             style={styles.photoSheetRow}
             onPress={() => closeSheetThen(handlePickPhotoFromLibrary)}
             activeOpacity={0.7}>
-            <ThemedText style={styles.photoSheetRowText}>写真ライブラリから選ぶ</ThemedText>
+            <ThemedText style={styles.photoSheetRowText}>ライブラリから選ぶ</ThemedText>
           </TouchableOpacity>
           {ocrPhotoUri != null && (
             <TouchableOpacity
               style={styles.photoSheetRow}
               onPress={() => closeSheetThen(handleUseOcrPhoto)}
               activeOpacity={0.7}>
-              <ThemedText style={styles.photoSheetRowText}>OCR写真を使う</ThemedText>
-            </TouchableOpacity>
-          )}
-          {pendingPhotoUri != null && (
-            <TouchableOpacity
-              style={[styles.photoSheetRow, styles.photoSheetRowDanger]}
-              onPress={() => closeSheetThen(handleRemovePhoto)}
-              activeOpacity={0.7}>
-              <ThemedText style={[styles.photoSheetRowText, styles.photoSheetRowTextDanger]}>
-                写真を削除
-              </ThemedText>
+              <ThemedText style={styles.photoSheetRowText}>値札写真を使う</ThemedText>
             </TouchableOpacity>
           )}
           <TouchableOpacity
@@ -1774,7 +1793,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
-    backgroundColor: color.primarySoft,
+    backgroundColor: '#EAF4FF',
     borderRadius: radius.chip,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -1782,13 +1801,13 @@ const styles = StyleSheet.create({
   priceSelectedBoxLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: color.primaryDark,
+    color: '#1C6EA6',
   },
   priceSelectedBoxValue: {
     flexShrink: 1,
     fontSize: 14,
     fontWeight: '700',
-    color: color.primaryDark,
+    color: '#1C6EA6',
     fontVariant: ['tabular-nums'],
   },
   ocrFailBlock: {
@@ -1876,7 +1895,7 @@ const styles = StyleSheet.create({
   },
   // メモ候補を閉じている時の「追加済みメモ」ボックス（「追加済みN件」だけで終わらせず中身を見せる）
   addedMemoBox: {
-    backgroundColor: color.primarySoft,
+    backgroundColor: color.candidateSoft,
     borderRadius: radius.chip,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -1885,7 +1904,7 @@ const styles = StyleSheet.create({
   addedMemoBoxLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: color.primaryDark,
+    color: color.candidateText,
   },
   addedMemoChipRow: {
     flexDirection: 'row',
@@ -1898,7 +1917,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: radius.chip,
-    backgroundColor: color.primaryDark,
+    backgroundColor: color.candidateStrong,
   },
   addedMemoChipText: {
     fontSize: 12,
@@ -1908,7 +1927,7 @@ const styles = StyleSheet.create({
   addedMemoMore: {
     fontSize: 12,
     fontWeight: '700',
-    color: color.primaryDark,
+    color: color.candidateText,
   },
   ocrRawToggle: {
     paddingVertical: 4,
@@ -2004,7 +2023,7 @@ const styles = StyleSheet.create({
   },
   saveSettingsSection: {
     paddingVertical: spacing.sm,
-    gap: 8,
+    gap: 6,
   },
   saveSettingsSectionLabel: {
     fontSize: 12,
@@ -2020,37 +2039,45 @@ const styles = StyleSheet.create({
   photoSettingsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingVertical: 9,
+    gap: 12,
   },
   photoSettingsThumbWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    width: 72,
+    height: 72,
+    borderRadius: radius.chip,
     backgroundColor: color.line2,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
   photoSettingsThumb: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    width: 72,
+    height: 72,
+    borderRadius: radius.chip,
+  },
+  photoSettingsInfo: {
+    flex: 1,
+    gap: 6,
   },
   photoSettingsRowText: {
-    flex: 1,
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     color: color.text,
   },
-  photoSettingsChangeRow: {
-    paddingVertical: 9,
-    paddingLeft: 42,
+  photoSettingsActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
   },
   photoSettingsChangeText: {
     fontSize: 13,
     fontWeight: '700',
     color: color.primaryDark,
+  },
+  photoSettingsRemoveText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: color.danger,
   },
 
   bottomSummary: {
@@ -2179,10 +2206,6 @@ const styles = StyleSheet.create({
     backgroundColor: color.primarySoft,
     borderColor: color.primaryBorder,
   },
-  photoSheetRowDanger: {
-    backgroundColor: color.dangerSoft,
-    borderColor: color.dangerBorder,
-  },
   photoSheetRowCancel: {
     borderColor: color.inputBorder,
     marginTop: 2,
@@ -2194,9 +2217,6 @@ const styles = StyleSheet.create({
   },
   photoSheetRowTextPrimary: {
     color: color.primaryDark,
-  },
-  photoSheetRowTextDanger: {
-    color: color.danger,
   },
   photoSheetRowTextCancel: {
     color: color.body,
