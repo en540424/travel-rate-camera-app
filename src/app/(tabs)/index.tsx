@@ -64,6 +64,12 @@ export default function CameraScreen() {
     selectedPrice: string | null;
     addedMemoLines: Set<string>;
   } | null>(null);
+  // 値札再読み取り／商品写真の新しい撮影分。保存対象写真(pendingPhotoUri)へは即反映せず、
+  // 「履歴に残す写真」欄で「この写真を使う/今の写真を維持」を選ぶまで保持する
+  const [newPhotoCandidate, setNewPhotoCandidate] = useState<{
+    uri: string;
+    source: 'ocr' | 'product';
+  } | null>(null);
   const [saveAsPurchased, setSaveAsPurchased] = useState(false);
   const [selectedPrice, setSelectedPrice] = useState<string | null>(null);
   const [addedMemoLines, setAddedMemoLines] = useState<Set<string>>(new Set());
@@ -250,7 +256,7 @@ export default function CameraScreen() {
     }
   }
 
-  // 既に保存対象写真があるときは撮影してすぐに上書きせず、ユーザーに使うかどうか選んでもらう。
+  // 既に保存対象写真があるときは撮影してすぐに上書きせず、「履歴に残す写真」欄で選んでもらう。
   async function handleTakeProductPhoto() {
     try {
       const captured = await ImagePicker.launchCameraAsync({
@@ -260,22 +266,17 @@ export default function CameraScreen() {
       });
       if (captured.canceled || !captured.assets[0]) return;
       const newUri = captured.assets[0].uri;
-      const applyNewPhoto = () => {
+      if (pendingPhotoUri == null) {
         setPendingPhotoUri(newUri);
         setPendingPhotoSource('product');
         // 撮影後は手入力カードを開き、サムネ位置（入力カード）へスクロールして変化を示す
         setShowManualInput(true);
         scrollToInputCard();
-      };
-      if (pendingPhotoUri == null) {
-        applyNewPhoto();
         return;
       }
-      Alert.alert('撮った写真を保存に使いますか？', undefined, [
-        { text: '今の写真を維持する', style: 'cancel' },
-        { text: '撮った写真を使う', onPress: applyNewPhoto },
-        { text: 'キャンセル', style: 'cancel' },
-      ]);
+      // 保存対象写真は即上書きせず、「履歴に残す写真」欄の案内から選んでもらう
+      setNewPhotoCandidate({ uri: newUri, source: 'product' });
+      scrollToInputCard();
     } catch (e) {
       console.warn('[camera]', e);
     }
@@ -301,7 +302,24 @@ export default function CameraScreen() {
     setPendingPhotoUri(ocrPhotoUri);
     setPendingPhotoSource('ocr');
     setOcrPhotoUri(null);
+    // この値札写真を直接採用したので、同じ写真を指していた候補案内は不要
+    setNewPhotoCandidate((prev) => (prev?.source === 'ocr' ? null : prev));
     scrollToInputCard(); // 反映先（入力カードのサムネ）へスクロールして変化を示す
+  }
+
+  // 「履歴に残す写真」欄の「この写真を使う」：新しい写真候補を保存対象写真へ反映する
+  function handleUseNewPhotoCandidate() {
+    if (!newPhotoCandidate) return;
+    setPendingPhotoUri(newPhotoCandidate.uri);
+    setPendingPhotoSource(newPhotoCandidate.source);
+    if (newPhotoCandidate.source === 'ocr') setOcrPhotoUri(null);
+    setNewPhotoCandidate(null);
+    scrollToInputCard();
+  }
+
+  // 「履歴に残す写真」欄の「今の写真を維持」：候補を消すだけで保存対象写真は変えない
+  function handleKeepCurrentPhoto() {
+    setNewPhotoCandidate(null);
   }
 
   function handleRemovePhoto() {
@@ -316,6 +334,7 @@ export default function CameraScreen() {
           onPress: () => {
             setPendingPhotoUri(null);
             setPendingPhotoSource(null);
+            setNewPhotoCandidate(null);
             setPhotoPreviewVisible(false);
           },
         },
@@ -332,6 +351,8 @@ export default function CameraScreen() {
       // 再読み取り：上書き前の結果を退避し、「前の結果に戻す」でいつでも復元できるようにする
       // （保存対象写真pendingPhotoUriはここでは触らないため退避不要）
       setOcrBackup({ ocrPhotoUri, ocrResult, selectedPrice, addedMemoLines });
+      // 新しい値札写真は保存対象写真へ即反映せず、「履歴に残す写真」欄で選んでもらう候補として保持する
+      if (newPhotoUri != null) setNewPhotoCandidate({ uri: newPhotoUri, source: 'ocr' });
     }
 
     setCameraLive(false); // 読み取り完了→ライブカメラを撮影済みプレビューに切替（表示専用）
@@ -358,6 +379,8 @@ export default function CameraScreen() {
     setSelectedPrice(ocrBackup.selectedPrice);
     setAddedMemoLines(ocrBackup.addedMemoLines);
     setOcrBackup(null);
+    // 戻した値札写真はもう「新しい写真」ではないため、その候補案内も消す
+    setNewPhotoCandidate((prev) => (prev?.source === 'ocr' ? null : prev));
   }
 
   function scrollToInputCard() {
@@ -526,6 +549,7 @@ export default function CameraScreen() {
     setPendingPhotoSource(null);
     setOcrPhotoUri(null);
     setOcrBackup(null);
+    setNewPhotoCandidate(null);
     setPhotoPreviewVisible(false);
     setSaveAsPurchased(false);
     setShowManualInput(false);
@@ -1153,6 +1177,31 @@ export default function CameraScreen() {
                             )}
                           </View>
                         </View>
+                        {newPhotoCandidate != null && (
+                          <View style={styles.newPhotoCandidateBanner}>
+                            <ThemedText style={styles.newPhotoCandidateText}>
+                              新しく撮った{newPhotoCandidate.source === 'product' ? '商品' : '値札'}写真があります
+                            </ThemedText>
+                            <View style={styles.photoSettingsActionsRow}>
+                              <TouchableOpacity
+                                style={styles.photoSettingsActionBtn}
+                                onPress={handleUseNewPhotoCandidate}
+                                activeOpacity={0.7}>
+                                <ThemedText style={styles.photoSettingsActionBtnText}>
+                                  この写真を使う
+                                </ThemedText>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[styles.photoSettingsActionBtn, styles.photoSettingsActionBtnGhost]}
+                                onPress={handleKeepCurrentPhoto}
+                                activeOpacity={0.7}>
+                                <ThemedText style={styles.photoSettingsActionBtnGhostText}>
+                                  今の写真を維持
+                                </ThemedText>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        )}
                         <View style={styles.photoSettingsActionsRow}>
                           <TouchableOpacity
                             style={styles.photoSettingsActionBtn}
@@ -2184,6 +2233,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: color.body,
+  },
+  newPhotoCandidateBanner: {
+    backgroundColor: color.candidateSoft2,
+    borderWidth: 1,
+    borderColor: color.candidateBorder,
+    borderRadius: radius.chip,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  newPhotoCandidateText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: color.candidateText,
   },
 
   bottomSummary: {
