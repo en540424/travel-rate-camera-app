@@ -1872,29 +1872,27 @@ const styles = StyleSheet.create({
   priceCardJpySelected: {
     color: color.primaryDark,
   },
-  // 価格候補を閉じている時の「選択中ボックス」。候補カードと同じ縁タイプ・淡い背景で統一する（青系は使わない）
+  // 価格候補を閉じている時の「選択中ボックス」。保存ボタン(primary/teal)と区別するため青系で統一する
   priceSelectedBox: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
-    backgroundColor: color.primarySoft,
+    backgroundColor: '#EAF4FF',
     borderRadius: radius.chip,
-    borderWidth: 1.5,
-    borderColor: color.primaryBorder,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
   priceSelectedBoxLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: color.primaryDark,
+    color: '#1C6EA6',
   },
   priceSelectedBoxValue: {
     flexShrink: 1,
     fontSize: 14,
     fontWeight: '700',
-    color: color.primaryDark,
+    color: '#1C6EA6',
     fontVariant: ['tabular-nums'],
   },
   ocrFailBlock: {
