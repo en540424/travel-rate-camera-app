@@ -1009,35 +1009,13 @@ export default function CameraScreen() {
               </View>
               {/* 保存の設定パネル（商品名・円金額・外貨金額・大きな写真プレビューはここに出さない。
                   写真カード／保存先カードの2枚の操作カードのみで構成。
+                  写真の操作は「写真を変更/追加」ボタン1つに集約し、選択肢は既存のphotoSheet(ActionSheet)に委ねる。
                   state・onPress・保存ロジックは既存のまま、UI構造を作り直し） */}
               <ThemedText style={styles.saveSettingsHeading}>保存の設定</ThemedText>
 
               {Platform.OS !== 'web' && (
                 <View style={styles.photoSettingsCard}>
-                  {/* 再スキャンで得たOCR写真を保存写真に使う案内(自動上書きせず明示操作のみ) */}
-                  {canSuggestUsingOcrPhoto && (
-                    <View style={styles.photoSettingsRow}>
-                      <View style={styles.photoSettingsThumbWrap}>
-                        <SymbolView
-                          name={{ ios: 'viewfinder', android: 'document_scanner', web: 'document_scanner' }}
-                          tintColor={color.primaryDark}
-                          size={18}
-                        />
-                      </View>
-                      <TouchableOpacity
-                        style={styles.photoSettingsRowMain}
-                        onPress={handleUseOcrPhoto}
-                        activeOpacity={0.7}>
-                        <ThemedText style={styles.photoSettingsRowTextPrimary}>値札写真を保存に使う</ThemedText>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => setOcrPhotoSuggestionDismissed(true)}
-                        hitSlop={8}>
-                        <ThemedText style={styles.photoSettingsKeepText}>今の写真を維持</ThemedText>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-
+                  <ThemedText style={styles.photoSettingsCardLabel}>写真</ThemedText>
                   <View style={styles.photoSettingsRow}>
                     <TouchableOpacity
                       style={styles.photoSettingsThumbWrap}
@@ -1061,24 +1039,23 @@ export default function CameraScreen() {
                         />
                       )}
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.photoSettingsRowMain}
-                      onPress={pendingPhotoUri != null ? handleChangePhoto : handleAddPhoto}
-                      activeOpacity={0.7}>
-                      <ThemedText style={styles.photoSettingsRowText}>
-                        {pendingPhotoUri != null ? '写真を変更' : '＋ 写真を追加'}
-                      </ThemedText>
-                    </TouchableOpacity>
+                    <ThemedText style={styles.photoSettingsRowText}>
+                      {pendingPhotoUri == null
+                        ? '写真なし'
+                        : canSuggestUsingOcrPhoto
+                          ? '保存写真を設定済み'
+                          : '値札写真を保存に使います'}
+                    </ThemedText>
                   </View>
 
-                  {pendingPhotoUri != null && (
-                    <TouchableOpacity
-                      style={styles.photoSettingsRowMuted}
-                      onPress={handleRemovePhoto}
-                      activeOpacity={0.7}>
-                      <ThemedText style={styles.photoSettingsRowTextMuted}>写真を外す</ThemedText>
-                    </TouchableOpacity>
-                  )}
+                  <TouchableOpacity
+                    style={styles.photoSettingsChangeRow}
+                    onPress={pendingPhotoUri != null ? handleChangePhoto : handleAddPhoto}
+                    activeOpacity={0.7}>
+                    <ThemedText style={styles.photoSettingsChangeText}>
+                      {pendingPhotoUri != null ? '写真を変更' : '写真を追加'}
+                    </ThemedText>
+                  </TouchableOpacity>
                 </View>
               )}
 
@@ -1963,15 +1940,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
   },
+  photoSettingsCardLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: color.muted,
+    letterSpacing: 0.4,
+  },
   photoSettingsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     paddingVertical: 9,
-  },
-  photoSettingsRowMuted: {
-    paddingVertical: 9,
-    paddingLeft: 42,
   },
   photoSettingsThumbWrap: {
     width: 32,
@@ -1987,29 +1966,20 @@ const styles = StyleSheet.create({
     height: 32,
     borderRadius: 8,
   },
-  photoSettingsRowMain: {
-    flex: 1,
-  },
   photoSettingsRowText: {
     flex: 1,
     fontSize: 14,
     fontWeight: '600',
     color: color.text,
   },
-  photoSettingsRowTextPrimary: {
-    fontSize: 14,
+  photoSettingsChangeRow: {
+    paddingVertical: 9,
+    paddingLeft: 42,
+  },
+  photoSettingsChangeText: {
+    fontSize: 13,
     fontWeight: '700',
     color: color.primaryDark,
-  },
-  photoSettingsRowTextMuted: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: color.faint,
-  },
-  photoSettingsKeepText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: color.faint,
   },
 
   bottomSummary: {
