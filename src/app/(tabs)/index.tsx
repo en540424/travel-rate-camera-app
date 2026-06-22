@@ -1220,26 +1220,46 @@ export default function CameraScreen() {
                               </ThemedText>
                             )}
                             <View style={styles.photoSettingsActionsRow}>
-                              <TouchableOpacity
-                                style={styles.photoSettingsActionBtn}
-                                onPress={handleUseNewPhotoCandidate}
-                                activeOpacity={0.7}>
-                                <ThemedText style={styles.photoSettingsActionBtnText}>
-                                  {newPhotoCandidate.source === 'product'
-                                    ? '新しい商品写真を使う'
-                                    : '新しい写真を使う'}
-                                </ThemedText>
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                style={[styles.photoSettingsActionBtn, styles.photoSettingsActionBtnGhost]}
-                                onPress={handleKeepCurrentPhoto}
-                                activeOpacity={0.7}>
-                                <ThemedText style={styles.photoSettingsActionBtnGhostText}>
-                                  {newPhotoCandidate.source === 'product'
-                                    ? '現在の保存写真を使い続ける'
-                                    : '今の保存写真を使う'}
-                                </ThemedText>
-                              </TouchableOpacity>
+                              {newPhotoCandidate.source === 'product' ? (
+                                <>
+                                  {/* サムネ表示は左:現在の保存写真／右:新しい商品写真。ボタンの左右も同じ並びに揃える */}
+                                  <TouchableOpacity
+                                    style={[styles.photoSettingsActionBtn, styles.photoSettingsActionBtnGhost]}
+                                    onPress={handleKeepCurrentPhoto}
+                                    activeOpacity={0.7}>
+                                    <ThemedText style={styles.photoSettingsActionBtnGhostText}>
+                                      現在の保存写真を使う
+                                    </ThemedText>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity
+                                    style={styles.photoSettingsActionBtn}
+                                    onPress={handleUseNewPhotoCandidate}
+                                    activeOpacity={0.7}>
+                                    <ThemedText style={styles.photoSettingsActionBtnText}>
+                                      新しい商品写真を使う
+                                    </ThemedText>
+                                  </TouchableOpacity>
+                                </>
+                              ) : (
+                                <>
+                                  <TouchableOpacity
+                                    style={styles.photoSettingsActionBtn}
+                                    onPress={handleUseNewPhotoCandidate}
+                                    activeOpacity={0.7}>
+                                    <ThemedText style={styles.photoSettingsActionBtnText}>
+                                      新しい写真を使う
+                                    </ThemedText>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity
+                                    style={[styles.photoSettingsActionBtn, styles.photoSettingsActionBtnGhost]}
+                                    onPress={handleKeepCurrentPhoto}
+                                    activeOpacity={0.7}>
+                                    <ThemedText style={styles.photoSettingsActionBtnGhostText}>
+                                      今の保存写真を使う
+                                    </ThemedText>
+                                  </TouchableOpacity>
+                                </>
+                              )}
                             </View>
                           </View>
                         )}
