@@ -65,7 +65,7 @@ export default function CameraScreen() {
     addedMemoLines: Set<string>;
   } | null>(null);
   // 値札再読み取り／商品写真の新しい撮影分。保存対象写真(pendingPhotoUri)へは即反映せず、
-  // 「履歴に残す写真」欄で「この写真を使う/今の写真を維持」を選ぶまで保持する
+  // 「履歴に残す写真」欄で「新しい写真を使う/今の保存写真を使う」を選ぶまで保持する
   const [newPhotoCandidate, setNewPhotoCandidate] = useState<{
     uri: string;
     source: 'ocr' | 'product';
@@ -307,7 +307,7 @@ export default function CameraScreen() {
     scrollToInputCard(); // 反映先（入力カードのサムネ）へスクロールして変化を示す
   }
 
-  // 「履歴に残す写真」欄の「この写真を使う」：新しい写真候補を保存対象写真へ反映する
+  // 「履歴に残す写真」欄の「新しい写真を使う」：新しい写真候補を保存対象写真へ反映する
   function handleUseNewPhotoCandidate() {
     if (!newPhotoCandidate) return;
     setPendingPhotoUri(newPhotoCandidate.uri);
@@ -317,7 +317,7 @@ export default function CameraScreen() {
     scrollToInputCard();
   }
 
-  // 「履歴に残す写真」欄の「今の写真を維持」：候補を消すだけで保存対象写真は変えない
+  // 「履歴に残す写真」欄の「今の保存写真を使う」：候補を消すだけで保存対象写真は変えない
   function handleKeepCurrentPhoto() {
     setNewPhotoCandidate(null);
   }
@@ -1188,7 +1188,7 @@ export default function CameraScreen() {
                                 onPress={handleUseNewPhotoCandidate}
                                 activeOpacity={0.7}>
                                 <ThemedText style={styles.photoSettingsActionBtnText}>
-                                  この写真を使う
+                                  新しい写真を使う
                                 </ThemedText>
                               </TouchableOpacity>
                               <TouchableOpacity
@@ -1196,7 +1196,7 @@ export default function CameraScreen() {
                                 onPress={handleKeepCurrentPhoto}
                                 activeOpacity={0.7}>
                                 <ThemedText style={styles.photoSettingsActionBtnGhostText}>
-                                  今の写真を維持
+                                  今の保存写真を使う
                                 </ThemedText>
                               </TouchableOpacity>
                             </View>
