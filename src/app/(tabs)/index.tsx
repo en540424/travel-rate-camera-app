@@ -57,12 +57,10 @@ export default function CameraScreen() {
   // pendingPhotoUriの出どころ。「履歴に残す写真」カードの文言分岐に使う（値札写真のままか/商品写真等に変えたか）
   const [pendingPhotoSource, setPendingPhotoSource] = useState<'ocr' | 'product' | 'library' | null>(null);
   const [ocrPhotoUri, setOcrPhotoUri] = useState<string | null>(null);
-  // 再読み取り直前のOCR結果一式。「前の結果に戻す」用のバックアップ（保存対象写真pendingPhotoUriは含めない）
-  const [ocrBackup, setOcrBackup] = useState<{
-    ocrPhotoUri: string | null;
+  // 再読み取りで得た新しい結果（写真込み）。「新しい読み取りを使う」を選ぶまでocrResult/ocrPhotoUriへは反映しない
+  const [ocrResultCandidate, setOcrResultCandidate] = useState<{
+    photoUri: string | null;
     ocrResult: { raw: string; prices: string[]; memoLines: string[] };
-    selectedPrice: string | null;
-    addedMemoLines: Set<string>;
   } | null>(null);
   // 値札再読み取り／商品写真の新しい撮影分。保存対象写真(pendingPhotoUri)へは即反映せず、
   // 「履歴に残す写真」欄で「新しい写真を使う/今の保存写真を使う」を選ぶまで保持する
@@ -346,22 +344,23 @@ export default function CameraScreen() {
     if (isWeb) return;
     const newPhotoUri = lastScannedPhotoUriRef.current;
     lastScannedPhotoUriRef.current = null;
-
-    if (ocrResult != null) {
-      // 再読み取り：上書き前の結果を退避し、「前の結果に戻す」でいつでも復元できるようにする
-      // （保存対象写真pendingPhotoUriはここでは触らないため退避不要）
-      setOcrBackup({ ocrPhotoUri, ocrResult, selectedPrice, addedMemoLines });
-      // 新しい値札写真は保存対象写真へ即反映せず、「履歴に残す写真」欄で選んでもらう候補として保持する
-      if (newPhotoUri != null) setNewPhotoCandidate({ uri: newPhotoUri, source: 'ocr' });
-    }
-
-    setCameraLive(false); // 読み取り完了→ライブカメラを撮影済みプレビューに切替（表示専用）
-    if (newPhotoUri != null) setOcrPhotoUri(newPhotoUri);
-    setOcrResult({
+    const newResult = {
       raw,
       prices: extractPriceCandidates(raw, isJpyMode),
       memoLines: extractMemoLines(raw),
-    });
+    };
+
+    setCameraLive(false); // 読み取り完了→ライブカメラを撮影済みプレビューに切替（表示専用）
+
+    if (ocrResult != null) {
+      // 再読み取り：新しい結果は即反映せず、現在の結果と比較して選べる候補として保持する
+      setOcrResultCandidate({ photoUri: newPhotoUri, ocrResult: newResult });
+      return;
+    }
+
+    // 初回スキャン：比較対象がまだ無いため即反映する
+    if (newPhotoUri != null) setOcrPhotoUri(newPhotoUri);
+    setOcrResult(newResult);
     setSelectedPrice(null);
     setAddedMemoLines(new Set());
     setMemoExpanded(false);
@@ -371,16 +370,29 @@ export default function CameraScreen() {
     setManualAdjustExpanded(false); // 成功時は手入力を畳む
   }
 
-  // 再読み取り直前の結果へ戻す（保存対象写真pendingPhotoUriは対象外＝既存仕様どおり変更しない）
-  function handleRestorePreviousOcrResult() {
-    if (!ocrBackup) return;
-    setOcrPhotoUri(ocrBackup.ocrPhotoUri);
-    setOcrResult(ocrBackup.ocrResult);
-    setSelectedPrice(ocrBackup.selectedPrice);
-    setAddedMemoLines(ocrBackup.addedMemoLines);
-    setOcrBackup(null);
-    // 戻した値札写真はもう「新しい写真」ではないため、その候補案内も消す
-    setNewPhotoCandidate((prev) => (prev?.source === 'ocr' ? null : prev));
+  // 「新しい読み取りを使う」：候補だった結果を実際に反映する（保存対象写真pendingPhotoUriは別途、保存欄で選ぶ）
+  function handleUseOcrResultCandidate() {
+    if (!ocrResultCandidate) return;
+    const { photoUri, ocrResult: newResult } = ocrResultCandidate;
+    if (photoUri != null) {
+      setOcrPhotoUri(photoUri);
+      // 新しい値札写真は保存対象写真へ即反映せず、「履歴に残す写真」欄で選んでもらう候補として保持する
+      setNewPhotoCandidate({ uri: photoUri, source: 'ocr' });
+    }
+    setOcrResult(newResult);
+    setSelectedPrice(null);
+    setAddedMemoLines(new Set());
+    setMemoExpanded(false);
+    setPricesExpanded(false);
+    setPricesSectionOpen(true);
+    setMemoSectionOpen(true);
+    setManualAdjustExpanded(false);
+    setOcrResultCandidate(null);
+  }
+
+  // 「前の読み取りを残す」：候補を捨てて現在のOCR結果を維持する
+  function handleKeepCurrentOcrResult() {
+    setOcrResultCandidate(null);
   }
 
   function scrollToInputCard() {
@@ -491,7 +503,7 @@ export default function CameraScreen() {
 
   // もう一度読み取る：価格OCRだけ撮り直す。
   // 保存写真(pendingPhotoUri)・入力中の金額/メモ・入力カードは残す。
-  // 既存のOCR写真・結果はここでは消さない（新しい結果はhandleOcrResultで即反映され、戻す導線はocrBackupで提供する）。
+  // 既存のOCR写真・結果はここでは消さない（新しい結果はhandleOcrResultで候補として保持し、選ぶまで反映しない）。
   function handleRescan() {
     setScanKey((k) => k + 1);
     setCameraLive(true); // 再撮影＝大きいライブカメラへ戻す（表示専用）
@@ -548,7 +560,7 @@ export default function CameraScreen() {
     setPendingPhotoUri(null);
     setPendingPhotoSource(null);
     setOcrPhotoUri(null);
-    setOcrBackup(null);
+    setOcrResultCandidate(null);
     setNewPhotoCandidate(null);
     setPhotoPreviewVisible(false);
     setSaveAsPurchased(false);
@@ -672,16 +684,70 @@ export default function CameraScreen() {
                       </TouchableOpacity>
                     </View>
                   </View>
-                  {/* 再読み取り直後だけ表示。新しい結果は即反映済みで、ここは「前の結果に戻す」導線のみ */}
-                  {ocrBackup != null && (
-                    <View style={styles.ocrRescanBanner}>
-                      <ThemedText style={styles.ocrRescanBannerText}>再読み取り結果を表示中</ThemedText>
-                      <TouchableOpacity
-                        onPress={handleRestorePreviousOcrResult}
-                        hitSlop={8}
-                        activeOpacity={0.7}>
-                        <ThemedText style={styles.ocrRescanBannerAction}>前の結果に戻す</ThemedText>
-                      </TouchableOpacity>
+                  {/* 再読み取り直後だけ表示。新しい結果はまだ未反映で、選ぶまで現在の結果を維持する */}
+                  {ocrResultCandidate != null && (
+                    <View style={styles.newPhotoCandidateBanner}>
+                      <View style={styles.newPhotoCandidateCompareRow}>
+                        <View style={styles.newPhotoCandidateCompareCol}>
+                          <View style={styles.newPhotoCandidateThumbWrap}>
+                            {ocrPreviewUri != null ? (
+                              <Image
+                                source={{ uri: ocrPreviewUri }}
+                                style={styles.newPhotoCandidateThumb}
+                                contentFit="cover"
+                              />
+                            ) : (
+                              <SymbolView
+                                name={{ ios: 'photo', android: 'image', web: 'image' }}
+                                tintColor={color.muted}
+                                size={20}
+                              />
+                            )}
+                          </View>
+                          <ThemedText style={styles.newPhotoCandidateCompareLabel}>
+                            現在の読み取り結果
+                          </ThemedText>
+                        </View>
+                        <View style={styles.newPhotoCandidateCompareCol}>
+                          <View style={styles.newPhotoCandidateThumbWrap}>
+                            {ocrResultCandidate.photoUri != null ? (
+                              <Image
+                                source={{ uri: ocrResultCandidate.photoUri }}
+                                style={styles.newPhotoCandidateThumb}
+                                contentFit="cover"
+                              />
+                            ) : (
+                              <SymbolView
+                                name={{ ios: 'photo', android: 'image', web: 'image' }}
+                                tintColor={color.muted}
+                                size={20}
+                              />
+                            )}
+                          </View>
+                          <ThemedText style={styles.newPhotoCandidateCompareLabel}>
+                            新しい読み取り結果
+                          </ThemedText>
+                        </View>
+                      </View>
+                      {/* サムネ表示は左:現在の読み取り結果／右:新しい読み取り結果。ボタンの左右も同じ並びに揃える */}
+                      <View style={styles.photoSettingsActionsRow}>
+                        <TouchableOpacity
+                          style={[styles.photoSettingsActionBtn, styles.photoSettingsActionBtnGhost]}
+                          onPress={handleKeepCurrentOcrResult}
+                          activeOpacity={0.7}>
+                          <ThemedText style={styles.photoSettingsActionBtnGhostText}>
+                            前の読み取りを残す
+                          </ThemedText>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.photoSettingsActionBtn}
+                          onPress={handleUseOcrResultCandidate}
+                          activeOpacity={0.7}>
+                          <ThemedText style={styles.photoSettingsActionBtnText}>
+                            新しい読み取りを使う
+                          </ThemedText>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   )}
                   {/* 横長コンパクト。全幅(実寸比)で表示し縦スクロール／iOSピンチで全体確認。枠内クリップ。
@@ -1670,29 +1736,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: color.primary,
   },
-  // 再読み取り直後のみ表示する「前の結果に戻す」バナー
-  ocrRescanBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: color.candidateSoft2,
-    borderWidth: 1,
-    borderColor: color.candidateBorder,
-    borderRadius: radius.chip,
-    paddingVertical: 8,
-    paddingHorizontal: spacing.md,
-  },
-  ocrRescanBannerText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: color.candidateText,
-  },
-  ocrRescanBannerAction: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: color.primary,
-  },
-
   // 商品写真モード（captureMode==='photo'）のパネル
   productPanel: {
     gap: spacing.md,
