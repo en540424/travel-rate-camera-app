@@ -1007,56 +1007,49 @@ export default function CameraScreen() {
                   maxLength={100}
                 />
               </View>
-              {/* 保存前チェック（メモ・写真・保存先をまとめた確認カード。state・onPress・保存ロジックは既存のまま、表示のみ整理） */}
+              {/* 保存内容（写真・タイトル・保存先・金額を1枚の商品プレビューにまとめる。
+                  state・onPress・保存ロジックは既存のまま、表示のみ再構成） */}
               <View style={styles.savePreviewCard}>
-                <ThemedText style={styles.savePreviewTitle}>保存前チェック</ThemedText>
+                <ThemedText style={styles.savePreviewTitle}>保存内容</ThemedText>
 
-                <View style={styles.saveTargetRow}>
-                  <ThemedText style={styles.saveTargetLabel}>メモ</ThemedText>
-                  {memo.trim() ? (
-                    <ThemedText style={styles.savePreviewValue} numberOfLines={1}>
-                      {memo.trim()}
-                    </ThemedText>
-                  ) : (
-                    <ThemedText style={styles.pendingPhotoLabel}>メモなし</ThemedText>
+                <View style={styles.savePreviewItem}>
+                  {Platform.OS !== 'web' && pendingPhotoUri != null && (
+                    <TouchableOpacity
+                      onPress={() => setPhotoPreviewVisible(true)}
+                      activeOpacity={0.8}>
+                      <Image
+                        source={{ uri: pendingPhotoUri }}
+                        style={styles.pendingPhotoThumb}
+                        contentFit="cover"
+                      />
+                    </TouchableOpacity>
                   )}
+                  <View style={styles.savePreviewItemBody}>
+                    <ThemedText
+                      style={[styles.savePreviewItemTitle, !memo.trim() && styles.savePreviewItemTitleMuted]}
+                      numberOfLines={1}>
+                      {memo.trim() || 'メモなし'}
+                    </ThemedText>
+                    <ThemedText
+                      style={[
+                        styles.savePreviewItemStatus,
+                        saveAsPurchased
+                          ? styles.savePreviewItemStatusPurchased
+                          : styles.savePreviewItemStatusCandidate,
+                      ]}>
+                      {saveAsPurchased ? '購入済みとして保存' : '候補として保存'}
+                    </ThemedText>
+                    {jpyAmount > 0 && (
+                      <ThemedText style={styles.savePreviewItemPrice}>
+                        {isJpyMode
+                          ? formatJpy(jpyAmount)
+                          : `${formatJpy(jpyAmount)} / ${formatForeign(foreignAmount, currencyForDisplay)}`}
+                      </ThemedText>
+                    )}
+                  </View>
                 </View>
 
-                {Platform.OS !== 'web' && (
-                  pendingPhotoUri != null ? (
-                    <View style={styles.saveTargetRow}>
-                      <ThemedText style={styles.saveTargetLabel}>写真</ThemedText>
-                      <TouchableOpacity
-                        style={styles.savePreviewSpacer}
-                        onPress={() => setPhotoPreviewVisible(true)}
-                        activeOpacity={0.8}>
-                        <Image
-                          source={{ uri: pendingPhotoUri }}
-                          style={styles.pendingPhotoThumb}
-                          contentFit="cover"
-                        />
-                      </TouchableOpacity>
-                      <View style={styles.pendingPhotoActions}>
-                        <TouchableOpacity onPress={handleChangePhoto} hitSlop={8}>
-                          <ThemedText style={styles.pendingPhotoActionText}>変更</ThemedText>
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={handleRemovePhoto} hitSlop={8}>
-                          <ThemedText style={styles.pendingPhotoActionTextMuted}>削除</ThemedText>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ) : (
-                    <View style={styles.saveTargetRow}>
-                      <ThemedText style={styles.saveTargetLabel}>写真</ThemedText>
-                      <ThemedText style={styles.pendingPhotoLabel}>写真なし</ThemedText>
-                      <TouchableOpacity onPress={handleAddPhoto} hitSlop={8}>
-                        <ThemedText style={styles.pendingPhotoActionText}>＋ 商品写真を追加</ThemedText>
-                      </TouchableOpacity>
-                    </View>
-                  )
-                )}
-
-                {/* 再スキャンで得たOCR写真を保存写真に使う案内（自動上書きせず明示操作のみ） */}
+                {/* 再スキャンで得たOCR写真を保存写真に使う案内(自動上書きせず明示操作のみ) */}
                 {canSuggestUsingOcrPhoto && (
                   <View style={styles.ocrPhotoSuggest}>
                     <ThemedText style={styles.ocrPhotoSuggestTitle}>今読み取った値札写真があります</ThemedText>
@@ -1079,9 +1072,23 @@ export default function CameraScreen() {
                   </View>
                 )}
 
-                {/* 保存先（候補 / 購入済み） */}
-                <View style={styles.saveTargetRow}>
-                  <ThemedText style={styles.saveTargetLabel}>保存先</ThemedText>
+                <View style={styles.savePreviewActionsRow}>
+                  {Platform.OS !== 'web' && (
+                    pendingPhotoUri != null ? (
+                      <View style={styles.pendingPhotoActions}>
+                        <TouchableOpacity onPress={handleChangePhoto} hitSlop={8}>
+                          <ThemedText style={styles.pendingPhotoActionText}>写真を変更</ThemedText>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={handleRemovePhoto} hitSlop={8}>
+                          <ThemedText style={styles.pendingPhotoActionTextMuted}>削除</ThemedText>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity onPress={handleAddPhoto} hitSlop={8}>
+                        <ThemedText style={styles.pendingPhotoActionText}>＋ 商品写真を追加</ThemedText>
+                      </TouchableOpacity>
+                    )
+                  )}
                   <View style={styles.saveTargetPills}>
                     <TouchableOpacity
                       style={[styles.saveTargetPill, !saveAsPurchased && styles.saveTargetPillCandidateActive]}
@@ -1109,17 +1116,17 @@ export default function CameraScreen() {
                     </TouchableOpacity>
                   </View>
                 </View>
-
-                {/* 入力をリセット（弱いテキストリンク） */}
-                {hasInputToReset && (
-                  <TouchableOpacity
-                    style={styles.resetInputBtn}
-                    onPress={handleResetInput}
-                    activeOpacity={0.7}>
-                    <ThemedText style={styles.resetInputBtnText}>入力をリセット</ThemedText>
-                  </TouchableOpacity>
-                )}
               </View>
+
+              {/* 入力をリセット（弱いテキストリンク。カードの外に控えめに配置） */}
+              {hasInputToReset && (
+                <TouchableOpacity
+                  style={styles.resetInputBtn}
+                  onPress={handleResetInput}
+                  activeOpacity={0.7}>
+                  <ThemedText style={styles.resetInputBtnText}>入力をリセット</ThemedText>
+                </TouchableOpacity>
+              )}
 
               {/* 保存上限（無料版） */}
               {!isPro && totalCount >= NEAR_SAVE_LIMIT && (
@@ -1921,16 +1928,10 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
   },
   pendingPhotoThumb: {
-    width: 40,
-    height: 30,
-    borderRadius: 8,
+    width: 56,
+    height: 56,
+    borderRadius: radius.chip,
     backgroundColor: color.bgScreen,
-  },
-  pendingPhotoLabel: {
-    fontSize: 11,
-    color: color.muted,
-    fontWeight: '500',
-    flex: 1,
   },
   pendingPhotoActions: {
     flexDirection: 'row',
@@ -2052,7 +2053,7 @@ const styles = StyleSheet.create({
     gap: 10,
     alignItems: 'stretch',
   },
-  // 保存前チェック（メモ・写真・保存先を1枚にまとめた確認カード）
+  // 保存内容（写真・タイトル・保存先・金額を1枚の商品プレビューにまとめたカード）
   savePreviewCard: {
     backgroundColor: color.bgScreen,
     borderRadius: radius.chip,
@@ -2066,28 +2067,51 @@ const styles = StyleSheet.create({
     color: color.muted,
     letterSpacing: 0.4,
   },
-  // メモ行の本文プレビュー（入力済みの内容をそのまま1行表示）
-  savePreviewValue: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '600',
-    color: color.text,
-  },
-  // 写真サムネの右に変更/削除を寄せるための可変スペーサー
-  savePreviewSpacer: {
-    flex: 1,
-  },
-  saveTargetRow: {
+  // 写真サムネ＋タイトル/ステータス/金額を1つの商品プレビューとして並べる行
+  savePreviewItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
   },
-  saveTargetLabel: {
+  savePreviewItemBody: {
+    flex: 1,
+    gap: 2,
+  },
+  // メモ入力欄と同じ見せ方を繰り返さないため、ここでは「保存されるタイトル」として大きく表示する
+  savePreviewItemTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: color.text,
+    letterSpacing: -0.2,
+  },
+  savePreviewItemTitleMuted: {
+    color: color.faint,
+    fontWeight: '600',
+  },
+  savePreviewItemStatus: {
     fontSize: 12,
     fontWeight: '700',
-    color: color.muted,
-    letterSpacing: 0.4,
-    minWidth: 40,
+  },
+  savePreviewItemStatusCandidate: {
+    color: statusColor.candidate.text,
+  },
+  savePreviewItemStatusPurchased: {
+    color: statusColor.purchased.text,
+  },
+  savePreviewItemPrice: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: color.primaryDark,
+    marginTop: 2,
+  },
+  // 写真操作（変更/削除/追加）と保存先ステータス切替を1段にまとめる行
+  savePreviewActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: color.line2,
   },
   saveTargetPills: {
     flexDirection: 'row',
@@ -2123,14 +2147,11 @@ const styles = StyleSheet.create({
     color: statusColor.purchased.text,
     fontWeight: '700',
   },
-  // 保存前チェックの最終行。区切り線＋弱いテキストリンクで目立たせない
+  // 保存内容カードの外に置く弱いテキストリンク（区切り線は付けず目立たせない）
   resetInputBtn: {
-    alignSelf: 'stretch',
-    alignItems: 'center',
-    marginTop: 2,
-    paddingTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: color.line2,
+    alignSelf: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
   },
   resetInputBtnText: {
     fontSize: 12,
