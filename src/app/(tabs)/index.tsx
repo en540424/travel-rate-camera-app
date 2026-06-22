@@ -87,6 +87,8 @@ export default function CameraScreen() {
   const memoRowYRef = useRef(0);
   // OCR写真プレビュー（読み取った値札）の縦スクロールを中心位置にするための参照
   const ocrPhotoPreviewScrollRef = useRef<ScrollView>(null);
+  // 再読み取りで撮影した直後の写真URI。handleOcrResultで確認が取れるまでocrPhotoUriへは反映しない
+  const lastScannedPhotoUriRef = useRef<string | null>(null);
 
   const { rates } = useRates();
   const { selectedCurrency, setSelectedCurrency, isPro } = useSettingsStore();
@@ -181,7 +183,7 @@ export default function CameraScreen() {
   const isWeb = Platform.OS === 'web';
 
   // 撮影後に見せる「読み取った値札」プレビュー画像（ヘッダー小サムネ／拡大モーダル用）。
-  // 初回スキャンは pendingPhotoUri に、再スキャン以降は ocrPhotoUri に直近の撮影が入る（handlePhotoCapture の既存分岐）。
+  // 初回スキャンはpendingPhotoUriに、再スキャン以降は確認(handleOcrResult)が取れた分だけocrPhotoUriに入る。
   const ocrPreviewUri = ocrPhotoUri ?? pendingPhotoUri;
   // 撮影後はライブカメラの代わりに「読み取った値札」プレビュー（ドラッグ/ズーム/拡大）を出す
   const showOcrPhotoPreview =
@@ -217,7 +219,8 @@ export default function CameraScreen() {
       setPendingPhotoUri(uri);
       setPendingPhotoSource('ocr');
     } else {
-      setOcrPhotoUri(uri);
+      // 再読み取りの撮影分はOCR結果の確認(handleOcrResult)が済むまでocrPhotoUriへ確定しない
+      lastScannedPhotoUriRef.current = uri;
     }
   }
 
@@ -315,19 +318,42 @@ export default function CameraScreen() {
 
   function handleOcrResult(raw: string) {
     if (isWeb) return;
-    setCameraLive(false); // 読み取り完了→ライブカメラを撮影済みプレビューに切替（表示専用）
-    setOcrResult({
-      raw,
-      prices: extractPriceCandidates(raw, isJpyMode),
-      memoLines: extractMemoLines(raw),
-    });
-    setSelectedPrice(null);
-    setAddedMemoLines(new Set());
-    setMemoExpanded(false);
-    setPricesExpanded(false); // 価格候補も初期は4件まで
-    setPricesSectionOpen(true); // 新しいOCR結果では候補セクションを開いた状態に戻す
-    setMemoSectionOpen(true);
-    setManualAdjustExpanded(false); // 成功時は手入力を畳む
+    const newPhotoUri = lastScannedPhotoUriRef.current;
+    lastScannedPhotoUriRef.current = null;
+
+    const applyResult = () => {
+      setCameraLive(false); // 読み取り完了→ライブカメラを撮影済みプレビューに切替（表示専用）
+      if (newPhotoUri != null) setOcrPhotoUri(newPhotoUri);
+      setOcrResult({
+        raw,
+        prices: extractPriceCandidates(raw, isJpyMode),
+        memoLines: extractMemoLines(raw),
+      });
+      setSelectedPrice(null);
+      setAddedMemoLines(new Set());
+      setMemoExpanded(false);
+      setPricesExpanded(false); // 価格候補も初期は4件まで
+      setPricesSectionOpen(true); // 新しいOCR結果では候補セクションを開いた状態に戻す
+      setMemoSectionOpen(true);
+      setManualAdjustExpanded(false); // 成功時は手入力を畳む
+    };
+
+    if (ocrResult == null) {
+      // 初回スキャンは確認なしで反映（既存挙動）
+      applyResult();
+      return;
+    }
+
+    // 再読み取り：既存のOCR写真・価格候補・選択中価格・メモ候補・全文を即上書きせず確認する
+    Alert.alert(
+      '新しい読み取り結果を使いますか？',
+      '現在の結果を残すこともできます。',
+      [
+        { text: '今の結果を維持する', style: 'cancel', onPress: () => setCameraLive(false) },
+        { text: '新しい結果を使う', onPress: applyResult },
+        { text: 'キャンセル', style: 'cancel', onPress: () => setCameraLive(false) },
+      ],
+    );
   }
 
   function scrollToInputCard() {
@@ -438,11 +464,10 @@ export default function CameraScreen() {
 
   // もう一度読み取る：価格OCRだけ撮り直す。
   // 保存写真(pendingPhotoUri)・入力中の金額/メモ・入力カードは残す。
-  // 次に撮った値札写真は handlePhotoCapture の既存分岐で ocrPhotoUri（スワップ候補）に入る。
+  // 既存のOCR写真・結果はここでは消さない（即上書きせず、新しい結果が出てからhandleOcrResultで確認する）。
   function handleRescan() {
     setScanKey((k) => k + 1);
     setCameraLive(true); // 再撮影＝大きいライブカメラへ戻す（表示専用）
-    setOcrPhotoUri(null);
     setPhotoPreviewVisible(false);
     scrollToCamera(); // 上のカメラで撮り直すことを示す
   }
@@ -1101,12 +1126,12 @@ export default function CameraScreen() {
                               {pendingPhotoUri == null
                                 ? '写真なし'
                                 : pendingPhotoSource === 'ocr'
-                                  ? 'いまは値札写真を使います'
-                                  : '商品写真を保存に使います'}
+                                  ? 'いまは値札写真を使用中'
+                                  : '商品写真を保存に使用中'}
                             </ThemedText>
                             {pendingPhotoUri != null && pendingPhotoSource === 'ocr' && (
                               <ThemedText style={styles.photoSettingsHint}>
-                                商品写真に変えると履歴で見返しやすくなります
+                                商品写真に変更できます
                               </ThemedText>
                             )}
                           </View>
