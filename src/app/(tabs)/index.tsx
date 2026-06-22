@@ -716,12 +716,6 @@ export default function CameraScreen() {
                   <View style={styles.ocrSectionHeader}>
                     <View style={styles.ocrSectionLabelGroup}>
                       <ThemedText style={styles.ocrSectionLabel}>価格候補</ThemedText>
-                      {!pricesSectionOpen && ocrResult.prices.length > 0 && selectedPrice != null && (
-                        <ThemedText style={styles.ocrSectionSubInfo} numberOfLines={1}>
-                          選択中 {c.symbol}{selectedPrice}
-                          {!isJpyMode && selectedPriceJpy > 0 ? ` / ${formatJpy(selectedPriceJpy)}` : ''}
-                        </ThemedText>
-                      )}
                     </View>
                     {ocrResult.prices.length > 0 && (
                       <View style={styles.ocrSectionActions}>
@@ -746,6 +740,16 @@ export default function CameraScreen() {
                       </View>
                     )}
                   </View>
+                  {/* 閉じている時は選択中の価格を「ボックス」で見せる（文字行だけで終わらせない） */}
+                  {!pricesSectionOpen && ocrResult.prices.length > 0 && selectedPrice != null && (
+                    <View style={styles.priceSelectedBox}>
+                      <ThemedText style={styles.priceSelectedBoxLabel}>選択中の価格</ThemedText>
+                      <ThemedText style={styles.priceSelectedBoxValue} numberOfLines={1}>
+                        {c.symbol}{selectedPrice}
+                        {!isJpyMode && selectedPriceJpy > 0 ? ` → ${formatJpy(selectedPriceJpy)}` : ''}
+                      </ThemedText>
+                    </View>
+                  )}
                   {ocrResult.prices.length === 0 ? (
                     <View style={styles.ocrFailBlock}>
                       <View style={styles.ocrFailIconWrap}>
@@ -811,11 +815,6 @@ export default function CameraScreen() {
                     <View style={styles.ocrSectionHeader}>
                       <View style={styles.ocrSectionLabelGroup}>
                         <ThemedText style={styles.ocrSectionLabel}>メモ候補（タップで追加）</ThemedText>
-                        {!memoSectionOpen && addedMemoLines.size > 0 && (
-                          <ThemedText style={styles.ocrSectionSubInfo}>
-                            追加済み{addedMemoLines.size}件
-                          </ThemedText>
-                        )}
                       </View>
                       <View style={styles.ocrSectionActions}>
                         {memoSectionOpen && ocrResult.memoLines.length > MEMO_PREVIEW_COUNT && (
@@ -838,6 +837,28 @@ export default function CameraScreen() {
                         </TouchableOpacity>
                       </View>
                     </View>
+                    {/* 閉じている時は追加済みメモの中身をチップで見せる（「追加済みN件」だけで終わらせない） */}
+                    {!memoSectionOpen && addedMemoLines.size > 0 && (
+                      <View style={styles.addedMemoBox}>
+                        <ThemedText style={styles.addedMemoBoxLabel}>追加済みメモ</ThemedText>
+                        <View style={styles.addedMemoChipRow}>
+                          {Array.from(addedMemoLines)
+                            .slice(0, MEMO_PREVIEW_COUNT)
+                            .map((line) => (
+                              <View key={line} style={styles.addedMemoChip}>
+                                <ThemedText style={styles.addedMemoChipText} numberOfLines={1}>
+                                  {line}
+                                </ThemedText>
+                              </View>
+                            ))}
+                          {addedMemoLines.size > MEMO_PREVIEW_COUNT && (
+                            <ThemedText style={styles.addedMemoMore}>
+                              +{addedMemoLines.size - MEMO_PREVIEW_COUNT}
+                            </ThemedText>
+                          )}
+                        </View>
+                      </View>
+                    )}
                     {memoSectionOpen && (
                       <View style={styles.ocrMemoChipRow}>
                         {(memoExpanded
@@ -989,109 +1010,116 @@ export default function CameraScreen() {
                 </View>
               )}
 
-              {/* メモ（補助情報）。iOS標準の「完了」キーで閉じられるため独自バーは出さない。
-                  onLayoutのYはmemoRowYRef（自由入力タップ時のスクロール先）に保持する。 */}
-              <View
-                style={styles.memoRow}
-                onLayout={(e) => { memoRowYRef.current = e.nativeEvent.layout.y; }}>
-                <ThemedText style={styles.memoLabel}>メモ</ThemedText>
-                <TextInput
-                  ref={memoInputRef}
-                  style={styles.memoInput}
-                  value={memo}
-                  onChangeText={setMemo}
-                  placeholder="モッツァレラ / Tシャツ / お土産"
-                  placeholderTextColor={DT.colors.textMuted}
-                  returnKeyType="done"
-                  onSubmitEditing={() => Keyboard.dismiss()}
-                  maxLength={100}
-                />
-              </View>
-              {/* 保存の設定パネル（商品名・円金額・外貨金額・大きな写真プレビューはここに出さない。
-                  写真カード／保存先カードの2枚の操作カードのみで構成。
+              {/* 保存の設定パネル（商品名・円金額・外貨金額・大きな写真プレビューはここに出さない）。
+                  メモ／写真／保存先を1枚のカードにまとめ、区切り線で行を整理する。
+                  メモはiOS標準の「完了」キーで閉じられるため独自バーは出さない。
                   写真の操作は「写真を変更/追加」ボタン1つに集約し、選択肢は既存のphotoSheet(ActionSheet)に委ねる。
-                  state・onPress・保存ロジックは既存のまま、UI構造を作り直し） */}
-              <ThemedText style={styles.saveSettingsHeading}>保存の設定</ThemedText>
+                  state・onPress・保存ロジック・メモ編集ロジックは既存のまま、UI構造のみ作り直し。
+                  onLayoutのYはmemoRowYRef（自由入力タップ時のスクロール先）に保持する。 */}
+              <View onLayout={(e) => { memoRowYRef.current = e.nativeEvent.layout.y; }}>
+                <ThemedText style={styles.saveSettingsHeading}>保存の設定</ThemedText>
 
-              {Platform.OS !== 'web' && (
-                <View style={styles.photoSettingsCard}>
-                  <ThemedText style={styles.photoSettingsCardLabel}>写真</ThemedText>
-                  <View style={styles.photoSettingsRow}>
-                    <TouchableOpacity
-                      style={styles.photoSettingsThumbWrap}
-                      onPress={
-                        pendingPhotoUri != null
-                          ? () => setPhotoPreviewVisible(true)
-                          : handleAddPhoto
-                      }
-                      activeOpacity={0.8}>
-                      {pendingPhotoUri != null ? (
-                        <Image
-                          source={{ uri: pendingPhotoUri }}
-                          style={styles.photoSettingsThumb}
-                          contentFit="cover"
-                        />
-                      ) : (
-                        <SymbolView
-                          name={{ ios: 'photo', android: 'image', web: 'image' }}
-                          tintColor={color.muted}
-                          size={18}
-                        />
-                      )}
-                    </TouchableOpacity>
-                    <ThemedText style={styles.photoSettingsRowText}>
-                      {pendingPhotoUri == null
-                        ? '写真なし'
-                        : canSuggestUsingOcrPhoto
-                          ? '保存写真を設定済み'
-                          : '値札写真を保存に使います'}
-                    </ThemedText>
+                <View style={styles.saveSettingsCard}>
+                  <View style={styles.saveSettingsSection}>
+                    <ThemedText style={styles.saveSettingsSectionLabel}>メモ</ThemedText>
+                    <TextInput
+                      ref={memoInputRef}
+                      style={styles.memoInputInline}
+                      value={memo}
+                      onChangeText={setMemo}
+                      placeholder="モッツァレラ / Tシャツ / お土産"
+                      placeholderTextColor={DT.colors.textMuted}
+                      returnKeyType="done"
+                      onSubmitEditing={() => Keyboard.dismiss()}
+                      maxLength={100}
+                    />
                   </View>
 
-                  <TouchableOpacity
-                    style={styles.photoSettingsChangeRow}
-                    onPress={pendingPhotoUri != null ? handleChangePhoto : handleAddPhoto}
-                    activeOpacity={0.7}>
-                    <ThemedText style={styles.photoSettingsChangeText}>
-                      {pendingPhotoUri != null ? '写真を変更' : '写真を追加'}
-                    </ThemedText>
-                  </TouchableOpacity>
-                </View>
-              )}
+                  {Platform.OS !== 'web' && (
+                    <View>
+                      <View style={styles.saveSettingsDivider} />
+                      <View style={styles.saveSettingsSection}>
+                        <ThemedText style={styles.saveSettingsSectionLabel}>写真</ThemedText>
+                        <View style={styles.photoSettingsRow}>
+                          <TouchableOpacity
+                            style={styles.photoSettingsThumbWrap}
+                            onPress={
+                              pendingPhotoUri != null
+                                ? () => setPhotoPreviewVisible(true)
+                                : handleAddPhoto
+                            }
+                            activeOpacity={0.8}>
+                            {pendingPhotoUri != null ? (
+                              <Image
+                                source={{ uri: pendingPhotoUri }}
+                                style={styles.photoSettingsThumb}
+                                contentFit="cover"
+                              />
+                            ) : (
+                              <SymbolView
+                                name={{ ios: 'photo', android: 'image', web: 'image' }}
+                                tintColor={color.muted}
+                                size={18}
+                              />
+                            )}
+                          </TouchableOpacity>
+                          <ThemedText style={styles.photoSettingsRowText}>
+                            {pendingPhotoUri == null
+                              ? '写真なし'
+                              : canSuggestUsingOcrPhoto
+                                ? '保存写真を設定済み'
+                                : '値札写真を保存に使います'}
+                          </ThemedText>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.photoSettingsChangeRow}
+                          onPress={pendingPhotoUri != null ? handleChangePhoto : handleAddPhoto}
+                          activeOpacity={0.7}>
+                          <ThemedText style={styles.photoSettingsChangeText}>
+                            {pendingPhotoUri != null ? '写真を変更' : '写真を追加'}
+                          </ThemedText>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
 
-              <View style={styles.saveTargetCard}>
-                <ThemedText style={styles.saveTargetCardLabel}>保存先</ThemedText>
-                <View style={styles.saveTargetSegment}>
-                  <TouchableOpacity
-                    style={[
-                      styles.saveTargetSegmentBtn,
-                      !saveAsPurchased && styles.saveTargetSegmentBtnCandidateActive,
-                    ]}
-                    onPress={() => setSaveAsPurchased(false)}
-                    activeOpacity={0.8}>
-                    <ThemedText
-                      style={[
-                        styles.saveTargetSegmentText,
-                        !saveAsPurchased && styles.saveTargetSegmentTextCandidateActive,
-                      ]}>
-                      候補として残す
-                    </ThemedText>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.saveTargetSegmentBtn,
-                      saveAsPurchased && styles.saveTargetSegmentBtnPurchasedActive,
-                    ]}
-                    onPress={() => setSaveAsPurchased(true)}
-                    activeOpacity={0.8}>
-                    <ThemedText
-                      style={[
-                        styles.saveTargetSegmentText,
-                        saveAsPurchased && styles.saveTargetSegmentTextPurchasedActive,
-                      ]}>
-                      購入済みにする
-                    </ThemedText>
-                  </TouchableOpacity>
+                  <View style={styles.saveSettingsDivider} />
+
+                  <View style={styles.saveSettingsSection}>
+                    <ThemedText style={styles.saveSettingsSectionLabel}>保存先</ThemedText>
+                    <View style={styles.saveTargetSegment}>
+                      <TouchableOpacity
+                        style={[
+                          styles.saveTargetSegmentBtn,
+                          !saveAsPurchased && styles.saveTargetSegmentBtnCandidateActive,
+                        ]}
+                        onPress={() => setSaveAsPurchased(false)}
+                        activeOpacity={0.8}>
+                        <ThemedText
+                          style={[
+                            styles.saveTargetSegmentText,
+                            !saveAsPurchased && styles.saveTargetSegmentTextCandidateActive,
+                          ]}>
+                          候補として残す
+                        </ThemedText>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.saveTargetSegmentBtn,
+                          saveAsPurchased && styles.saveTargetSegmentBtnPurchasedActive,
+                        ]}
+                        onPress={() => setSaveAsPurchased(true)}
+                        activeOpacity={0.8}>
+                        <ThemedText
+                          style={[
+                            styles.saveTargetSegmentText,
+                            saveAsPurchased && styles.saveTargetSegmentTextPurchasedActive,
+                          ]}>
+                          購入済みにする
+                        </ThemedText>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                 </View>
               </View>
 
@@ -1690,12 +1718,6 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
     gap: 6,
   },
-  ocrSectionSubInfo: {
-    flexShrink: 1,
-    fontSize: 11,
-    fontWeight: '600',
-    color: color.muted,
-  },
   // 「さらに◯件」と「閉じる／候補を見る」を並べる
   ocrSectionActions: {
     flexDirection: 'row',
@@ -1745,6 +1767,29 @@ const styles = StyleSheet.create({
   },
   priceCardJpySelected: {
     color: color.primaryAccent,
+  },
+  // 価格候補を閉じている時の「選択中ボックス」（文字行で終わらせず視覚的に見せる）
+  priceSelectedBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    backgroundColor: color.primarySoft,
+    borderRadius: radius.chip,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  priceSelectedBoxLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: color.primaryDark,
+  },
+  priceSelectedBoxValue: {
+    flexShrink: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: color.primaryDark,
+    fontVariant: ['tabular-nums'],
   },
   ocrFailBlock: {
     alignItems: 'center',
@@ -1829,6 +1874,42 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: color.body,
   },
+  // メモ候補を閉じている時の「追加済みメモ」ボックス（「追加済みN件」だけで終わらせず中身を見せる）
+  addedMemoBox: {
+    backgroundColor: color.primarySoft,
+    borderRadius: radius.chip,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 6,
+  },
+  addedMemoBoxLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: color.primaryDark,
+  },
+  addedMemoChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+  },
+  addedMemoChip: {
+    maxWidth: '70%',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.chip,
+    backgroundColor: color.primaryDark,
+  },
+  addedMemoChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  addedMemoMore: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: color.primaryDark,
+  },
   ocrRawToggle: {
     paddingVertical: 4,
   },
@@ -1904,28 +1985,6 @@ const styles = StyleSheet.create({
     color: color.text,
     paddingVertical: 0,
   },
-  memoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: color.bgScreen,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 2,
-    gap: 8,
-  },
-  memoLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: color.muted,
-    letterSpacing: 0.4,
-    minWidth: 28,
-  },
-  memoInput: {
-    flex: 1,
-    fontSize: 14,
-    color: color.text,
-    paddingVertical: 10,
-  },
   // 保存の設定パネルの見出し（カードの外、上に置く）
   saveSettingsHeading: {
     fontSize: 12,
@@ -1933,18 +1992,30 @@ const styles = StyleSheet.create({
     color: color.muted,
     letterSpacing: 0.4,
   },
-  // 写真カード（商品名・金額は出さず、写真に関する操作だけをまとめる）
-  photoSettingsCard: {
+  // 保存の設定カード（メモ／写真／保存先を1枚にまとめ、区切り線で行を整理する）
+  saveSettingsCard: {
     backgroundColor: color.bgScreen,
     borderRadius: radius.chip,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
+    paddingHorizontal: spacing.md,
   },
-  photoSettingsCardLabel: {
+  saveSettingsDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: color.line2,
+  },
+  saveSettingsSection: {
+    paddingVertical: spacing.sm,
+    gap: 8,
+  },
+  saveSettingsSectionLabel: {
     fontSize: 12,
     fontWeight: '700',
     color: color.muted,
     letterSpacing: 0.4,
+  },
+  memoInputInline: {
+    fontSize: 14,
+    color: color.text,
+    padding: 0,
   },
   photoSettingsRow: {
     flexDirection: 'row',
@@ -2023,20 +2094,7 @@ const styles = StyleSheet.create({
     gap: 10,
     alignItems: 'stretch',
   },
-  // 保存先カード（候補/購入済みの2択を大きめセグメントで切り替える）
-  saveTargetCard: {
-    backgroundColor: color.bgScreen,
-    borderRadius: radius.chip,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    gap: 8,
-  },
-  saveTargetCardLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: color.muted,
-    letterSpacing: 0.4,
-  },
+  // 保存先（候補/購入済みの2択を大きめセグメントで切り替える）
   saveTargetSegment: {
     flexDirection: 'row',
     backgroundColor: color.line2,
