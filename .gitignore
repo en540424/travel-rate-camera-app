@@ -43,6 +43,10 @@ example
 /android
 
 # local dev artifacts
-TEST_CHECKLIST.md
 ss_*.png
 ss_cam_*.png
+
+# design assets — Markdown/spec/HTML/RNコード参考実装は追跡し、画像と凍結スナップショットは対象外にする
+design/*.png
+design-handoff/**/*.png
+design-handoff-v1-before-sync/

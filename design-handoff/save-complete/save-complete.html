@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>保存完了</title>
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#EAEEEC;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased;padding:40px;}
+  .bezel{background:#0E1413;border-radius:46px;padding:9px;box-shadow:0 2px 5px rgba(16,33,31,0.1),0 34px 60px -30px rgba(16,33,31,0.55);}
+  .screen{width:300px;height:648px;background:#F5F7F6;border-radius:38px;overflow:hidden;position:relative;display:flex;flex-direction:column;}
+  .statusbar{height:42px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:4px 22px 0;position:relative;}
+  .statusbar .time{font:600 14px -apple-system,system-ui;color:#16211F;letter-spacing:-0.01em;}
+  .island{position:absolute;left:50%;top:9px;transform:translateX(-50%);width:78px;height:22px;background:#0E1413;border-radius:999px;}
+  .tabbar{flex:none;display:flex;justify-content:space-between;padding:9px 12px 14px;background:#fff;border-top:1px solid #EEF1F0;}
+  .tab{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;color:#A6AEAB;}
+  .tab.active{color:#0E9488;}
+  .tab span{font:600 9.5px -apple-system,system-ui;}
+  .screen-body{flex:1;overflow:hidden;display:flex;flex-direction:column;}
+</style>
+</head>
+<body>
+<!-- screen: save-complete / 状態: 保存完了 → 続けて撮影 -->
+<div class="bezel">
+  <div class="screen">
+    <div class="statusbar">
+      <span class="time">12:10</span>
+      <div class="island"></div>
+      <div style="display:flex;align-items:center;gap:7px;color:#16211F;"><svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="3" height="4" rx="1"></rect><rect x="4.5" y="5" width="3" height="6" rx="1"></rect><rect x="9" y="2.5" width="3" height="8.5" rx="1"></rect><rect x="13.5" y="0" width="3" height="11" rx="1"></rect></svg><div style="width:23px;height:11.5px;border:1.3px solid #16211F;border-radius:3px;padding:1.4px;"><div style="width:82%;height:100%;background:#16211F;border-radius:1px;"></div></div></div>
+    </div>
+    <div class="screen-body">
+      <div style="height:100%;display:flex;flex-direction:column;padding:8px 15px 14px;">
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;">
+          <div style="width:72px;height:72px;border-radius:999px;background:#E7F5F2;display:flex;align-items:center;justify-content:center;margin-bottom:18px;"><div style="width:50px;height:50px;border-radius:999px;background:#0E9488;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 18px -8px rgba(14,148,136,0.6);"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></div></div>
+          <div style="font:700 19px -apple-system,system-ui;color:#16211F;letter-spacing:-0.01em;">候補に保存しました</div>
+          <div style="font:500 13px -apple-system,system-ui;color:#939E9B;margin-top:5px;">ハワイ旅行 ・ 買い物候補</div>
+          <div style="width:100%;margin-top:20px;background:#fff;border:1px solid #ECEFED;border-radius:18px;padding:14px;display:flex;align-items:center;gap:13px;box-shadow:0 1px 2px rgba(16,33,31,0.04);">
+            <div style="width:52px;height:52px;border-radius:13px;flex:none;background:repeating-linear-gradient(135deg,#C9D0CB,#C9D0CB 6px,#BFC7C1 6px,#BFC7C1 12px);"></div>
+            <div style="flex:1;min-width:0;text-align:left;">
+              <div style="display:flex;align-items:center;gap:8px;"><span style="font:700 22px/1 -apple-system,system-ui;color:#16211F;letter-spacing:-0.02em;font-feature-settings:'tnum';white-space:nowrap;">約¥788</span><span style="font:700 10px -apple-system,system-ui;color:#B5731A;background:#FBF1DE;padding:4px 9px;border-radius:999px;white-space:nowrap;">候補</span></div>
+              <div style="font:600 12.5px -apple-system,system-ui;color:#5B6764;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">BBQ BEEF ・ $4.99</div>
+            </div>
+          </div>
+          <div style="width:100%;margin-top:11px;display:flex;align-items:center;justify-content:space-between;background:#F5F7F6;border-radius:14px;padding:12px 15px;">
+            <span style="font:600 12px -apple-system,system-ui;color:#7E8986;">残り予算</span>
+            <span style="font:700 17px -apple-system,system-ui;color:#0A766E;font-feature-settings:'tnum';letter-spacing:-0.01em;">¥55,344</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;">
+          <div style="flex:1;height:50px;border-radius:15px;background:#fff;border:1.5px solid #DCE3E0;color:#16211F;display:flex;align-items:center;justify-content:center;font:600 14.5px -apple-system,system-ui;">履歴を見る</div>
+          <div style="flex:1.2;height:50px;border-radius:15px;background:#0E9488;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px;font:600 14.5px -apple-system,system-ui;box-shadow:0 8px 18px -8px rgba(14,148,136,0.55);white-space:nowrap;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5A2 2 0 0 1 5 6.5h1.6l1-1.4A1 1 0 0 1 9.4 4.6h5.2a1 1 0 0 1 .8.5l1 1.4H18a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><circle cx="11.5" cy="12.3" r="3.1"></circle></svg>続けて撮影</div>
+        </div>
+      </div>
+    </div>
+    <div class="tabbar">
+      <div class="tab active"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5A2 2 0 0 1 5 6.5h1.6l1-1.4A1 1 0 0 1 9.4 4.6h5.2a1 1 0 0 1 .8.5l1 1.4H18a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><circle cx="11.5" cy="12.3" r="3.1"></circle></svg><span>カメラ</span></div>
+      <div class="tab"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h12M4 9l3-3M4 9l3 3"></path><path d="M20 15H8M20 15l-3-3M20 15l-3 3"></path></svg><span>換算</span></div>
+      <div class="tab"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"></circle><path d="M12 8v4.2l2.6 1.6"></path></svg><span>履歴</span></div>
+      <div class="tab"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"></rect><path d="M3.5 9.5h17M8 3.5v3M16 3.5v3"></path></svg><span>カレンダー</span></div>
+      <div class="tab"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20V13M12 20V5M18 20V10"></path></svg><span>分析</span></div>
+      <div class="tab"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg><span>設定</span></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

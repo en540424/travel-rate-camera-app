@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>結果パネル（商品写真から）</title>
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#EAEEEC;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased;padding:40px;}
+  .bezel{background:#0E1413;border-radius:46px;padding:9px;box-shadow:0 2px 5px rgba(16,33,31,0.1),0 34px 60px -30px rgba(16,33,31,0.55);}
+  .screen{width:300px;height:648px;background:#11201E;border-radius:38px;overflow:hidden;position:relative;display:flex;flex-direction:column;}
+  .statusbar{height:42px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:4px 22px 0;position:relative;z-index:6;}
+  .statusbar .time{font:600 14px -apple-system,system-ui;color:#fff;letter-spacing:-0.01em;}
+  .island{position:absolute;left:50%;top:9px;transform:translateX(-50%);width:78px;height:22px;background:#0E1413;border-radius:999px;}
+  .screen-body{flex:1;overflow:hidden;display:flex;flex-direction:column;margin-top:-42px;}
+</style>
+</head>
+<body>
+<!-- screen: product-result / 状態: 商品写真スタート・金額手入力（結果パネル集約先） -->
+<div class="bezel">
+  <div class="screen">
+    <div class="statusbar">
+      <span class="time">12:09</span>
+      <div class="island"></div>
+      <div style="display:flex;align-items:center;gap:7px;color:#fff;"><svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="3" height="4" rx="1"></rect><rect x="4.5" y="5" width="3" height="6" rx="1"></rect><rect x="9" y="2.5" width="3" height="8.5" rx="1"></rect><rect x="13.5" y="0" width="3" height="11" rx="1"></rect></svg><div style="width:23px;height:11.5px;border:1.3px solid #fff;border-radius:3px;padding:1.4px;"><div style="width:82%;height:100%;background:#fff;border-radius:1px;"></div></div></div>
+    </div>
+    <div class="screen-body">
+      <div style="height:100%;display:flex;flex-direction:column;background:#11201E;">
+        <div style="height:40px;flex:none;position:relative;background:repeating-linear-gradient(135deg,#6E7771,#6E7771 14px,#67706A 14px,#67706A 28px);"><div style="position:absolute;inset:0;background:rgba(16,33,31,0.5);"></div></div>
+        <div style="flex:1;background:#fff;border-radius:24px 24px 0 0;margin-top:-18px;position:relative;z-index:2;display:flex;flex-direction:column;padding:9px 0 0;box-shadow:0 -10px 30px rgba(16,33,31,0.2);">
+          <div style="width:38px;height:5px;border-radius:999px;background:#E0E5E2;margin:0 auto 9px;"></div>
+          <div style="flex:1;overflow:hidden;padding:0 15px;">
+            <!-- product photo prominent -->
+            <div style="display:flex;align-items:center;gap:11px;margin-bottom:13px;">
+              <div style="width:60px;height:60px;border-radius:13px;flex:none;background:repeating-linear-gradient(135deg,#C9D0CB,#C9D0CB 7px,#BFC7C1 7px,#BFC7C1 14px);"></div>
+              <div style="flex:1;min-width:0;"><div style="font:700 13.5px -apple-system,system-ui;color:#16211F;">商品写真を保存</div><div style="font:500 11.5px -apple-system,system-ui;color:#939E9B;margin-top:2px;">この写真を履歴に残します</div></div>
+              <span style="font:600 11.5px -apple-system,system-ui;color:#0E9488;white-space:nowrap;">変更</span>
+            </div>
+            <!-- amount manual -->
+            <div style="font:600 11px -apple-system,system-ui;color:#7E8986;margin-bottom:7px;">金額（手入力）</div>
+            <div style="height:56px;border-radius:15px;border:1.5px solid #DCE3E0;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 16px;margin-bottom:8px;">
+              <span style="font:700 26px -apple-system,system-ui;color:#16211F;letter-spacing:-0.02em;font-feature-settings:'tnum';">24.00</span>
+              <span style="font:600 13px -apple-system,system-ui;color:#939E9B;">$ USD</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;background:#E7F5F2;border-radius:12px;padding:9px 13px;margin-bottom:12px;">
+              <span style="font:600 12px -apple-system,system-ui;color:#0A766E;">日本円で 約</span><span style="font:700 22px -apple-system,system-ui;color:#0A766E;letter-spacing:-0.02em;font-feature-settings:'tnum';">¥3,792</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px dashed #CDEAE5;border-radius:12px;color:#0A766E;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2"></path><path d="M7 12h10"></path></svg><span style="font:600 12.5px -apple-system,system-ui;">価格OCRで金額を読み取る</span></div>
+          </div>
+          <div style="flex:none;border-top:1px solid #EEF1F0;padding:9px 15px 13px;background:#fff;">
+            <div style="display:flex;background:#EFF2F0;border-radius:11px;padding:3px;margin-bottom:9px;">
+              <div style="flex:1;height:32px;border-radius:8px;background:#FBF1DE;color:#B5731A;display:flex;align-items:center;justify-content:center;font:600 12.5px -apple-system,system-ui;box-shadow:0 1px 3px rgba(176,115,26,0.18);">候補に保存</div>
+              <div style="flex:1;height:32px;display:flex;align-items:center;justify-content:center;font:600 12.5px -apple-system,system-ui;color:#7E8986;">購入済みにする</div>
+            </div>
+            <div style="height:48px;border-radius:14px;background:#0E9488;color:#fff;display:flex;align-items:center;justify-content:center;font:600 15px -apple-system,system-ui;box-shadow:0 8px 18px -8px rgba(14,148,136,0.55);white-space:nowrap;font-feature-settings:'tnum';">¥3,792 を保存</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

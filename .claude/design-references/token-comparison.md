@@ -1,5 +1,7 @@
 # デザイントークン比較表
 
+> **旧トークン比較・現行正ではない。** 比較対象の `designTokens.ts`（DT）は段階移行中の旧トークンであり、現行の正は `src/theme/tokens.ts`。詳細は `AI_CONTEXT.md` を参照。
+
 参考デザイン（Apple / Wise / Revolut / Airbnb）と現行 designTokens.ts の差分を管理するファイル。
 参考デザインを取り込んだあとに、ここを埋めてから designTokens.ts を更新する。
 

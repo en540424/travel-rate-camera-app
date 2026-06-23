@@ -1,5 +1,7 @@
 # 旅レートカメラ デザイン参照メモ
 
+> **旧資料・現行正ではない。** 現行のデザイントークンは `src/theme/tokens.ts`、方針は `.claude/design-sync-v2-plan.md` を正とする。詳細は `AI_CONTEXT.md` を参照。
+
 Claude Code が UI/UX 改善時に参照するデザイン方針・トークン抽出ルールのメモ。
 `designTokens.ts` を作る際はこのファイルを起点にすること。
 

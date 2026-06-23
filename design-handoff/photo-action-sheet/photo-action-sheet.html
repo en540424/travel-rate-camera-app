@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>保存写真の変更シート</title>
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#EAEEEC;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased;padding:40px;}
+  .bezel{background:#0E1413;border-radius:46px;padding:9px;box-shadow:0 2px 5px rgba(16,33,31,0.1),0 34px 60px -30px rgba(16,33,31,0.55);}
+  .screen{width:300px;height:648px;background:#11201E;border-radius:38px;overflow:hidden;position:relative;display:flex;flex-direction:column;}
+  .statusbar{height:42px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:4px 22px 0;position:relative;z-index:6;}
+  .statusbar .time{font:600 14px -apple-system,system-ui;color:#fff;letter-spacing:-0.01em;}
+  .island{position:absolute;left:50%;top:9px;transform:translateX(-50%);width:78px;height:22px;background:#0E1413;border-radius:999px;}
+  .screen-body{flex:1;overflow:hidden;display:flex;flex-direction:column;margin-top:-42px;}
+</style>
+</head>
+<body>
+<!-- screen: photo-action-sheet / 状態: 保存写真の変更（商品撮影/ライブラリ/OCR写真/削除） -->
+<div class="bezel">
+  <div class="screen">
+    <div class="statusbar">
+      <span class="time">12:09</span>
+      <div class="island"></div>
+      <div style="display:flex;align-items:center;gap:7px;color:#fff;"><svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="3" height="4" rx="1"></rect><rect x="4.5" y="5" width="3" height="6" rx="1"></rect><rect x="9" y="2.5" width="3" height="8.5" rx="1"></rect><rect x="13.5" y="0" width="3" height="11" rx="1"></rect></svg><div style="width:23px;height:11.5px;border:1.3px solid #fff;border-radius:3px;padding:1.4px;"><div style="width:82%;height:100%;background:#fff;border-radius:1px;"></div></div></div>
+    </div>
+    <div class="screen-body">
+      <div style="height:100%;display:flex;flex-direction:column;background:#11201E;position:relative;">
+        <div style="height:40px;flex:none;position:relative;background:repeating-linear-gradient(135deg,#6E7771,#6E7771 14px,#67706A 14px,#67706A 28px);"><div style="position:absolute;inset:0;background:rgba(16,33,31,0.5);"></div></div>
+        <!-- 背面の結果パネル（dim） -->
+        <div style="flex:1;background:#fff;border-radius:24px 24px 0 0;margin-top:-18px;position:relative;z-index:2;padding:9px 15px 0;opacity:0.4;">
+          <div style="width:38px;height:5px;border-radius:999px;background:#E0E5E2;margin:0 auto 12px;"></div>
+          <div style="font:700 40px -apple-system,system-ui;color:#16211F;letter-spacing:-0.03em;font-feature-settings:'tnum';">¥788</div>
+          <div style="height:54px;background:#F5F7F6;border-radius:12px;margin-top:14px;"></div>
+        </div>
+        <!-- dim overlay -->
+        <div style="position:absolute;inset:0;background:rgba(16,33,31,0.42);z-index:3;"></div>
+        <!-- ActionSheet -->
+        <div style="position:absolute;left:0;right:0;bottom:0;z-index:4;padding:12px;">
+          <div style="background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 -6px 24px rgba(16,33,31,0.2);">
+            <div style="padding:15px 18px 12px;text-align:center;border-bottom:1px solid #F0F3F1;"><div style="font:700 14px -apple-system,system-ui;color:#16211F;">保存する写真</div><div style="font:500 11.5px -apple-system,system-ui;color:#939E9B;margin-top:2px;">値札と商品写真は別でもOK</div></div>
+            <div style="display:flex;align-items:center;gap:12px;padding:15px 18px;background:#F4FBF9;"><div style="width:34px;height:34px;border-radius:9px;background:#0E9488;display:flex;align-items:center;justify-content:center;color:#fff;flex:none;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="14" rx="2.5"></rect><circle cx="12" cy="13" r="3.2"></circle><path d="M8 6l1.2-2h5.6L16 6"></path></svg></div><div style="flex:1;"><div style="font:700 14.5px -apple-system,system-ui;color:#16211F;">商品写真を撮る</div><div style="font:500 11px -apple-system,system-ui;color:#7E8986;">履歴で見返しやすい写真に</div></div></div>
+            <div style="height:1px;background:#F0F3F1;margin:0 18px;"></div>
+            <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;"><div style="width:30px;height:30px;border-radius:8px;background:#F5F7F6;display:flex;align-items:center;justify-content:center;color:#5B6764;flex:none;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"></rect><circle cx="9" cy="11" r="2"></circle><path d="m21 17-5-5-4 4-2-2-4 4"></path></svg></div><span style="font:600 14.5px -apple-system,system-ui;color:#16211F;">写真ライブラリから選ぶ</span></div>
+            <div style="height:1px;background:#F0F3F1;margin:0 18px;"></div>
+            <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;"><div style="width:30px;height:30px;border-radius:8px;background:#F5F7F6;display:flex;align-items:center;justify-content:center;color:#5B6764;flex:none;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2"></path><path d="M8 12h8"></path></svg></div><span style="flex:1;font:600 14.5px -apple-system,system-ui;color:#16211F;">OCR写真を使う</span><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0E9488" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></div>
+            <div style="height:1px;background:#F0F3F1;margin:0 18px;"></div>
+            <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;"><div style="width:30px;height:30px;border-radius:8px;background:#FBEDEA;display:flex;align-items:center;justify-content:center;color:#D9614E;flex:none;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13h10l1-13"></path></svg></div><span style="font:600 14.5px -apple-system,system-ui;color:#D9614E;">写真を削除</span></div>
+          </div>
+          <div style="background:#fff;border-radius:16px;margin-top:9px;height:50px;display:flex;align-items:center;justify-content:center;font:600 15px -apple-system,system-ui;color:#16211F;box-shadow:0 -2px 12px rgba(16,33,31,0.08);">キャンセル</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

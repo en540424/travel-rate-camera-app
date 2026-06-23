@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>v2 読み取り中（scanning）</title>
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#EAEEEC;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased;padding:40px;}
+  .bezel{background:#0E1413;border-radius:46px;padding:9px;box-shadow:0 2px 5px rgba(16,33,31,0.1),0 34px 60px -30px rgba(16,33,31,0.55);}
+  .screen{width:300px;height:648px;background:#F4F6F5;border-radius:38px;overflow:hidden;position:relative;display:flex;flex-direction:column;}
+  .statusbar{height:42px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:4px 22px 0;position:relative;}
+  .statusbar .time{font:600 14px -apple-system,system-ui;color:#16211F;letter-spacing:-0.01em;}
+  .island{position:absolute;left:50%;top:9px;transform:translateX(-50%);width:78px;height:22px;background:#0E1413;border-radius:999px;}
+  .tabbar{flex:none;display:flex;justify-content:space-between;padding:9px 12px 14px;background:#fff;border-top:1px solid #EEF1F0;}
+  .tab{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;color:#A6AEAB;}
+  .tab.active{color:#0E9488;}
+  .tab span{font:600 9.5px -apple-system,system-ui;}
+  .screen-body{flex:1;overflow:hidden;display:flex;flex-direction:column;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .spinner{width:30px;height:30px;border:3px solid rgba(255,255,255,0.35);border-top-color:#fff;border-radius:999px;animation:spin 0.9s linear infinite;}
+</style>
+</head>
+<body>
+<!-- screen: scanning-v2 / 状態: OCR処理中（撮影直後のローディング） -->
+<div class="bezel">
+  <div class="screen">
+
+    <div class="statusbar">
+      <span class="time">12:08</span>
+      <div class="island"></div>
+      <div style="display:flex;align-items:center;gap:7px;color:#16211F;"><svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="3" height="4" rx="1"></rect><rect x="4.5" y="5" width="3" height="6" rx="1"></rect><rect x="9" y="2.5" width="3" height="8.5" rx="1"></rect><rect x="13.5" y="0" width="3" height="11" rx="1"></rect></svg><div style="width:23px;height:11.5px;border:1.3px solid #16211F;border-radius:3px;padding:1.4px;"><div style="width:82%;height:100%;background:#16211F;border-radius:1px;"></div></div></div>
+    </div>
+
+    <div class="screen-body">
+      <div style="height:100%;display:flex;flex-direction:column;padding:8px 15px 12px;gap:14px;">
+
+        <!-- TripRateHeader（読み取り中も表示は維持） -->
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <span style="flex:1;font:700 20px -apple-system,system-ui;color:#16211F;letter-spacing:-0.3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">ハワイ旅行</span>
+          <span style="display:inline-flex;align-items:center;gap:5px;font:700 13px -apple-system,system-ui;color:#0A766E;background:#E7F5F2;padding:6px 12px;border-radius:999px;font-feature-settings:'tnum';white-space:nowrap;">🇺🇸 1 USD = ¥158.00</span>
+        </div>
+
+        <!-- ModeSegment（処理中は操作不可・半透明） -->
+        <div style="display:flex;background:#EEF1F0;border-radius:12px;padding:3px;gap:3px;opacity:0.5;">
+          <div style="flex:1;padding:9px 0;border-radius:9px;background:#fff;display:flex;align-items:center;justify-content:center;font:700 14px -apple-system,system-ui;color:#16211F;box-shadow:0 1px 2px rgba(16,33,31,0.13);">価格OCR</div>
+          <div style="flex:1;padding:9px 0;display:flex;align-items:center;justify-content:center;font:600 14px -apple-system,system-ui;color:#7E8986;">商品写真</div>
+        </div>
+
+        <!-- CameraStage（暗転＋スピナー＋スキャン文） -->
+        <div style="flex:1;position:relative;border-radius:16px;overflow:hidden;background:#1B2422;">
+          <!-- 撮影フレームのうっすら見える縞 -->
+          <div style="position:absolute;inset:0;background:repeating-linear-gradient(135deg,#2A332F,#2A332F 14px,#252E2B 14px,#252E2B 28px);opacity:0.55;"></div>
+          <!-- スキャンライン（teal） -->
+          <div style="position:absolute;left:0;right:0;top:46%;height:2px;background:linear-gradient(90deg,rgba(127,216,204,0),#7FD8CC,rgba(127,216,204,0));box-shadow:0 0 12px rgba(127,216,204,0.7);"></div>
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;">
+            <div class="spinner"></div>
+            <span style="font:700 14px -apple-system,system-ui;color:#fff;">読み取り中…</span>
+            <span style="font:500 11.5px -apple-system,system-ui;color:rgba(255,255,255,0.6);">金額とテキストを認識しています</span>
+          </div>
+        </div>
+
+        <!-- BudgetSummary（処理中も表示維持・操作は控える） -->
+        <div style="display:flex;align-items:center;background:#fff;border:1px solid #ECEFED;border-radius:12px;padding:10px 0;box-shadow:0 1px 2px rgba(16,33,31,0.04);opacity:0.7;">
+          <div style="flex:1;text-align:center;"><div style="font:600 10.5px -apple-system,system-ui;color:#7E8986;">残り</div><div style="font:700 15px -apple-system,system-ui;color:#16211F;letter-spacing:-0.3px;font-feature-settings:'tnum';">¥56,132</div></div>
+          <div style="width:1px;align-self:stretch;background:#ECEFED;"></div>
+          <div style="flex:1;text-align:center;"><div style="font:600 10.5px -apple-system,system-ui;color:#7E8986;">今日</div><div style="font:700 15px -apple-system,system-ui;color:#16211F;font-feature-settings:'tnum';">3件</div></div>
+          <div style="width:1px;align-self:stretch;background:#ECEFED;"></div>
+          <div style="flex:1;text-align:center;font:700 13px -apple-system,system-ui;color:#A6AEAB;">✎ 手入力で記録</div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="tabbar">
+      <div class="tab active"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5A2 2 0 0 1 5 6.5h1.6l1-1.4A1 1 0 0 1 9.4 4.6h5.2a1 1 0 0 1 .8.5l1 1.4H18a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><circle cx="11.5" cy="12.3" r="3.1"></circle></svg><span>カメラ</span></div>
+      <div class="tab"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h12M4 9l3-3M4 9l3 3"></path><path d="M20 15H8M20 15l-3-3M20 15l-3 3"></path></svg><span>換算</span></div>
+      <div class="tab"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"></circle><path d="M12 8v4.2l2.6 1.6"></path></svg><span>履歴</span></div>
+      <div class="tab"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"></rect><path d="M3.5 9.5h17M8 3.5v3M16 3.5v3"></path></svg><span>カレンダー</span></div>
+      <div class="tab"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20V13M12 20V5M18 20V10"></path></svg><span>分析</span></div>
+      <div class="tab"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg><span>設定</span></div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

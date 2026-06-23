@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>旅レートカメラ ・ デザインハンドオフ 全画面一覧</title>
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;background:#EAEEEC;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased;color:#16211F;}
+  a{color:inherit;text-decoration:none;}
+  code,.mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;}
+  .wrap{max-width:1080px;margin:0 auto;padding:54px 24px 120px;}
+  .card{background:#fff;border:1px solid #ECEFED;border-radius:22px;box-shadow:0 1px 2px rgba(16,33,31,0.04),0 18px 40px -28px rgba(16,33,31,0.16);}
+  table{border-collapse:collapse;width:100%;}
+  th,td{text-align:left;padding:11px 14px;border-bottom:1px solid #F0F3F1;vertical-align:top;}
+  th{font:700 11px -apple-system,system-ui;letter-spacing:0.06em;text-transform:uppercase;color:#7E8986;}
+  tr:last-child td{border-bottom:none;}
+  td{font:500 13px/1.5 -apple-system,system-ui;color:#5B6764;}
+  .scr{font:700 13.5px -apple-system,system-ui;color:#16211F;}
+  .folder{font:600 12px ui-monospace,monospace;color:#0A766E;background:#E7F5F2;padding:2px 8px;border-radius:7px;white-space:nowrap;}
+  .pill{display:inline-block;font:700 10.5px -apple-system,system-ui;padding:3px 9px;border-radius:999px;white-space:nowrap;}
+  .mvp{color:#0A766E;background:#E7F5F2;}
+  .pro{color:#B5731A;background:#FBF1DE;}
+  .state{color:#5B6764;background:#EFF2F0;}
+  .src{font:500 11.5px ui-monospace,monospace;color:#939E9B;}
+  h2.sec{font:700 19px -apple-system,system-ui;letter-spacing:-0.01em;margin:0;color:#16211F;}
+  .seclabel{font:700 11px -apple-system,system-ui;letter-spacing:0.1em;text-transform:uppercase;color:#0E9488;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HERO -->
+  <div style="margin-bottom:34px;">
+    <div class="seclabel" style="margin-bottom:13px;">Design Handoff ・ Figma / Cursor / Claude Code 引き継ぎ</div>
+    <h1 style="font:700 36px/1.16 -apple-system,system-ui;letter-spacing:-0.022em;margin:0 0 14px;">旅レートカメラ ・ 全画面一覧</h1>
+    <p style="font:500 16px/1.66 -apple-system,system-ui;color:#5B6764;margin:0 0 20px;max-width:780px;">基準ビジュアルは <b style="color:#16211F;font-weight:600;">メイン画面 最終案 v4</b>。各画面を <b style="color:#16211F;font-weight:600;">1画面1フォルダ</b>で分け、余白・色・角丸・フォントを数値で再現できる形に整理しました。スタックは <b style="color:#16211F;font-weight:600;">React Native / Expo / TypeScript / expo-router</b>。Next.js / Tailwind 前提ではありません。</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;">
+      <span style="font:600 13px -apple-system,system-ui;color:#0A766E;background:#E7F5F2;padding:7px 13px;border-radius:999px;">1画面1フォルダ</span>
+      <span style="font:600 13px -apple-system,system-ui;color:#0A766E;background:#E7F5F2;padding:7px 13px;border-radius:999px;">プレーンHTML ＋ rn.tsx 雛形</span>
+      <span style="font:600 13px -apple-system,system-ui;color:#0A766E;background:#E7F5F2;padding:7px 13px;border-radius:999px;">数値で再現できる spec</span>
+      <span style="font:600 13px -apple-system,system-ui;color:#0A766E;background:#E7F5F2;padding:7px 13px;border-radius:999px;">タブ名・状態名を正</span>
+    </div>
+  </div>
+
+  <!-- FILE STRUCTURE -->
+  <div class="card" style="padding:24px 26px;margin-bottom:22px;">
+    <div class="seclabel" style="margin-bottom:10px;">各フォルダの中身（5ファイル固定）</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
+      <div style="border:1px solid #ECEFED;border-radius:13px;padding:13px 15px;"><div class="mono" style="font-size:12.5px;font-weight:700;color:#16211F;">screen.png</div><div style="font:500 12px/1.5 -apple-system,system-ui;color:#7E8986;margin-top:4px;">画面スクショ（実機フレーム付き）</div></div>
+      <div style="border:1px solid #ECEFED;border-radius:13px;padding:13px 15px;"><div class="mono" style="font-size:12.5px;font-weight:700;color:#16211F;">screen.html</div><div style="font:500 12px/1.5 -apple-system,system-ui;color:#7E8986;margin-top:4px;">プレーンHTML（インラインstyle・Figma向き）</div></div>
+      <div style="border:1px solid #ECEFED;border-radius:13px;padding:13px 15px;"><div class="mono" style="font-size:12.5px;font-weight:700;color:#16211F;">screen.rn.tsx</div><div style="font:500 12px/1.5 -apple-system,system-ui;color:#7E8986;margin-top:4px;">RN移植雛形（View/Text/Pressable/Image/StyleSheet）</div></div>
+      <div style="border:1px solid #ECEFED;border-radius:13px;padding:13px 15px;"><div class="mono" style="font-size:12.5px;font-weight:700;color:#16211F;">screen-spec.md</div><div style="font:500 12px/1.5 -apple-system,system-ui;color:#7E8986;margin-top:4px;">余白・色・角丸・サイズの数値仕様</div></div>
+      <div style="border:1px solid #ECEFED;border-radius:13px;padding:13px 15px;"><div class="mono" style="font-size:12.5px;font-weight:700;color:#16211F;">screen-components.md</div><div style="font:500 12px/1.5 -apple-system,system-ui;color:#7E8986;margin-top:4px;">コンポーネント分解（役割・見た目・流用先）</div></div>
+    </div>
+    <div style="margin-top:16px;padding-top:15px;border-top:1px solid #F0F3F1;display:flex;flex-wrap:wrap;gap:18px;">
+      <div style="font:500 12.5px/1.5 -apple-system,system-ui;color:#5B6764;">共通トークン → <a class="folder" href="_common/design-tokens.md">_common/design-tokens.md</a></div>
+      <div style="font:500 12.5px/1.5 -apple-system,system-ui;color:#5B6764;">RN共通メモ（1本） → <a class="folder" href="_common/rn-common-notes.md">_common/rn-common-notes.md</a></div>
+    </div>
+    <div style="margin-top:12px;font:500 12px/1.6 -apple-system,system-ui;color:#7E8986;">凡例：<span class="pill mvp" style="margin:0 3px;">MVP</span>無料版で実装　<span class="pill pro" style="margin:0 3px;">Pro</span>初期Pro　<span class="pill state" style="margin:0 3px;">状態</span>親画面に内包する状態/シート（フォルダは独立）</div>
+  </div>
+
+  <!-- ===== v2 メイン導線（Design Sync） ===== -->
+  <div style="display:flex;align-items:baseline;gap:11px;margin:34px 0 12px;">
+    <span class="seclabel" style="color:#0E9488;">v2</span><h2 class="sec">メイン導線（Design Sync 版）</h2>
+    <span class="src">正：src/theme/tokens.ts ／ 既存 ui・domain を活用</span>
+  </div>
+  <div class="card" style="padding:18px 20px;margin-bottom:14px;border:1px solid #D7EDE7;background:#F0FAF7;">
+    <p style="font:500 12.5px/1.7 -apple-system,system-ui;color:#0A766E;margin:0;">
+      v2は <b style="font-weight:700;">メイン画面のコア導線のみ</b>。デザイントークンは <b class="mono" style="font-weight:700;">src/theme/tokens.ts</b> を正とし、
+      v1 <span class="mono">_common/design-tokens.md</span> は正にしません。OCR成功/失敗/読み取り中は独立画面ではなく
+      <b class="mono" style="font-weight:700;">src/app/(tabs)/index.tsx</b> の状態として扱います。保存完了の独立画面は作りません。
+      履歴/カレンダー/分析/設定/旅行/Pro・課金は今回対象外。詳細は <a class="folder" href="../.claude/design-sync-v2-plan.md">.claude/design-sync-v2-plan.md</a>。
+    </p>
+    <p style="font:500 11.5px/1.6 -apple-system,system-ui;color:#7E8986;margin:10px 0 0;">
+      ※ 各v2フォルダの <span class="mono">screen.png</span> は <span class="mono">.html</span> から書き出してください（Claude Code はラスター画像を生成しないため、現状は html / rn.tsx / spec.md / components.md の4点を収録）。
+    </p>
+  </div>
+  <div class="card" style="overflow:hidden;">
+    <table>
+      <thead><tr><th style="width:30%;">画面 / 状態</th><th style="width:24%;">フォルダ</th><th style="width:13%;">区分</th><th>説明用の状態</th></tr></thead>
+      <tbody>
+        <tr><td><a class="scr" href="main-v2/main-v2.html">メイン画面（価格OCR）</a></td><td><span class="folder">main-v2/</span></td><td><span class="pill mvp">MVP</span></td><td>撮影前・起動時（必ず価格OCR）</td></tr>
+        <tr><td><a class="scr" href="product-camera-v2/product-camera-v2.html">商品写真モード</a></td><td><span class="folder">product-camera-v2/</span></td><td><span class="pill mvp">MVP</span></td><td>撮影前・補助モード（金額読み取りなし）</td></tr>
+        <tr><td><a class="scr" href="scanning-v2/scanning-v2.html">読み取り中</a></td><td><span class="folder">scanning-v2/</span></td><td><span class="pill state">状態</span></td><td>OCR処理中（index.tsx の状態）</td></tr>
+        <tr><td><a class="scr" href="ocr-result-v2/ocr-result-v2.html">OCR結果（成功）</a></td><td><span class="folder">ocr-result-v2/</span></td><td><span class="pill mvp">MVP</span></td><td>OCR成功・円換算→保存（index.tsx の状態）</td></tr>
+        <tr><td><a class="scr" href="ocr-failed-v2/ocr-failed-v2.html">OCR結果（失敗）</a></td><td><span class="folder">ocr-failed-v2/</span></td><td><span class="pill state">状態</span></td><td>OCR失敗→手入力（index.tsx の状態）</td></tr>
+        <tr><td><a class="scr" href="photo-action-sheet-v2/photo-action-sheet-v2.html">写真アクションシート</a></td><td><span class="folder">photo-action-sheet-v2/</span></td><td><span class="pill state">状態</span></td><td>PhotoChangeSheet のビジュアル更新（シート）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ===== v1 Section A〜F（参考・比較材料／リンク維持） ===== -->
+  <div style="display:flex;align-items:baseline;gap:11px;margin:36px 0 6px;">
+    <span class="seclabel" style="color:#939E9B;">v1</span><h2 class="sec" style="color:#5B6764;">旧ハンドオフ（Section A〜F・参考）</h2>
+    <span class="src">破棄しない。比較・文言・spec のたたき台</span>
+  </div>
+
+  <!-- A. メイン画面 -->
+  <div style="display:flex;align-items:baseline;gap:11px;margin:30px 0 12px;">
+    <span class="seclabel">A</span><h2 class="sec">メイン画面（撮影〜保存）</h2>
+    <span class="src">元：メイン画面 最終案 v4 / カメラ画面 最終案 v3</span>
+  </div>
+  <div class="card" style="overflow:hidden;">
+    <table>
+      <thead><tr><th style="width:30%;">画面 / 状態</th><th style="width:22%;">フォルダ</th><th style="width:13%;">区分</th><th>説明用の状態</th></tr></thead>
+      <tbody>
+        <tr><td><a class="scr" href="main/main.html">メイン画面（価格OCR）</a></td><td><span class="folder">main/</span></td><td><span class="pill mvp">MVP</span></td><td>撮影前・起動時（必ず価格OCR）</td></tr>
+        <tr><td><a class="scr" href="product-camera/product-camera.html">商品写真モード</a></td><td><span class="folder">product-camera/</span></td><td><span class="pill mvp">MVP</span></td><td>撮影前・補助モード</td></tr>
+        <tr><td><a class="scr" href="scanning/scanning.html">読み取り中</a></td><td><span class="folder">scanning/</span></td><td><span class="pill state">状態</span></td><td>スキャン中</td></tr>
+        <tr><td><a class="scr" href="ocr-result/ocr-result.html">OCR結果（成功）</a></td><td><span class="folder">ocr-result/</span></td><td><span class="pill mvp">MVP</span></td><td>OCR成功・1画面完結</td></tr>
+        <tr><td><a class="scr" href="ocr-failed/ocr-failed.html">OCR結果（失敗）</a></td><td><span class="folder">ocr-failed/</span></td><td><span class="pill state">状態</span></td><td>OCR失敗 → 手入力</td></tr>
+        <tr><td><a class="scr" href="product-result/product-result.html">結果パネル（商品写真から）</a></td><td><span class="folder">product-result/</span></td><td><span class="pill state">状態</span></td><td>商品写真スタート・金額手入力</td></tr>
+        <tr><td><a class="scr" href="photo-action-sheet/photo-action-sheet.html">保存写真の変更シート</a></td><td><span class="folder">photo-action-sheet/</span></td><td><span class="pill state">状態</span></td><td>商品撮影/ライブラリ/OCR写真/削除</td></tr>
+        <tr><td><a class="scr" href="save-complete/save-complete.html">保存完了</a></td><td><span class="folder">save-complete/</span></td><td><span class="pill state">状態</span></td><td>保存完了 → 続けて撮影</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- B. 履歴・商品管理 -->
+  <div style="display:flex;align-items:baseline;gap:11px;margin:30px 0 12px;">
+    <span class="seclabel">B</span><h2 class="sec">履歴・商品管理</h2><span class="src">元：履歴・詳細・編集 v1</span>
+  </div>
+  <div class="card" style="overflow:hidden;">
+    <table>
+      <thead><tr><th style="width:30%;">画面 / 状態</th><th style="width:22%;">フォルダ</th><th style="width:13%;">区分</th><th>説明用の状態</th></tr></thead>
+      <tbody>
+        <tr><td><a class="scr" href="history/history.html">履歴</a></td><td><span class="folder">history/</span></td><td><span class="pill mvp">MVP</span></td><td>候補/購入済みフィルタ・商品リスト</td></tr>
+        <tr><td><a class="scr" href="item-detail/item-detail.html">商品詳細</a></td><td><span class="folder">item-detail/</span></td><td><span class="pill mvp">MVP</span></td><td>商品詳細表示</td></tr>
+        <tr><td><a class="scr" href="item-edit/item-edit.html">商品編集</a></td><td><span class="folder">item-edit/</span></td><td><span class="pill mvp">MVP</span></td><td>商品編集入力中（右上キャンセル廃止）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- C. 旅行・レート設定 -->
+  <div style="display:flex;align-items:baseline;gap:11px;margin:30px 0 12px;">
+    <span class="seclabel">C</span><h2 class="sec">旅行・レート設定</h2><span class="src">元：旅行・レート設定 v1</span>
+  </div>
+  <div class="card" style="overflow:hidden;">
+    <table>
+      <thead><tr><th style="width:30%;">画面 / 状態</th><th style="width:22%;">フォルダ</th><th style="width:13%;">区分</th><th>説明用の状態</th></tr></thead>
+      <tbody>
+        <tr><td><a class="scr" href="trip-create/trip-create.html">旅行作成</a></td><td><span class="folder">trip-create/</span></td><td><span class="pill mvp">MVP</span></td><td>新規作成・入力</td></tr>
+        <tr><td><a class="scr" href="trip-edit/trip-edit.html">旅行編集</a></td><td><span class="folder">trip-edit/</span></td><td><span class="pill mvp">MVP</span></td><td>既存編集</td></tr>
+        <tr><td><a class="scr" href="trip-list/trip-list.html">旅行一覧</a></td><td><span class="folder">trip-list/</span></td><td><span class="pill mvp">MVP</span></td><td>アクティブ旅行切替</td></tr>
+        <tr><td><a class="scr" href="currency-select/currency-select.html">通貨選択</a></td><td><span class="folder">currency-select/</span></td><td><span class="pill mvp">MVP</span></td><td>通貨一覧から選択</td></tr>
+        <tr><td><a class="scr" href="rate-setting/rate-setting.html">レート設定</a></td><td><span class="folder">rate-setting/</span></td><td><span class="pill mvp">MVP</span></td><td>手入力レート・プレビュー</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- D. カレンダー・設定 -->
+  <div style="display:flex;align-items:baseline;gap:11px;margin:30px 0 12px;">
+    <span class="seclabel">D</span><h2 class="sec">カレンダー・設定</h2><span class="src">元：カレンダー・設定 v1</span>
+  </div>
+  <div class="card" style="overflow:hidden;">
+    <table>
+      <thead><tr><th style="width:30%;">画面 / 状態</th><th style="width:22%;">フォルダ</th><th style="width:13%;">区分</th><th>説明用の状態</th></tr></thead>
+      <tbody>
+        <tr><td><a class="scr" href="calendar/calendar.html">カレンダー</a></td><td><span class="folder">calendar/</span></td><td><span class="pill mvp">MVP</span></td><td>月表示・日付選択</td></tr>
+        <tr><td><a class="scr" href="settings/settings.html">設定トップ</a></td><td><span class="folder">settings/</span></td><td><span class="pill mvp">MVP</span></td><td>現在の旅行カード＋3セクション</td></tr>
+        <tr><td><a class="scr" href="data-management/data-management.html">データ管理</a></td><td><span class="folder">data-management/</span></td><td><span class="pill mvp">MVP</span></td><td>統計・CSV/PDF・全削除</td></tr>
+        <tr><td><a class="scr" href="help/help.html">ヘルプ・使い方</a></td><td><span class="folder">help/</span></td><td><span class="pill mvp">MVP</span></td><td>アコーディオン</td></tr>
+        <tr><td><a class="scr" href="app-info/app-info.html">アプリ情報</a></td><td><span class="folder">app-info/</span></td><td><span class="pill mvp">MVP</span></td><td>規約/プライバシー/問い合わせ</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- E. 分析 -->
+  <div style="display:flex;align-items:baseline;gap:11px;margin:30px 0 12px;">
+    <span class="seclabel">E</span><h2 class="sec">分析</h2><span class="src">元：分析画面 v1</span>
+  </div>
+  <div class="card" style="overflow:hidden;">
+    <table>
+      <thead><tr><th style="width:30%;">画面 / 状態</th><th style="width:22%;">フォルダ</th><th style="width:13%;">区分</th><th>説明用の状態</th></tr></thead>
+      <tbody>
+        <tr><td><a class="scr" href="analysis/analysis.html">分析</a></td><td><span class="folder">analysis/</span></td><td><span class="pill mvp">MVP</span></td><td>旅行単位の分析（基本分析）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- F. Pro・課金 -->
+  <div style="display:flex;align-items:baseline;gap:11px;margin:30px 0 12px;">
+    <span class="seclabel">F</span><h2 class="sec">最小Pro版・課金導線</h2><span class="src">元：Pro・課金導線 v1</span>
+  </div>
+  <div class="card" style="overflow:hidden;">
+    <table>
+      <thead><tr><th style="width:30%;">画面 / 状態</th><th style="width:22%;">フォルダ</th><th style="width:13%;">区分</th><th>説明用の状態</th></tr></thead>
+      <tbody>
+        <tr><td><a class="scr" href="pro-intro/pro-intro.html">Pro紹介</a></td><td><span class="folder">pro-intro/</span></td><td><span class="pill pro">Pro</span></td><td>Pro未加入</td></tr>
+        <tr><td><a class="scr" href="pricing/pricing.html">料金プラン</a></td><td><span class="folder">pricing/</span></td><td><span class="pill pro">Pro</span></td><td>月/年/買い切り比較</td></tr>
+        <tr><td><a class="scr" href="limit-reached/limit-reached.html">保存上限到達</a></td><td><span class="folder">limit-reached/</span></td><td><span class="pill pro">Pro</span></td><td>保存30/30 到達シート</td></tr>
+        <tr><td><a class="scr" href="ocr-quota/ocr-quota.html">高性能OCR案内</a></td><td><span class="folder">ocr-quota/</span></td><td><span class="pill pro">Pro</span></td><td>利用前/使い切りシート</td></tr>
+        <tr><td><a class="scr" href="purchase-confirm/purchase-confirm.html">購入確認</a></td><td><span class="folder">purchase-confirm/</span></td><td><span class="pill pro">Pro</span></td><td>購入前の内容確認</td></tr>
+        <tr><td><a class="scr" href="purchase-complete/purchase-complete.html">購入完了</a></td><td><span class="folder">purchase-complete/</span></td><td><span class="pill pro">Pro</span></td><td>購入完了</td></tr>
+        <tr><td><a class="scr" href="restore/restore.html">購入復元</a></td><td><span class="folder">restore/</span></td><td><span class="pill pro">Pro</span></td><td>復元</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 進行順 -->
+  <div class="card" style="padding:24px 26px;margin-top:30px;background:#16211F;border:none;">
+    <div class="seclabel" style="color:#5FC7BB;margin-bottom:10px;">パッケージ化の進行順</div>
+    <p style="font:500 13.5px/1.7 -apple-system,system-ui;color:#C7D0CD;margin:0;">メイン画面 → 保存フロー（商品写真・読み取り・OCR結果・写真シート・保存完了）→ 履歴 → 商品詳細 → 商品編集 → 旅行作成 → 旅行編集 → 旅行一覧 → 通貨選択 → レート設定 → 設定 → データ管理 → ヘルプ → アプリ情報 → Pro一式 → カレンダー → 分析。<b style="color:#fff;font-weight:600;">各フォルダ完成ごとに本一覧のリンクが有効化されます。</b></p>
+  </div>
+
+  <div style="text-align:center;margin-top:34px;font:500 12px -apple-system,system-ui;color:#A6AEAB;">旅レートカメラ ・ Design Handoff ・ 基準 v4</div>
+
+</div>
+</body>
+</html>

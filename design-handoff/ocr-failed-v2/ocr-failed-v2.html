@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>v2 OCR結果（失敗）</title>
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#EAEEEC;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased;padding:40px;}
+  .bezel{background:#0E1413;border-radius:46px;padding:9px;box-shadow:0 2px 5px rgba(16,33,31,0.1),0 34px 60px -30px rgba(16,33,31,0.55);}
+  .screen{width:300px;height:648px;background:#F4F6F5;border-radius:38px;overflow:hidden;position:relative;display:flex;flex-direction:column;}
+  .statusbar{height:42px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:4px 22px 0;position:relative;}
+  .statusbar .time{font:600 14px -apple-system,system-ui;color:#16211F;letter-spacing:-0.01em;}
+  .island{position:absolute;left:50%;top:9px;transform:translateX(-50%);width:78px;height:22px;background:#0E1413;border-radius:999px;}
+  .tabbar{flex:none;display:flex;justify-content:space-between;padding:9px 12px 14px;background:#fff;border-top:1px solid #EEF1F0;}
+  .tab{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;color:#A6AEAB;}
+  .tab.active{color:#0E9488;}
+  .tab span{font:600 9.5px -apple-system,system-ui;}
+  .body-scroll{flex:1;overflow-y:auto;}
+  .card{background:#fff;border:1px solid #ECEFED;border-radius:16px;box-shadow:0 1px 2px rgba(16,33,31,0.04);}
+</style>
+</head>
+<body>
+<!-- screen: ocr-failed-v2 / 状態: OCR失敗（価格候補なし）→ 手入力導線が主役 -->
+<div class="bezel">
+  <div class="screen">
+
+    <div class="statusbar">
+      <span class="time">12:08</span>
+      <div class="island"></div>
+      <div style="display:flex;align-items:center;gap:7px;color:#16211F;"><svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="3" height="4" rx="1"></rect><rect x="4.5" y="5" width="3" height="6" rx="1"></rect><rect x="9" y="2.5" width="3" height="8.5" rx="1"></rect><rect x="13.5" y="0" width="3" height="11" rx="1"></rect></svg><div style="width:23px;height:11.5px;border:1.3px solid #16211F;border-radius:3px;padding:1.4px;"><div style="width:82%;height:100%;background:#16211F;border-radius:1px;"></div></div></div>
+    </div>
+
+    <div class="body-scroll">
+      <div style="display:flex;flex-direction:column;padding:8px 15px 16px;gap:12px;">
+
+        <!-- TripRateHeader -->
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <span style="flex:1;font:700 20px -apple-system,system-ui;color:#16211F;letter-spacing:-0.3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">ハワイ旅行</span>
+          <span style="display:inline-flex;align-items:center;gap:5px;font:700 13px -apple-system,system-ui;color:#0A766E;background:#E7F5F2;padding:6px 12px;border-radius:999px;font-feature-settings:'tnum';white-space:nowrap;">🇺🇸 ¥158.00</span>
+        </div>
+
+        <!-- OCR結果カード（失敗・不安にさせない文言＋手入力主役） -->
+        <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:14px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <span style="font:700 11px -apple-system,system-ui;color:#7E8986;letter-spacing:0.6px;">読み取り結果</span>
+            <span style="font:400 16px -apple-system,system-ui;color:#7E8986;">✕</span>
+          </div>
+
+          <!-- 失敗の見せ方：責めない・次の一手を示す -->
+          <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:6px 0 2px;">
+            <div style="width:56px;height:56px;border-radius:18px;background:#FBF1DE;display:flex;align-items:center;justify-content:center;font-size:24px;">🔍</div>
+            <span style="font:700 16px -apple-system,system-ui;color:#16211F;text-align:center;">金額を読み取れませんでした</span>
+            <span style="font:500 12.5px/1.5 -apple-system,system-ui;color:#7E8986;text-align:center;max-width:230px;">明るい場所でもう一度試すか、金額を手で入力できます。読み取った文字はメモに使えます。</span>
+          </div>
+
+          <!-- 主導線：手入力で金額を入れる -->
+          <div style="height:52px;border-radius:15px;background:#0E9488;color:#fff;display:flex;align-items:center;justify-content:center;gap:8px;font:700 16px -apple-system,system-ui;box-shadow:0 8px 18px -6px rgba(14,148,136,0.5);">✎ 手入力で金額を入れる</div>
+
+          <!-- 副導線：もう一度読み取る / 商品写真を保存 -->
+          <div style="display:flex;gap:10px;">
+            <div style="flex:1;height:48px;border-radius:15px;background:#fff;border:1.5px solid #DCE3E0;display:flex;align-items:center;justify-content:center;font:700 14px -apple-system,system-ui;color:#16211F;">もう一度読み取る</div>
+            <div style="flex:1;height:48px;border-radius:15px;background:#fff;border:1.5px solid #DCE3E0;display:flex;align-items:center;justify-content:center;font:700 14px -apple-system,system-ui;color:#16211F;">商品写真を保存</div>
+          </div>
+
+          <!-- 全文（メモに使える） -->
+          <div style="display:flex;flex-direction:column;gap:6px;border-top:1px solid #EEF1F0;padding-top:12px;">
+            <span style="font:600 12px -apple-system,system-ui;color:#7E8986;">▼ 読み取った文字（全文）</span>
+            <span style="font:500 12px/1.5 -apple-system,system-ui;color:#5B6764;">MACADAMIA CHOCOLATE / HONOLULU / MADE IN HAWAII</span>
+            <span style="align-self:flex-start;border:1px solid #0E9488;border-radius:8px;padding:6px 12px;font:600 12px -apple-system,system-ui;color:#0E9488;">全文をメモにコピー</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="tabbar">
+      <div class="tab active"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5A2 2 0 0 1 5 6.5h1.6l1-1.4A1 1 0 0 1 9.4 4.6h5.2a1 1 0 0 1 .8.5l1 1.4H18a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><circle cx="11.5" cy="12.3" r="3.1"></circle></svg><span>カメラ</span></div>
+      <div class="tab"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h12M4 9l3-3M4 9l3 3"></path><path d="M20 15H8M20 15l-3-3M20 15l-3 3"></path></svg><span>換算</span></div>
+      <div class="tab"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"></circle><path d="M12 8v4.2l2.6 1.6"></path></svg><span>履歴</span></div>
+      <div class="tab"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"></rect><path d="M3.5 9.5h17M8 3.5v3M16 3.5v3"></path></svg><span>カレンダー</span></div>
+      <div class="tab"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20V13M12 20V5M18 20V10"></path></svg><span>分析</span></div>
+      <div class="tab"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg><span>設定</span></div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>
