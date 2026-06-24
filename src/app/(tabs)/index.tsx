@@ -494,6 +494,18 @@ export default function CameraScreen() {
     setMemo(cleaned);
   }
 
+  // 保存用メモの削除：確認Alertで確定した時だけメモ本文を空にする（候補抽出・追加処理には触らない）。
+  function handleDeleteMemo() {
+    Alert.alert(
+      'メモを削除しますか？',
+      '保存するメモから削除します。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '削除', style: 'destructive', onPress: () => setMemo('') },
+      ],
+    );
+  }
+
   function cycleCurrency() {
     const idx = FOREIGN_CURRENCY_CODES.indexOf(selectedCurrency);
     setSelectedCurrency(
@@ -1183,7 +1195,17 @@ export default function CameraScreen() {
 
                 <View style={styles.saveSettingsCard}>
                   <View style={styles.saveSettingsSection}>
-                    <ThemedText style={styles.saveSettingsSectionLabel}>メモ</ThemedText>
+                    <View style={styles.saveSettingsSectionLabelRow}>
+                      <ThemedText style={styles.saveSettingsSectionLabel}>メモ</ThemedText>
+                      {memo.trim().length > 0 && (
+                        <TouchableOpacity
+                          onPress={handleDeleteMemo}
+                          hitSlop={8}
+                          activeOpacity={0.6}>
+                          <ThemedText style={styles.memoDeleteBtnText}>削除</ThemedText>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                     <TextInput
                       ref={memoInputRef}
                       style={styles.memoInputInline}
@@ -2263,11 +2285,21 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     gap: 6,
   },
+  saveSettingsSectionLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   saveSettingsSectionLabel: {
     fontSize: 12,
     fontWeight: '700',
     color: color.muted,
     letterSpacing: 0.4,
+  },
+  memoDeleteBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: color.muted,
   },
   saveSettingsSectionCaption: {
     fontSize: 11,
