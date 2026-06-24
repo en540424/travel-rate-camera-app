@@ -29,9 +29,6 @@ const ZOOM_STEPS = [0, 0.25, 0.5] as const;
 const ZOOM_PRESET_LABELS = ['1×', '2×', '3×'] as const;
 const MAX_ZOOM = ZOOM_STEPS[ZOOM_STEPS.length - 1];
 const PINCH_SENSITIVITY = 0.5; // ピンチのscale変化量→zoom変化量の係数
-// 安定待ちの判定は内部zoom値ではなく「ユーザーが見ている表示倍率」基準で行う（1x〜2.4xでは絶対に発生させない）。
-const HIGH_ZOOM_MULTIPLIER_THRESHOLD = 2.5;
-const STABILIZE_DELAY_MS = 250;
 
 function zoomToMultiplier(z: number): number {
   return 1 + z * 4;
@@ -48,12 +45,7 @@ function zoomLabel(z: number): string {
 
 export function CameraPreview({ onOcrResult, onPhotoCapture }: CameraPreviewProps) {
   const [permission, requestPermission] = useCameraPermissions();
-  // 撮影前（高倍率時のみ）の手ブレ対策の安定待ち。OCR処理中とは別stateで管理し、
-  // 1x〜2.4xではこのstateが一切trueにならないようにする。
-  const [isStabilizing, setIsStabilizing] = useState(false);
-  // 撮影後（takePictureAsync〜OCR文字抽出）の処理中。安定待びとは無関係に、これまで通り全倍率で発生する。
-  const [isProcessingOcr, setIsProcessingOcr] = useState(false);
-  const isBusy = isStabilizing || isProcessingOcr;
+  const [scanning, setScanning] = useState(false);
   const [zoom, setZoom] = useState<number>(0);
   const cameraRef = useRef<CameraView>(null);
   // プリセットボタンの巡回先（ピンチでzoomが中間値になっても1x→2x→3xの巡回は崩さない）
@@ -93,10 +85,10 @@ export function CameraPreview({ onOcrResult, onPhotoCapture }: CameraPreviewProp
     setZoom(ZOOM_STEPS[nextIndex]);
   }
 
-  // ピンチズーム（1.0x〜3.0x ＝ zoom 0〜0.5）。安定待ち中・OCR処理中はズーム変更を受け付けない。
+  // ピンチズーム（1.0x〜3.0x ＝ zoom 0〜0.5）。撮影中(scanning)はズーム変更を受け付けない。
   const pinchGesture = Gesture.Pinch()
     .runOnJS(true)
-    .enabled(!isBusy)
+    .enabled(!scanning)
     .onStart(() => {
       pinchBaseZoomRef.current = zoom;
     })
@@ -106,19 +98,8 @@ export function CameraPreview({ onOcrResult, onPhotoCapture }: CameraPreviewProp
     });
 
   async function handleScan() {
-    if (Platform.OS === 'web' || !cameraRef.current || isBusy) return;
-
-    // 安定待びの判定は表示倍率（1.0x〜3.0x）基準。2.5x以上だけ撮影前に一瞬待ち、
-    // 1x〜2.4xはこの分岐に入らず即座に撮影へ進む（isStabilizingは常にfalseのまま）。
-    const currentZoomMultiplier = zoomToMultiplier(zoom);
-    const shouldUseStabilizeDelay = currentZoomMultiplier >= HIGH_ZOOM_MULTIPLIER_THRESHOLD;
-    if (shouldUseStabilizeDelay) {
-      setIsStabilizing(true);
-      await new Promise((resolve) => setTimeout(resolve, STABILIZE_DELAY_MS));
-      setIsStabilizing(false);
-    }
-
-    setIsProcessingOcr(true);
+    if (Platform.OS === 'web' || !cameraRef.current || scanning) return;
+    setScanning(true);
     try {
       const photo = await cameraRef.current.takePictureAsync({ base64: false });
       if (!photo?.uri) {
@@ -145,7 +126,7 @@ export function CameraPreview({ onOcrResult, onPhotoCapture }: CameraPreviewProp
       console.warn('[OCR error]', e);
       onOcrResult?.(`エラー: ${msg}`);
     } finally {
-      setIsProcessingOcr(false);
+      setScanning(false);
     }
   }
 
@@ -180,17 +161,8 @@ export function CameraPreview({ onOcrResult, onPhotoCapture }: CameraPreviewProp
           <ThemedText style={styles.zoomBtnText}>{zoomLabel(zoom)}</ThemedText>
         </TouchableOpacity>
 
-        {/* 安定待ちオーバーレイ（高倍率時のみ・isStabilizing連動）。1x〜2.4xでは絶対に表示されない。
-            OCR処理中オーバーレイとは別state・別文言にして混同を避ける（タップは奪わない）。 */}
-        {isStabilizing && (
-          <View pointerEvents="none" style={styles.scanningOverlay}>
-            <ActivityIndicator color="#fff" size="small" />
-            <ThemedText style={styles.scanningText}>読み取り中…</ThemedText>
-          </View>
-        )}
-
-        {/* OCR処理中オーバーレイ（表示専用・isProcessingOcr連動・タップは奪わない）。倍率に関わらず従来通り表示。 */}
-        {isProcessingOcr && (
+        {/* 読み取り中オーバーレイ（表示専用・scanning 連動・タップは奪わない） */}
+        {scanning && (
           <View pointerEvents="none" style={styles.scanningOverlay}>
             <ActivityIndicator color="#fff" size="small" />
             <ThemedText style={styles.scanningText}>値札を読み取り中…</ThemedText>
@@ -201,11 +173,11 @@ export function CameraPreview({ onOcrResult, onPhotoCapture }: CameraPreviewProp
 
       {/* 読み取るCTA（カメラ枠の外・下の大きい teal ボタン） */}
       <TouchableOpacity
-        style={[styles.scanCta, isBusy && styles.scanCtaBusy]}
+        style={[styles.scanCta, scanning && styles.scanCtaBusy]}
         onPress={handleScan}
-        disabled={isBusy}
+        disabled={scanning}
         activeOpacity={0.85}>
-        {isBusy
+        {scanning
           ? <ActivityIndicator color="#fff" />
           : <ThemedText style={styles.scanCtaText}>読み取る</ThemedText>
         }
@@ -309,7 +281,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   scanCtaBusy: {
-    opacity: 0.7, // 安定待ち・OCR処理中は少し薄く
+    opacity: 0.7, // scanning 中は少し薄く
   },
   scanCtaText: {
     color: '#fff',
