@@ -46,7 +46,7 @@ function formatCardDate(row: HistoryRow): string {
 }
 
 function openDetail(id: number) {
-  router.push({ pathname: '/item-detail', params: { id: String(id) } });
+  router.push({ pathname: '/history/item-detail', params: { id: String(id) } });
 }
 
 export default function HistoryScreen() {

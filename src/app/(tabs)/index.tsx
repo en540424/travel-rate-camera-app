@@ -4,14 +4,14 @@ import { router, useFocusEffect } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, Keyboard, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CameraPreview } from '@/components/camera/CameraPreview';
 import { ThemedText } from '@/components/themed-text';
 import {
   SaveLimitBanner,
 } from '@/components/domain';
-import { ActionSheet, EmptyState, SectionCard, SecondaryButton, PrimaryButton } from '@/components/ui';
+import { ActionSheet, EmptyState, SectionCard, SecondaryButton, PrimaryButton, Toast } from '@/components/ui';
 import type { ConversionDirection, CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES, FOREIGN_CURRENCY_CODES } from '@/constants/currencies';
 import {
@@ -43,6 +43,12 @@ type CaptureMode = 'ocr' | 'photo';
 type Phase = 'camera' | 'scanning' | 'result';
 
 export default function CameraScreen() {
+  const insets = useSafeAreaInsets();
+  // 保存成功トースト（Alertではない軽量通知）。文言が入ると表示、Toast側で自動的にnullへ戻す。
+  // hideToastはuseCallbackで参照を固定し、他state変化での再renderでToast内部のuseEffectが
+  // 毎回再始動してフェードが終わらなくなる事態を防ぐ。
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const hideToast = useCallback(() => setToastMessage(null), []);
   const [nativeAmount, setNativeAmount] = useState('');
   const [scanKey, setScanKey] = useState(0);
   const [inputMode, setInputMode] = useState<ConversionDirection>('TO_JPY');
@@ -575,6 +581,8 @@ export default function CameraScreen() {
       );
       return; // 入力値を保持したまま終了
     }
+    // 保存成功トースト（候補/購入済みの文言はリセット前のsaveAsPurchasedで決める）
+    setToastMessage(saveAsPurchased ? '購入済みに保存しました' : '候補に保存しました');
     // 保存成功時のみリセット
     setNativeAmount('');
     setMemo('');
@@ -1632,6 +1640,15 @@ export default function CameraScreen() {
         </View>
       </ActionSheet>
       )}
+
+      {/* 保存成功トースト（Alertではない軽量通知・1.5秒程度で自動的に消える）。
+          画面のリセット・スクロールとは無関係に最前面へ固定表示する。 */}
+      <Toast
+        message={toastMessage}
+        caption={toastMessage ? '履歴で確認できます' : undefined}
+        onHide={hideToast}
+        style={{ top: insets.top + 8 }}
+      />
     </View>
   );
 }
