@@ -1,5 +1,6 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { useColorScheme } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { DbProvider } from '@/components/db-provider';
@@ -7,9 +8,12 @@ import { DbProvider } from '@/components/db-provider';
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   return (
-    // DbProvider:
-    //   iOS/Android → db-provider.native.tsx (SQLiteProvider)
-    //   Web        → db-provider.tsx         (透過ラッパー)
+    // GestureHandlerRootView: 価格OCRカメラのピンチズーム（react-native-gesture-handler）に必要。
+    // 他画面では素通しのViewと同等で挙動に影響しない。
+    <GestureHandlerRootView style={{ flex: 1 }}>
+    {/* DbProvider:
+        iOS/Android → db-provider.native.tsx (SQLiteProvider)
+        Web        → db-provider.tsx         (透過ラッパー) */}
     <DbProvider>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <AnimatedSplashOverlay />
@@ -41,5 +45,6 @@ export default function RootLayout() {
         </Stack>
       </ThemeProvider>
     </DbProvider>
+    </GestureHandlerRootView>
   );
 }

@@ -3,6 +3,7 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 import { ThemedText } from '@/components/themed-text';
 import type { CurrencyCode } from '@/constants/currencies';
@@ -21,15 +22,35 @@ export interface CameraPreviewProps {
   onPhotoCapture?: (uri: string) => void;
 }
 
+// zoom（expo-cameraのzoomプロップ、0〜1）と表示倍率（1.0x〜3.0x）の対応。
+// 既存の1x/2x/3xプリセット（0, 0.25, 0.5）がちょうど display=1+4*zoom の直線に乗るため、
+// ピンチ範囲も同じ式で0〜0.5（=1.0x〜3.0x）に揃える。
 const ZOOM_STEPS = [0, 0.25, 0.5] as const;
-type ZoomLevel = typeof ZOOM_STEPS[number];
-const ZOOM_LABELS: Record<ZoomLevel, string> = { 0: '1×', 0.25: '2×', 0.5: '3×' };
+const ZOOM_PRESET_LABELS = ['1×', '2×', '3×'] as const;
+const MAX_ZOOM = ZOOM_STEPS[ZOOM_STEPS.length - 1];
+const PINCH_SENSITIVITY = 0.5; // ピンチのscale変化量→zoom変化量の係数
+// 2.5x（=zoom 0.375）以上だけ手ブレ対策の安定待ちを入れる。1x〜2.4xはサクサク即撮影のまま。
+const HIGH_ZOOM_THRESHOLD = 0.375;
+const STABILIZE_DELAY_MS = 250;
+
+function zoomToDisplayX(z: number): string {
+  return `${(1 + z * 4).toFixed(1)}x`;
+}
+
+function zoomLabel(z: number): string {
+  const presetIndex = ZOOM_STEPS.findIndex((step) => Math.abs(step - z) < 0.001);
+  return presetIndex >= 0 ? ZOOM_PRESET_LABELS[presetIndex] : zoomToDisplayX(z);
+}
 
 export function CameraPreview({ onOcrResult, onPhotoCapture }: CameraPreviewProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanning, setScanning] = useState(false);
-  const [zoom, setZoom] = useState<ZoomLevel>(0);
+  const [zoom, setZoom] = useState<number>(0);
   const cameraRef = useRef<CameraView>(null);
+  // プリセットボタンの巡回先（ピンチでzoomが中間値になっても1x→2x→3xの巡回は崩さない）
+  const presetIndexRef = useRef(0);
+  // ピンチ開始時点のzoom（指の移動量＝相対scaleをここからの増減に変換する基準点）
+  const pinchBaseZoomRef = useRef(0);
 
   if (!permission) {
     return <View style={styles.placeholder} />;
@@ -56,17 +77,34 @@ export function CameraPreview({ onOcrResult, onPhotoCapture }: CameraPreviewProp
     );
   }
 
+  // プリセット巡回はpresetIndexRef基準で進める（ピンチ後のzoomが中間値でも1x→2x→3xを保つ）
   function cycleZoom() {
-    setZoom((z) => {
-      const idx = ZOOM_STEPS.indexOf(z);
-      return ZOOM_STEPS[(idx + 1) % ZOOM_STEPS.length];
-    });
+    const nextIndex = (presetIndexRef.current + 1) % ZOOM_STEPS.length;
+    presetIndexRef.current = nextIndex;
+    setZoom(ZOOM_STEPS[nextIndex]);
   }
+
+  // ピンチズーム（1.0x〜3.0x ＝ zoom 0〜0.5）。撮影中(scanning)はズーム変更を受け付けない。
+  const pinchGesture = Gesture.Pinch()
+    .runOnJS(true)
+    .enabled(!scanning)
+    .onStart(() => {
+      pinchBaseZoomRef.current = zoom;
+    })
+    .onUpdate((e) => {
+      const next = pinchBaseZoomRef.current + (e.scale - 1) * PINCH_SENSITIVITY;
+      setZoom(Math.min(Math.max(next, 0), MAX_ZOOM));
+    });
 
   async function handleScan() {
     if (Platform.OS === 'web' || !cameraRef.current || scanning) return;
     setScanning(true);
     try {
+      // 高倍率（2.5x以上）だけ、シャッター直後の手ブレを逃がすため一瞬の安定待ちを挟む（試験導入）。
+      // 1x〜2.4xは待たずそのまま撮影し、これまでのサクサク感を維持する。
+      if (zoom >= HIGH_ZOOM_THRESHOLD) {
+        await new Promise((resolve) => setTimeout(resolve, STABILIZE_DELAY_MS));
+      }
       const photo = await cameraRef.current.takePictureAsync({ base64: false });
       if (!photo?.uri) {
         onOcrResult?.('エラー: 撮影失敗（URIなし）');
@@ -98,7 +136,8 @@ export function CameraPreview({ onOcrResult, onPhotoCapture }: CameraPreviewProp
 
   return (
     <View style={styles.root}>
-      {/* カメラ枠（映像・ガイド・倍率・読み取り中表示のみ） */}
+      {/* カメラ枠（映像・ガイド・倍率・読み取り中表示のみ）。GestureDetectorでピンチズームのみを枠内に限定する。 */}
+      <GestureDetector gesture={pinchGesture}>
       <View style={styles.previewFrame}>
         {/* カメラフィード */}
         <CameraView ref={cameraRef} style={styles.camera} zoom={zoom} />
@@ -120,12 +159,14 @@ export function CameraPreview({ onOcrResult, onPhotoCapture }: CameraPreviewProp
           <ThemedText style={styles.scanHintText}>値札をここに合わせる</ThemedText>
         </View>
 
-        {/* ズームボタン（右上） */}
+        {/* ズームボタン（右上）。タップ＝プリセット巡回、表示はプリセット中は1x/2x/3x、
+            ピンチで中間倍率の時だけ小数（例: 2.4x）に切り替わる。 */}
         <TouchableOpacity style={styles.zoomBtn} onPress={cycleZoom} activeOpacity={0.75}>
-          <ThemedText style={styles.zoomBtnText}>{ZOOM_LABELS[zoom]}</ThemedText>
+          <ThemedText style={styles.zoomBtnText}>{zoomLabel(zoom)}</ThemedText>
         </TouchableOpacity>
 
-        {/* 読み取り中オーバーレイ（表示専用・scanning 連動・タップは奪わない） */}
+        {/* 読み取り中オーバーレイ（表示専用・scanning 連動・タップは奪わない）。
+            高倍率時の安定待ち中もこのオーバーレイをそのまま使い、新規表示は追加しない。 */}
         {scanning && (
           <View pointerEvents="none" style={styles.scanningOverlay}>
             <ActivityIndicator color="#fff" size="small" />
@@ -133,6 +174,7 @@ export function CameraPreview({ onOcrResult, onPhotoCapture }: CameraPreviewProp
           </View>
         )}
       </View>
+      </GestureDetector>
 
       {/* 読み取るCTA（カメラ枠の外・下の大きい teal ボタン） */}
       <TouchableOpacity
