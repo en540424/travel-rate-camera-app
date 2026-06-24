@@ -153,7 +153,7 @@ export default function ItemDetailScreen() {
           <ThemedText style={styles.deleteIcon}>🗑</ThemedText>
         </Pressable>
         <Pressable
-          onPress={() => router.push({ pathname: '/item-edit', params: { id: String(item.id) } })}
+          onPress={() => router.push({ pathname: '/history/item-edit', params: { id: String(item.id) } })}
           style={({ pressed }) => [styles.editBtn, pressed && styles.pressed]}>
           <ThemedText style={styles.editBtnText}>編集する</ThemedText>
         </Pressable>

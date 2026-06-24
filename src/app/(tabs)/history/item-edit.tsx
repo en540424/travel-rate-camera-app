@@ -10,6 +10,7 @@ import { PhotoChangeSheet } from '@/components/domain/PhotoChangeSheet';
 import { ThemedText } from '@/components/themed-text';
 import { CURRENCIES } from '@/constants/currencies';
 import { useHistory } from '@/hooks/use-history';
+import { useUnsavedChangesStore } from '@/stores/unsaved-changes-store';
 import { color, radius, shadow } from '@/theme/tokens';
 import { formatJpy } from '@/utils/format';
 
@@ -17,6 +18,7 @@ export default function ItemEditScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
   const id = params.id != null ? parseInt(params.id, 10) : NaN;
   const { history, reload, updateAmount, updateMemo, togglePurchased, updateImageUri, removeEntry } = useHistory();
+  const setHasUnsavedChanges = useUnsavedChangesStore((s) => s.setHasUnsavedChanges);
 
   // React Compiler のメモ化で古いクロージャにならないよう ref 経由で参照
   const [amount, setAmount] = useState('');
@@ -25,6 +27,12 @@ export default function ItemEditScreen() {
   const [photoOpen, setPhotoOpen] = useState(false);
   const [showPhotoSheet, setShowPhotoSheet] = useState(false);
   const initedRef = useRef<number | null>(null);
+  // 読み込み時点の値（未保存変更の判定基準）。amount/memo/isPurchasedの初期化と同時に確定する。
+  const originalAmountRef = useRef('');
+  const originalMemoRef = useRef('');
+  const originalIsPurchasedRef = useRef(false);
+  // 写真の変更・削除は即時DB反映だが、未保存変更の警告対象としては別フラグで持つ。
+  const [photoChanged, setPhotoChanged] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -37,11 +45,34 @@ export default function ItemEditScreen() {
   useEffect(() => {
     if (item && initedRef.current !== item.id) {
       initedRef.current = item.id;
-      setAmount(item.currency === 'JPY' ? String(item.jpy_amount) : String(item.foreign_amount));
-      setMemo(item.memo ?? '');
-      setIsPurchased((item.is_purchased ?? 0) === 1);
+      const initialAmount = item.currency === 'JPY' ? String(item.jpy_amount) : String(item.foreign_amount);
+      const initialMemo = item.memo ?? '';
+      const initialIsPurchased = (item.is_purchased ?? 0) === 1;
+      setAmount(initialAmount);
+      setMemo(initialMemo);
+      setIsPurchased(initialIsPurchased);
+      originalAmountRef.current = initialAmount;
+      originalMemoRef.current = initialMemo;
+      originalIsPurchasedRef.current = initialIsPurchased;
+      setPhotoChanged(false);
     }
   }, [item]);
+
+  // 金額・メモ・ステータス・写真のいずれかが読み込み時点と異なれば「未保存の変更あり」。
+  // 下タブ移動の確認Alert判定に使うstoreへ同期し、画面を離れる時は必ず解除する。
+  const hasUnsavedChanges =
+    amount !== originalAmountRef.current ||
+    memo !== originalMemoRef.current ||
+    isPurchased !== originalIsPurchasedRef.current ||
+    photoChanged;
+
+  useEffect(() => {
+    setHasUnsavedChanges(hasUnsavedChanges);
+  }, [hasUnsavedChanges, setHasUnsavedChanges]);
+
+  useEffect(() => {
+    return () => setHasUnsavedChanges(false);
+  }, [setHasUnsavedChanges]);
 
   if (!item) {
     return (
@@ -75,6 +106,7 @@ export default function ItemEditScreen() {
       try { await FileSystem.deleteAsync(item.image_uri, { idempotent: true }); } catch {}
     }
     await updateImageUri(item.id, destUri);
+    setPhotoChanged(true);
   }
 
   async function pickAndSet() {
@@ -95,6 +127,7 @@ export default function ItemEditScreen() {
     if (!item?.image_uri) return;
     try { await FileSystem.deleteAsync(item.image_uri, { idempotent: true }); } catch {}
     await updateImageUri(item.id, null);
+    setPhotoChanged(true);
   }
 
   function handlePhoto() {
@@ -119,6 +152,8 @@ export default function ItemEditScreen() {
       updates.push(togglePurchased(item.id, item.is_purchased ?? 0));
     }
     if (updates.length > 0) await Promise.all(updates);
+    setPhotoChanged(false);
+    setHasUnsavedChanges(false);
     router.back();
   }
 

@@ -32,11 +32,7 @@ export default function RootLayout() {
           <Stack.Screen name="app-info" options={{ headerShown: true, title: 'アプリについて' }} />
           <Stack.Screen name="pro" options={{ headerShown: true, title: '旅レートカメラ Pro' }} />
           <Stack.Screen name="purchase-confirm" options={{ headerShown: true, title: '購入の確認' }} />
-          {/* item-detailは(tabs)/history/配下のネストStackに移動済み（下タブを表示するため）。 */}
-          <Stack.Screen
-            name="item-edit"
-            options={{ headerShown: true, title: '編集', headerBackTitle: '商品の詳細' }}
-          />
+          {/* item-detail / item-edit は(tabs)/history/配下のネストStackに移動済み（下タブを表示するため）。 */}
           <Stack.Screen name="trip-create" options={{ headerShown: true, title: '新しい旅行' }} />
           <Stack.Screen name="pro-features" options={{ headerShown: true, title: '無料版とProの違い' }} />
           <Stack.Screen name="trip-list" options={{ headerShown: true, title: '旅行' }} />

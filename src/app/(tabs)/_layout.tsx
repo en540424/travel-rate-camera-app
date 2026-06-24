@@ -1,8 +1,9 @@
 import { Tabs } from 'expo-router';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
-import { StyleSheet, type ColorValue } from 'react-native';
+import { Alert, StyleSheet, type ColorValue } from 'react-native';
 
 import { DT } from '@/constants/designTokens';
+import { useUnsavedChangesStore } from '@/stores/unsaved-changes-store';
 
 type IconName = NonNullable<SymbolViewProps['name']>;
 
@@ -22,7 +23,30 @@ export default function TabsLayout() {
           borderTopColor: DT.colors.border,
           borderTopWidth: StyleSheet.hairlineWidth,
         },
-      }}>
+      }}
+      // 商品編集画面で未保存の変更がある間だけ、下タブ移動の前に確認Alertを出す。
+      // 編集画面の戻るボタン（headerBackTitle）はこの対象外（タブ切替のみガードする）。
+      screenListeners={({ navigation, route }) => ({
+        tabPress: (e) => {
+          if (!useUnsavedChangesStore.getState().hasUnsavedChanges) return;
+          e.preventDefault();
+          Alert.alert(
+            '変更内容を破棄しますか？',
+            '保存していない変更があります。移動すると変更は破棄されます。',
+            [
+              { text: '編集を続ける', style: 'cancel' },
+              {
+                text: '破棄して移動',
+                style: 'destructive',
+                onPress: () => {
+                  useUnsavedChangesStore.getState().setHasUnsavedChanges(false);
+                  navigation.navigate(route.name);
+                },
+              },
+            ],
+          );
+        },
+      })}>
       <Tabs.Screen
         name="index"
         options={{

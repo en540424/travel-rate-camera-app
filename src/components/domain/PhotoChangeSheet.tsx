@@ -1,3 +1,4 @@
+import { SymbolView } from 'expo-symbols';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -16,6 +17,7 @@ export interface PhotoChangeSheetProps {
 /**
  * 写真変更シート（design 濃いタブ「写真変更シート」）。
  * 商品写真を撮る（主導線）／ライブラリ／削除／キャンセル。
+ * 各行は左アイコン＋左寄せ文言の横並び（キャンセルだけ中央寄せ）。
  * ※「OCR写真を使う」はOCR結果フロー専用のため、編集文脈では非表示。
  */
 export function PhotoChangeSheet({ visible, onClose, hasPhoto, onTakePhoto, onPickLibrary, onDelete }: PhotoChangeSheetProps) {
@@ -28,23 +30,38 @@ export function PhotoChangeSheet({ visible, onClose, hasPhoto, onTakePhoto, onPi
         <Pressable
           onPress={() => { onClose(); onTakePhoto(); }}
           style={({ pressed }) => [styles.row, styles.rowPrimary, pressed && styles.pressed]}>
+          <SymbolView
+            name={{ ios: 'camera', android: 'photo_camera', web: 'photo_camera' }}
+            tintColor={color.primaryDark}
+            size={20}
+          />
           <ThemedText style={[styles.rowText, styles.rowTextPrimary]}>商品写真を撮る</ThemedText>
         </Pressable>
         <Pressable
           onPress={() => { onClose(); onPickLibrary(); }}
           style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+          <SymbolView
+            name={{ ios: 'photo', android: 'image', web: 'image' }}
+            tintColor={color.text}
+            size={20}
+          />
           <ThemedText style={styles.rowText}>写真ライブラリから選ぶ</ThemedText>
         </Pressable>
         {hasPhoto && (
           <Pressable
             onPress={() => { onClose(); onDelete(); }}
             style={({ pressed }) => [styles.row, styles.rowDanger, pressed && styles.pressed]}>
+            <SymbolView
+              name={{ ios: 'trash', android: 'delete', web: 'delete' }}
+              tintColor={color.danger}
+              size={20}
+            />
             <ThemedText style={[styles.rowText, styles.rowTextDanger]}>写真を削除</ThemedText>
           </Pressable>
         )}
         <Pressable
           onPress={onClose}
-          style={({ pressed }) => [styles.row, styles.rowCancel, pressed && styles.pressed]}>
+          style={({ pressed }) => [styles.row, styles.rowCancel, styles.rowCenter, pressed && styles.pressed]}>
           <ThemedText style={styles.rowText}>キャンセル</ThemedText>
         </Pressable>
       </View>
@@ -57,13 +74,17 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 13, fontWeight: '500', color: color.muted, textAlign: 'center', marginTop: 4, marginBottom: 16 },
   list: { gap: 10 },
   row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     borderRadius: radius.card,
     borderWidth: 1.5,
     borderColor: color.line,
     backgroundColor: color.card,
-    paddingVertical: 15,
-    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
   },
+  rowCenter: { justifyContent: 'center' },
   rowPrimary: { backgroundColor: color.primarySoft, borderColor: color.primaryBorder },
   rowDanger: { backgroundColor: color.dangerSoft, borderColor: color.dangerBorder },
   rowCancel: { borderColor: color.inputBorder, marginTop: 2 },
