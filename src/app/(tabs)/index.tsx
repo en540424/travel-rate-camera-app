@@ -1161,7 +1161,7 @@ export default function CameraScreen() {
                       style={styles.memoInputInline}
                       value={memo}
                       onChangeText={setMemo}
-                      placeholder="モッツァレラ / Tシャツ / お土産"
+                      placeholder="メモを追加できます"
                       placeholderTextColor={DT.colors.textMuted}
                       returnKeyType="done"
                       onSubmitEditing={() => Keyboard.dismiss()}
@@ -2258,7 +2258,12 @@ const styles = StyleSheet.create({
   memoInputInline: {
     fontSize: 14,
     color: color.text,
-    padding: 0,
+    backgroundColor: color.card,
+    borderWidth: 1,
+    borderColor: color.inputBorder,
+    borderRadius: radius.chip,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
   photoSettingsRow: {
     flexDirection: 'row',
