@@ -92,6 +92,8 @@ export default function CameraScreen() {
   const inputCardYRef = useRef(0);
   // 「✎ 金額を修正」展開時のスクロール先（編集パネルのSectionCard内オフセット）
   const manualAdjustYRef = useRef(0);
+  // メモ欄フォーカス時のスクロール先（保存の設定セクションのSectionCard内オフセット）
+  const memoRowYRef = useRef(0);
   // 保存の設定内メモ欄のref（フォーカス制御用）
   const memoInputRef = useRef<TextInput>(null);
   // OCR写真プレビュー（読み取った値札）の縦スクロールを中心位置にするための参照
@@ -409,6 +411,18 @@ export default function CameraScreen() {
     setTimeout(() => {
       scrollViewRef.current?.scrollTo({
         y: Math.max(inputCardYRef.current + spacing.lg + manualAdjustYRef.current - 16, 0),
+        animated: true,
+      });
+    }, 250);
+  }
+
+  // メモ欄フォーカス時にキーボードへ隠れないようスクロール。
+  // キーボード表示アニメーション中にスクロールが効くよう、少し長めのタイマーで待つ（他のスクロール先と同じ250ms）。
+  // memoRowYRefはSectionCard内オフセット（同上）。
+  function scrollToMemoInput() {
+    setTimeout(() => {
+      scrollViewRef.current?.scrollTo({
+        y: Math.max(inputCardYRef.current + spacing.lg + memoRowYRef.current - 16, 0),
         animated: true,
       });
     }, 250);
@@ -1139,8 +1153,9 @@ export default function CameraScreen() {
                   メモ／写真／保存先を1枚のカードにまとめ、区切り線で行を整理する。
                   メモはiOS標準の「完了」キーで閉じられるため独自バーは出さない。
                   写真は「商品写真を撮る」を直接アクション、「他から」でphotoSheet(ActionSheet)に委ねる構成。
-                  state・onPress・保存ロジック・メモ編集ロジックは既存のまま、UI構造のみ作り直し。 */}
-              <View>
+                  state・onPress・保存ロジック・メモ編集ロジックは既存のまま、UI構造のみ作り直し。
+                  onLayoutのYはmemoRowYRef（メモ欄フォーカス時のスクロール先）に保持する。 */}
+              <View onLayout={(e) => { memoRowYRef.current = e.nativeEvent.layout.y; }}>
                 <ThemedText style={styles.saveSettingsHeading}>保存の設定</ThemedText>
 
                 <View style={styles.saveSettingsCard}>
@@ -1165,6 +1180,7 @@ export default function CameraScreen() {
                       placeholderTextColor={DT.colors.textMuted}
                       returnKeyType="done"
                       onSubmitEditing={() => Keyboard.dismiss()}
+                      onFocus={scrollToMemoInput}
                       maxLength={100}
                     />
                   </View>
