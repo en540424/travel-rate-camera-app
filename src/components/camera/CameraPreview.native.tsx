@@ -164,12 +164,12 @@ const styles = StyleSheet.create({
   previewFrame: {
     borderRadius: 16,
     overflow: 'hidden',
-    aspectRatio: 3 / 4, // v2: 縦長でカメラ主役（従来 4/3 横長から変更）
+    aspectRatio: 0.8, // v3: 開始画面を1画面に収めるため、縦長を少しだけ控える（従来 3/4 から微調整）
     backgroundColor: '#111',
     position: 'relative',
   },
   camera: { ...StyleSheet.absoluteFill },
-  placeholder: { aspectRatio: 3 / 4, backgroundColor: '#111' },
+  placeholder: { aspectRatio: 0.8, backgroundColor: '#111' },
   permissionBox: {
     aspectRatio: 4 / 3,
     borderRadius: 16,

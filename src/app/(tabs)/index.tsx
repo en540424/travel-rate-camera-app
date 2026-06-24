@@ -650,8 +650,9 @@ export default function CameraScreen() {
                 activeOpacity={0.8}>
                 <View style={styles.modeSegmentBtnContent}>
                   <SymbolView
-                    name={{ ios: 'viewfinder', android: 'document_scanner', web: 'document_scanner' }}
+                    name={{ ios: 'text.viewfinder', android: 'document_scanner', web: 'document_scanner' }}
                     tintColor={captureMode === 'ocr' ? color.primaryDark : color.muted}
+                    weight="semibold"
                     size={16}
                   />
                   <ThemedText
@@ -666,8 +667,9 @@ export default function CameraScreen() {
                 activeOpacity={0.8}>
                 <View style={styles.modeSegmentBtnContent}>
                   <SymbolView
-                    name={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }}
+                    name={{ ios: 'camera', android: 'photo_camera', web: 'photo_camera' }}
                     tintColor={captureMode === 'photo' ? color.primaryDark : color.muted}
+                    weight="semibold"
                     size={16}
                   />
                   <ThemedText
@@ -1438,26 +1440,27 @@ export default function CameraScreen() {
             </View>
             )}
 
-            {/* 下部：小さな予算サマリー ＋ 手入力サブ導線（撮影前のみ。結果パネル表示中は隠す） */}
+            {/* 下部：小さな予算サマリー ＋ 手入力サブ導線（撮影前のみ。結果パネル表示中は隠す）。
+                横1列のコンパクトバー（見本準拠）。カード化はせず、テキストのみで構成する。 */}
             {activeTrip && !showInputCard && (
               <View style={styles.bottomSummary}>
-                <View style={styles.bottomSummaryItem}>
-                  <ThemedText style={styles.bottomSummaryLabel}>残り</ThemedText>
-                  <ThemedText style={styles.bottomSummaryValue} numberOfLines={1}>
-                    {tripBudgetJpy > 0 ? formatJpy(stats.remainingBudget) : '—'}
+                <View style={styles.bottomSummaryLeft}>
+                  <ThemedText style={styles.bottomSummaryText} numberOfLines={1}>
+                    残り{' '}
+                    <ThemedText style={styles.bottomSummaryValue}>
+                      {tripBudgetJpy > 0 ? formatJpy(stats.remainingBudget) : '—'}
+                    </ThemedText>
+                  </ThemedText>
+                  <ThemedText style={styles.bottomSummarySep}>|</ThemedText>
+                  <ThemedText style={styles.bottomSummaryText} numberOfLines={1}>
+                    今日{' '}
+                    <ThemedText style={styles.bottomSummaryValue}>{todayCount}件</ThemedText>
                   </ThemedText>
                 </View>
-                <View style={styles.bottomSummaryDivider} />
-                <View style={styles.bottomSummaryItem}>
-                  <ThemedText style={styles.bottomSummaryLabel}>今日</ThemedText>
-                  <ThemedText style={styles.bottomSummaryValue}>{todayCount}件</ThemedText>
-                </View>
-                <View style={styles.bottomSummaryDivider} />
-                <TouchableOpacity
-                  style={styles.bottomSummaryItem}
-                  onPress={openManualInput}
-                  activeOpacity={0.7}>
-                  <ThemedText style={styles.bottomSummaryAction}>✎ 手入力で記録</ThemedText>
+                <TouchableOpacity onPress={openManualInput} hitSlop={8} activeOpacity={0.7}>
+                  <ThemedText style={styles.bottomSummaryAction} numberOfLines={1}>
+                    ✎ 手入力で記録
+                  </ThemedText>
                 </TouchableOpacity>
               </View>
             )}
@@ -2383,35 +2386,36 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
+  // 横1列のコンパクトバー（カード化しない・見本準拠）。camera-stage直下の間隔も少し詰める。
   bottomSummary: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: color.card,
-    borderRadius: radius.chip,
-    borderWidth: 1,
-    borderColor: color.line,
-    paddingVertical: 10,
-    marginTop: 2,
+    justifyContent: 'space-between',
+    paddingHorizontal: 3,
+    paddingVertical: 4,
+    marginTop: -6,
   },
-  bottomSummaryItem: {
+  bottomSummaryLeft: {
     flex: 1,
+    flexShrink: 1,
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: 8,
   },
-  bottomSummaryDivider: {
-    width: StyleSheet.hairlineWidth,
-    alignSelf: 'stretch',
-    backgroundColor: color.line,
+  bottomSummarySep: {
+    fontSize: 12,
+    color: color.inputBorder,
   },
-  bottomSummaryLabel: {
-    ...typography.caption,
+  bottomSummaryText: {
+    fontSize: 12,
+    fontWeight: '600',
     color: color.muted,
+    fontVariant: ['tabular-nums'],
   },
   bottomSummaryValue: {
-    fontSize: 15,
+    fontSize: 12,
     fontWeight: '700',
     color: color.text,
-    letterSpacing: -0.3,
     fontVariant: ['tabular-nums'],
   },
   bottomSummaryAction: {
