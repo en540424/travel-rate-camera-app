@@ -1,7 +1,7 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Image } from 'expo-image';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Keyboard, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -33,6 +33,22 @@ export default function ItemEditScreen() {
   const originalIsPurchasedRef = useRef(false);
   // 写真の変更・削除は即時DB反映だが、未保存変更の警告対象としては別フラグで持つ。
   const [photoChanged, setPhotoChanged] = useState(false);
+  // ScrollView自体の表示可能高さとcontentContainerの実測高さを比較し、
+  // 本当に収まっている時だけscrollEnabledをfalseにする（item-detailと同じ実測ベースの方式）。
+  const [scrollAreaHeight, setScrollAreaHeight] = useState(0);
+  const [contentHeight, setContentHeight] = useState(0);
+  // キーボード表示中は実測上「収まっている」判定でも、入力欄を見せるためスクロールを許可する。
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const canScroll = contentHeight > scrollAreaHeight + 1 || keyboardVisible;
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -180,6 +196,11 @@ export default function ItemEditScreen() {
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scroll}
+        onLayout={(e) => setScrollAreaHeight(e.nativeEvent.layout.height)}
+        onContentSizeChange={(_w, h) => setContentHeight(h)}
+        scrollEnabled={canScroll}
+        bounces={canScroll}
+        overScrollMode={canScroll ? 'auto' : 'never'}
         keyboardShouldPersistTaps="handled">
         {/* 入力項目（写真／金額／メモ／ステータス）。項目同士の間隔はformGroup内のgapで管理する。 */}
         <View style={styles.formGroup}>
@@ -266,10 +287,6 @@ export default function ItemEditScreen() {
           </View>
         </View>
 
-        {/* 可変スペーサー：内容が画面より短い時だけ伸びて、保存／削除を画面下側（下タブの上）へ寄せる。
-            内容が画面より長い端末ではminHeight分だけの最小余白になり、通常通りスクロールできる。 */}
-        <View style={styles.spacer} />
-
         <View style={styles.actionsGroup}>
           {/* 保存 */}
           <Pressable onPress={handleSave} style={({ pressed }) => [styles.saveBtn, pressed && styles.pressed]}>
@@ -312,27 +329,25 @@ const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
     padding: 18,
-    paddingBottom: 16,
+    paddingBottom: 20,
     maxWidth: 480, width: '100%', alignSelf: 'center',
   },
   // 入力項目同士の間隔（写真／金額／プレビュー／メモ／ステータス）。
   formGroup: { gap: 14 },
-  // 内容が画面より短い時に伸びて、保存／削除ボタンを画面下側へ寄せる可変スペーサー。
-  // 内容が画面より長い端末ではこのminHeightだけが効き、通常のスクロールに戻る。
-  spacer: { flex: 1, minHeight: 20 },
-  actionsGroup: { gap: 10 },
+  // ステータス〜保存ボタンの間隔は固定値にする（可変スペーサーは下タブとの距離が空きすぎたため撤去）。
+  actionsGroup: { gap: 10, marginTop: 20 },
   photoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
     backgroundColor: color.card,
     borderRadius: radius.card,
     borderWidth: 1,
     borderColor: color.line,
-    padding: 12,
+    padding: 14,
     ...shadow.card,
   },
-  thumb: { width: 54, height: 54, borderRadius: radius.chip, overflow: 'hidden', backgroundColor: color.line2 },
+  thumb: { width: 72, height: 72, borderRadius: radius.chip, overflow: 'hidden', backgroundColor: color.line2 },
   thumbImage: { width: '100%', height: '100%' },
   thumbPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   thumbPlaceholderText: { fontSize: 11, fontWeight: '600', color: color.faint2 },
@@ -413,7 +428,6 @@ const styles = StyleSheet.create({
     backgroundColor: color.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
     ...shadow.cta,
   },
   saveBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
