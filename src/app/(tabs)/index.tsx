@@ -92,10 +92,8 @@ export default function CameraScreen() {
   const inputCardYRef = useRef(0);
   // 「✎ 金額を修正」展開時のスクロール先（編集パネルのSectionCard内オフセット）
   const manualAdjustYRef = useRef(0);
-  // メモ候補の「自由入力」チップから既存メモ入力欄へフォーカスするための参照
+  // 保存の設定内メモ欄のref（フォーカス制御用）
   const memoInputRef = useRef<TextInput>(null);
-  // メモ行のスクロール先（SectionCard内オフセット）。自由入力タップ時にここまでスクロールする
-  const memoRowYRef = useRef(0);
   // OCR写真プレビュー（読み取った値札）の縦スクロールを中心位置にするための参照
   const ocrPhotoPreviewScrollRef = useRef<ScrollView>(null);
   // 再読み取りで撮影した直後の写真URI。OCR処理が終わりhandleOcrResultが呼ばれるまでocrPhotoUriへは反映しない
@@ -411,17 +409,6 @@ export default function CameraScreen() {
     setTimeout(() => {
       scrollViewRef.current?.scrollTo({
         y: Math.max(inputCardYRef.current + spacing.lg + manualAdjustYRef.current - 16, 0),
-        animated: true,
-      });
-    }, 250);
-  }
-
-  // メモ候補の「自由入力」タップ時、メモ入力欄が見える位置までスクロール（フォーカスはonPress側で実行）。
-  // memoRowYRefもSectionCard内オフセット（同上）。
-  function scrollToMemoInput() {
-    setTimeout(() => {
-      scrollViewRef.current?.scrollTo({
-        y: Math.max(inputCardYRef.current + spacing.lg + memoRowYRef.current - 16, 0),
         animated: true,
       });
     }, 250);
@@ -1054,44 +1041,8 @@ export default function CameraScreen() {
                             </TouchableOpacity>
                           );
                         })}
-                        <TouchableOpacity
-                          style={styles.memoChipFreeInput}
-                          onPress={() => {
-                            memoInputRef.current?.focus();
-                            scrollToMemoInput();
-                          }}
-                          activeOpacity={0.75}>
-                          <ThemedText style={styles.memoChipFreeInputText} numberOfLines={1}>
-                            自由入力
-                          </ThemedText>
-                        </TouchableOpacity>
                       </View>
                     )}
-                  </View>
-                )}
-
-                {/* 読み取った文字（折りたたみ・全文コピーはここに） */}
-                <TouchableOpacity
-                  style={styles.ocrRawToggle}
-                  onPress={() => setOcrRawExpanded((v) => !v)}
-                  activeOpacity={0.7}>
-                  <ThemedText style={styles.ocrRawToggleText}>
-                    {ocrRawExpanded ? '▾ 読み取った文字（全文）' : '▸ 読み取った文字（全文）'}
-                  </ThemedText>
-                </TouchableOpacity>
-                {ocrRawExpanded && (
-                  <View style={styles.ocrSection}>
-                    <ThemedText style={styles.ocrRawText} selectable>
-                      {ocrResult.raw || 'テキストなし'}
-                    </ThemedText>
-                    <TouchableOpacity
-                      style={styles.ocrCopyBtn}
-                      onPress={handleCopyRawToMemo}
-                      activeOpacity={0.75}>
-                      <ThemedText style={styles.ocrCopyBtnText}>
-                        全文をメモにコピー
-                      </ThemedText>
-                    </TouchableOpacity>
                   </View>
                 )}
               </View>
@@ -1188,9 +1139,8 @@ export default function CameraScreen() {
                   メモ／写真／保存先を1枚のカードにまとめ、区切り線で行を整理する。
                   メモはiOS標準の「完了」キーで閉じられるため独自バーは出さない。
                   写真は「商品写真を撮る」を直接アクション、「他から」でphotoSheet(ActionSheet)に委ねる構成。
-                  state・onPress・保存ロジック・メモ編集ロジックは既存のまま、UI構造のみ作り直し。
-                  onLayoutのYはmemoRowYRef（自由入力タップ時のスクロール先）に保持する。 */}
-              <View onLayout={(e) => { memoRowYRef.current = e.nativeEvent.layout.y; }}>
+                  state・onPress・保存ロジック・メモ編集ロジックは既存のまま、UI構造のみ作り直し。 */}
+              <View>
                 <ThemedText style={styles.saveSettingsHeading}>保存の設定</ThemedText>
 
                 <View style={styles.saveSettingsCard}>
@@ -1225,7 +1175,7 @@ export default function CameraScreen() {
                       <View style={styles.saveSettingsSection}>
                         <ThemedText style={styles.saveSettingsSectionLabel}>履歴に残す写真</ThemedText>
                         <ThemedText style={styles.saveSettingsSectionCaption}>
-                          履歴・候補一覧で見返す用
+                          あとで見返す用
                         </ThemedText>
                         <View style={styles.photoSettingsRow}>
                           <TouchableOpacity
@@ -1411,14 +1361,33 @@ export default function CameraScreen() {
                 </View>
               </View>
 
-              {/* 入力をリセット（弱いテキストリンク。カードの主役にしない） */}
-              {hasInputToReset && (
-                <TouchableOpacity
-                  style={styles.resetInputBtn}
-                  onPress={handleResetInput}
-                  activeOpacity={0.7}>
-                  <ThemedText style={styles.resetInputBtnText}>入力をリセット</ThemedText>
-                </TouchableOpacity>
+              {/* 読み取った文字（折りたたみ・全文コピーはここに）。確認用のため保存導線より下に置く。 */}
+              {!isWeb && ocrResult != null && (
+                <View>
+                  <TouchableOpacity
+                    style={styles.ocrRawToggle}
+                    onPress={() => setOcrRawExpanded((v) => !v)}
+                    activeOpacity={0.7}>
+                    <ThemedText style={styles.ocrRawToggleText}>
+                      {ocrRawExpanded ? '▾ 読み取った文字（全文）' : '▸ 読み取った文字（全文）'}
+                    </ThemedText>
+                  </TouchableOpacity>
+                  {ocrRawExpanded && (
+                    <View style={styles.ocrSection}>
+                      <ThemedText style={styles.ocrRawText} selectable>
+                        {ocrResult.raw || 'テキストなし'}
+                      </ThemedText>
+                      <TouchableOpacity
+                        style={styles.ocrCopyBtn}
+                        onPress={handleCopyRawToMemo}
+                        activeOpacity={0.75}>
+                        <ThemedText style={styles.ocrCopyBtnText}>
+                          全文をメモにコピー
+                        </ThemedText>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
               )}
 
               {/* 保存上限（無料版） */}
@@ -2138,20 +2107,6 @@ const styles = StyleSheet.create({
   },
   memoChipTextAdded: {
     color: '#fff',
-  },
-  // 「自由入力」：既存メモ入力欄へフォーカスする導線。候補チップとは見た目を分けて中立色にする
-  memoChipFreeInput: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: radius.chip,
-    backgroundColor: color.line2,
-    borderWidth: 1,
-    borderColor: color.line,
-  },
-  memoChipFreeInputText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: color.body,
   },
   // メモ候補を閉じている時の「追加済みメモ」ボックス（「追加済みN件」だけで終わらせず中身を見せる）
   addedMemoBox: {
