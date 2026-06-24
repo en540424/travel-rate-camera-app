@@ -1788,6 +1788,7 @@ const styles = StyleSheet.create({
   heroBlock: {
     gap: 6,
     position: 'relative',
+    marginBottom: -6,
   },
   heroJpy: {
     alignItems: 'flex-start',
@@ -1936,7 +1937,7 @@ const styles = StyleSheet.create({
     color: color.body,
   },
   ocrSectionWrap: {
-    gap: 6,
+    gap: 4,
   },
   ocrSection: {
     gap: 6,
@@ -1976,6 +1977,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+    marginTop: -4,
   },
   // 価格候補カード：未選択＝白地+薄いグレー枠、選択中＝淡いミント地+ティール枠+チェック（塗りつぶしは使わない）
   priceCard: {
@@ -1986,7 +1988,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.chip,
     borderWidth: 1.5,
     borderColor: color.line,
-    paddingVertical: 8,
+    paddingVertical: 6,
     paddingHorizontal: 8,
     gap: 2,
   },
