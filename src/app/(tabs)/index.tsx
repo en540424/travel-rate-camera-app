@@ -1174,9 +1174,6 @@ export default function CameraScreen() {
                       <View style={styles.saveSettingsDivider} />
                       <View style={styles.saveSettingsSection}>
                         <ThemedText style={styles.saveSettingsSectionLabel}>履歴に残す写真</ThemedText>
-                        <ThemedText style={styles.saveSettingsSectionCaption}>
-                          あとで見返す用
-                        </ThemedText>
                         <View style={styles.photoSettingsRow}>
                           <TouchableOpacity
                             style={styles.photoSettingsThumbWrap}
@@ -1205,7 +1202,7 @@ export default function CameraScreen() {
                               {pendingPhotoUri == null
                                 ? '写真なし'
                                 : pendingPhotoSource === 'ocr'
-                                  ? 'いまは値札写真を使用中'
+                                  ? 'OCR写真を保存中'
                                   : '商品写真を保存に使用中'}
                             </ThemedText>
                             {pendingPhotoUri != null && pendingPhotoSource === 'ocr' && (
@@ -1939,7 +1936,7 @@ const styles = StyleSheet.create({
     color: color.body,
   },
   ocrSectionWrap: {
-    gap: 10,
+    gap: 6,
   },
   ocrSection: {
     gap: 6,
@@ -1989,7 +1986,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.chip,
     borderWidth: 1.5,
     borderColor: color.line,
-    paddingVertical: 10,
+    paddingVertical: 8,
     paddingHorizontal: 8,
     gap: 2,
   },
@@ -2255,11 +2252,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: color.muted,
-  },
-  saveSettingsSectionCaption: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: color.faint,
   },
   memoInputInline: {
     fontSize: 14,
