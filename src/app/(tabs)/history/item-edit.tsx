@@ -334,8 +334,9 @@ const styles = StyleSheet.create({
   },
   // 入力項目同士の間隔（写真／金額／プレビュー／メモ／ステータス）。
   formGroup: { gap: 14 },
-  // ステータス〜保存ボタンの間隔は固定値にする（可変スペーサーは下タブとの距離が空きすぎたため撤去）。
-  actionsGroup: { gap: 10, marginTop: 20 },
+  // ステータス〜保存ボタン、保存ボタン〜削除リンクの間隔は固定値にする
+  // （下タブとの距離はscroll.paddingBottomで別に確保しているので、ここは詰めてよい）。
+  actionsGroup: { gap: 8, marginTop: 14 },
   photoRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -418,10 +419,11 @@ const styles = StyleSheet.create({
   },
   toggleBtn: { flex: 1, paddingVertical: 12, alignItems: 'center' },
   toggleBtnCandidate: { backgroundColor: color.candidateSoft },
-  toggleBtnPurchased: { backgroundColor: color.primarySoft },
+  // 候補（クリーム系）との区別を分かりやすくするため、purchasedSoftより少し濃いミント(primaryBorder)を使う。
+  toggleBtnPurchased: { backgroundColor: color.primaryBorder },
   toggleText: { fontSize: 14, fontWeight: '700', color: color.muted },
   toggleTextCandidate: { color: color.candidateText },
-  toggleTextPurchased: { color: color.purchasedText },
+  toggleTextPurchased: { color: color.purchasedText, fontWeight: '800' },
   saveBtn: {
     height: 52,
     borderRadius: radius.button,
