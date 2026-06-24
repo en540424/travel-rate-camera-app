@@ -295,7 +295,7 @@ const styles = StyleSheet.create({
   },
   missingBtnText: { fontSize: 15, fontWeight: '700', color: color.body },
   scroll: {
-    padding: 18, paddingBottom: 60, gap: 16,
+    padding: 18, paddingBottom: 24, gap: 12,
     maxWidth: 480, width: '100%', alignSelf: 'center',
   },
   photoRow: {

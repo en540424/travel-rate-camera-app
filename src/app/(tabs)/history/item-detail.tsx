@@ -83,7 +83,10 @@ export default function ItemDetailScreen() {
 
   return (
     <View style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        bounces={false}
+        overScrollMode="never">
         {/* 大判写真 */}
         <Pressable
           onPress={() => item.image_uri && setPhotoOpen(true)}
