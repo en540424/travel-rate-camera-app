@@ -112,8 +112,6 @@ export function CameraPreview({ onOcrResult, onPhotoCapture }: CameraPreviewProp
     // 1x〜2.4xはこの分岐に入らず即座に撮影へ進む（isStabilizingは常にfalseのまま）。
     const currentZoomMultiplier = zoomToMultiplier(zoom);
     const shouldUseStabilizeDelay = currentZoomMultiplier >= HIGH_ZOOM_MULTIPLIER_THRESHOLD;
-    // 確認用ログ（採用判断のための一時確認。リリース前に削除する）。
-    console.log('[OCR Capture]', { currentZoomMultiplier, shouldUseStabilizeDelay });
     if (shouldUseStabilizeDelay) {
       setIsStabilizing(true);
       await new Promise((resolve) => setTimeout(resolve, STABILIZE_DELAY_MS));
