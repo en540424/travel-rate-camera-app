@@ -36,6 +36,12 @@ export default function ItemDetailScreen() {
   const { history, reload, removeEntry } = useHistory();
   const { activeTrip } = useTrips();
   const [photoOpen, setPhotoOpen] = useState(false);
+  // ScrollView自体の表示可能高さとcontentContainerの実測高さを比較し、
+  // 本当に収まっている時だけscrollEnabledをfalseにする（bounces/overScrollModeだけでは
+  // 実測の僅かなオーバーフロー分はスクロールできてしまうため、実測ベースで止める）。
+  const [scrollAreaHeight, setScrollAreaHeight] = useState(0);
+  const [contentHeight, setContentHeight] = useState(0);
+  const canScroll = contentHeight > scrollAreaHeight + 1;
 
   useFocusEffect(
     useCallback(() => {
@@ -84,9 +90,13 @@ export default function ItemDetailScreen() {
   return (
     <View style={styles.screen}>
       <ScrollView
+        style={styles.scrollView}
         contentContainerStyle={styles.scroll}
-        bounces={false}
-        overScrollMode="never">
+        onLayout={(e) => setScrollAreaHeight(e.nativeEvent.layout.height)}
+        onContentSizeChange={(_w, h) => setContentHeight(h)}
+        scrollEnabled={canScroll}
+        bounces={canScroll}
+        overScrollMode={canScroll ? 'auto' : 'never'}>
         {/* 大判写真 */}
         <Pressable
           onPress={() => item.image_uri && setPhotoOpen(true)}
@@ -179,9 +189,14 @@ const styles = StyleSheet.create({
     borderColor: color.inputBorder,
   },
   missingBtnText: { fontSize: 15, fontWeight: '700', color: color.body },
+  // ScrollView本体に明示flex:1を与え、screen内の利用可能高さを正しく確定させる
+  // （これが無いとcontentに合わせて自分自身の高さを決めてしまい、実測との比較がずれる）。
+  scrollView: { flex: 1 },
   scroll: {
     padding: 18,
-    paddingBottom: 120,
+    // 固定フッターは兄弟View（下に別途ある）なので、ここでクリア用の大きい余白は不要。
+    // 小さい端末で実際に入り切らない時の最低限の余白として小さめに残す。
+    paddingBottom: 24,
     gap: 16,
     maxWidth: 480,
     width: '100%',

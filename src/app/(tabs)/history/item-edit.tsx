@@ -177,98 +177,110 @@ export default function ItemEditScreen() {
 
   return (
     <View style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        {/* 保存写真 */}
-        <View style={styles.photoRow}>
-          <Pressable onPress={() => item.image_uri && setPhotoOpen(true)} disabled={!item.image_uri} style={styles.thumb}>
-            {item.image_uri ? (
-              <Image source={{ uri: item.image_uri }} style={styles.thumbImage} contentFit="cover" />
-            ) : (
-              <View style={styles.thumbPlaceholder}>
-                <ThemedText style={styles.thumbPlaceholderText}>なし</ThemedText>
-              </View>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled">
+        {/* 入力項目（写真／金額／メモ／ステータス）。項目同士の間隔はformGroup内のgapで管理する。 */}
+        <View style={styles.formGroup}>
+          {/* 保存写真 */}
+          <View style={styles.photoRow}>
+            <Pressable onPress={() => item.image_uri && setPhotoOpen(true)} disabled={!item.image_uri} style={styles.thumb}>
+              {item.image_uri ? (
+                <Image source={{ uri: item.image_uri }} style={styles.thumbImage} contentFit="cover" />
+              ) : (
+                <View style={styles.thumbPlaceholder}>
+                  <ThemedText style={styles.thumbPlaceholderText}>なし</ThemedText>
+                </View>
+              )}
+            </Pressable>
+            <View style={styles.photoTextWrap}>
+              <ThemedText style={styles.photoTitle}>保存写真</ThemedText>
+              <ThemedText style={styles.photoSub}>履歴一覧で表示されます</ThemedText>
+            </View>
+            {Platform.OS !== 'web' && (
+              <Pressable onPress={handlePhoto} style={({ pressed }) => [styles.photoBtn, pressed && styles.pressed]}>
+                <ThemedText style={styles.photoBtnText}>{item.image_uri ? '写真を変更' : '写真を追加'}</ThemedText>
+              </Pressable>
             )}
-          </Pressable>
-          <View style={styles.photoTextWrap}>
-            <ThemedText style={styles.photoTitle}>保存写真</ThemedText>
-            <ThemedText style={styles.photoSub}>履歴一覧で表示されます</ThemedText>
           </View>
-          {Platform.OS !== 'web' && (
-            <Pressable onPress={handlePhoto} style={({ pressed }) => [styles.photoBtn, pressed && styles.pressed]}>
-              <ThemedText style={styles.photoBtnText}>{item.image_uri ? '写真を変更' : '写真を追加'}</ThemedText>
-            </Pressable>
-          )}
-        </View>
 
-        {/* 金額 */}
-        <View style={styles.field}>
-          <ThemedText style={styles.label}>{isForeign ? '金額（外貨）' : '金額'}</ThemedText>
-          <View style={styles.amountRow}>
-            <TextInput
-              style={styles.amountInput}
-              value={amount}
-              onChangeText={setAmount}
-              keyboardType={isForeign ? 'decimal-pad' : 'number-pad'}
-              returnKeyType="done"
-              selectTextOnFocus
-            />
-            <ThemedText style={styles.amountSuffix}>
-              {isForeign ? `${CURRENCIES[item.currency].symbol} ${item.currency}` : '円'}
+          {/* 金額 */}
+          <View style={styles.field}>
+            <ThemedText style={styles.label}>{isForeign ? '金額（外貨）' : '金額'}</ThemedText>
+            <View style={styles.amountRow}>
+              <TextInput
+                style={styles.amountInput}
+                value={amount}
+                onChangeText={setAmount}
+                keyboardType={isForeign ? 'decimal-pad' : 'number-pad'}
+                returnKeyType="done"
+                selectTextOnFocus
+              />
+              <ThemedText style={styles.amountSuffix}>
+                {isForeign ? `${CURRENCIES[item.currency].symbol} ${item.currency}` : '円'}
+              </ThemedText>
+            </View>
+          </View>
+
+          {/* 円換算プレビュー */}
+          <View style={styles.preview}>
+            <ThemedText style={styles.previewLabel}>日本円で 約</ThemedText>
+            <ThemedText style={styles.previewValue}>{previewJpy != null ? formatJpy(previewJpy) : '—'}</ThemedText>
+          </View>
+          {isForeign && (
+            <ThemedText style={styles.rateHint}>
+              {item.rate_used > 0 ? `1 ${item.currency} = ¥${item.rate_used}（保存時のレートを維持）` : 'レート未設定'}
             </ThemedText>
+          )}
+
+          {/* メモ */}
+          <View style={styles.field}>
+            <ThemedText style={styles.label}>メモ</ThemedText>
+            <TextInput
+              style={styles.memoInput}
+              value={memo}
+              onChangeText={setMemo}
+              placeholder="メモを入力（省略可）"
+              placeholderTextColor={color.faint2}
+              maxLength={100}
+              returnKeyType="done"
+            />
+          </View>
+
+          {/* ステータス */}
+          <View style={styles.field}>
+            <ThemedText style={styles.label}>ステータス</ThemedText>
+            <View style={styles.toggle}>
+              <Pressable
+                style={[styles.toggleBtn, !isPurchased && styles.toggleBtnCandidate]}
+                onPress={() => setIsPurchased(false)}>
+                <ThemedText style={[styles.toggleText, !isPurchased && styles.toggleTextCandidate]}>候補</ThemedText>
+              </Pressable>
+              <Pressable
+                style={[styles.toggleBtn, isPurchased && styles.toggleBtnPurchased]}
+                onPress={() => setIsPurchased(true)}>
+                <ThemedText style={[styles.toggleText, isPurchased && styles.toggleTextPurchased]}>購入済み</ThemedText>
+              </Pressable>
+            </View>
           </View>
         </View>
 
-        {/* 円換算プレビュー */}
-        <View style={styles.preview}>
-          <ThemedText style={styles.previewLabel}>日本円で 約</ThemedText>
-          <ThemedText style={styles.previewValue}>{previewJpy != null ? formatJpy(previewJpy) : '—'}</ThemedText>
+        {/* 可変スペーサー：内容が画面より短い時だけ伸びて、保存／削除を画面下側（下タブの上）へ寄せる。
+            内容が画面より長い端末ではminHeight分だけの最小余白になり、通常通りスクロールできる。 */}
+        <View style={styles.spacer} />
+
+        <View style={styles.actionsGroup}>
+          {/* 保存 */}
+          <Pressable onPress={handleSave} style={({ pressed }) => [styles.saveBtn, pressed && styles.pressed]}>
+            <ThemedText style={styles.saveBtnText}>保存する</ThemedText>
+          </Pressable>
+
+          {/* 削除（控えめ） */}
+          <Pressable onPress={handleDelete} style={styles.deleteLink}>
+            <ThemedText style={styles.deleteLinkText}>🗑 この記録を削除</ThemedText>
+          </Pressable>
         </View>
-        {isForeign && (
-          <ThemedText style={styles.rateHint}>
-            {item.rate_used > 0 ? `1 ${item.currency} = ¥${item.rate_used}（保存時のレートを維持）` : 'レート未設定'}
-          </ThemedText>
-        )}
-
-        {/* メモ */}
-        <View style={styles.field}>
-          <ThemedText style={styles.label}>メモ</ThemedText>
-          <TextInput
-            style={styles.memoInput}
-            value={memo}
-            onChangeText={setMemo}
-            placeholder="メモを入力（省略可）"
-            placeholderTextColor={color.faint2}
-            maxLength={100}
-            returnKeyType="done"
-          />
-        </View>
-
-        {/* ステータス */}
-        <View style={styles.field}>
-          <ThemedText style={styles.label}>ステータス</ThemedText>
-          <View style={styles.toggle}>
-            <Pressable
-              style={[styles.toggleBtn, !isPurchased && styles.toggleBtnCandidate]}
-              onPress={() => setIsPurchased(false)}>
-              <ThemedText style={[styles.toggleText, !isPurchased && styles.toggleTextCandidate]}>候補</ThemedText>
-            </Pressable>
-            <Pressable
-              style={[styles.toggleBtn, isPurchased && styles.toggleBtnPurchased]}
-              onPress={() => setIsPurchased(true)}>
-              <ThemedText style={[styles.toggleText, isPurchased && styles.toggleTextPurchased]}>購入済み</ThemedText>
-            </Pressable>
-          </View>
-        </View>
-
-        {/* 保存 */}
-        <Pressable onPress={handleSave} style={({ pressed }) => [styles.saveBtn, pressed && styles.pressed]}>
-          <ThemedText style={styles.saveBtnText}>保存する</ThemedText>
-        </Pressable>
-
-        {/* 削除（控えめ） */}
-        <Pressable onPress={handleDelete} style={styles.deleteLink}>
-          <ThemedText style={styles.deleteLinkText}>🗑 この記録を削除</ThemedText>
-        </Pressable>
       </ScrollView>
 
       <PhotoModal uri={photoOpen ? item.image_uri : null} onClose={() => setPhotoOpen(false)} />
@@ -294,10 +306,21 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: color.inputBorder,
   },
   missingBtnText: { fontSize: 15, fontWeight: '700', color: color.body },
+  // ScrollView本体に明示flex:1を与え、screen内の利用可能高さを正しく確定させる
+  // （contentContainerのflexGrow:1がこれを基準に「埋めるべき残り空間」を決められるようにする）。
+  scrollView: { flex: 1 },
   scroll: {
-    padding: 18, paddingBottom: 24, gap: 12,
+    flexGrow: 1,
+    padding: 18,
+    paddingBottom: 16,
     maxWidth: 480, width: '100%', alignSelf: 'center',
   },
+  // 入力項目同士の間隔（写真／金額／プレビュー／メモ／ステータス）。
+  formGroup: { gap: 14 },
+  // 内容が画面より短い時に伸びて、保存／削除ボタンを画面下側へ寄せる可変スペーサー。
+  // 内容が画面より長い端末ではこのminHeightだけが効き、通常のスクロールに戻る。
+  spacer: { flex: 1, minHeight: 20 },
+  actionsGroup: { gap: 10 },
   photoRow: {
     flexDirection: 'row',
     alignItems: 'center',
