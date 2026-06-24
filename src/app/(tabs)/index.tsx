@@ -56,6 +56,9 @@ export default function CameraScreen() {
   const [pendingPhotoUri, setPendingPhotoUri] = useState<string | null>(null);
   // pendingPhotoUriの出どころ。「履歴に残す写真」カードの文言分岐に使う（値札写真のままか/商品写真等に変えたか）
   const [pendingPhotoSource, setPendingPhotoSource] = useState<'ocr' | 'product' | 'library' | null>(null);
+  // 「写真なしで保存」：保存対象写真(pendingPhotoUri)はそのまま保持し、保存時だけ写真を付けない。
+  // 上部のOCR写真プレビュー（読み取り確認用・ocrPreviewUri）はpendingPhotoUriに依存するため、ここでは消さない。
+  const [excludePhotoFromSave, setExcludePhotoFromSave] = useState(false);
   const [ocrPhotoUri, setOcrPhotoUri] = useState<string | null>(null);
   // 再読み取りで得た新しい結果（写真込み）。「新しい読み取りを使う」を選ぶまでocrResult/ocrPhotoUriへは反映しない
   const [ocrResultCandidate, setOcrResultCandidate] = useState<{
@@ -229,6 +232,7 @@ export default function CameraScreen() {
     if (pendingPhotoUri == null) {
       setPendingPhotoUri(uri);
       setPendingPhotoSource('ocr');
+      setExcludePhotoFromSave(false);
     } else {
       // 再読み取りの撮影分はOCR処理(handleOcrResult)が完了するまでocrPhotoUriへ確定しない
       lastScannedPhotoUriRef.current = uri;
@@ -245,6 +249,7 @@ export default function CameraScreen() {
       if (!picked.canceled && picked.assets[0]) {
         setPendingPhotoUri(picked.assets[0].uri);
         setPendingPhotoSource('library');
+        setExcludePhotoFromSave(false);
         // 写真選択後は手入力カードを開き、サムネ位置（入力カード）へスクロールして変化を示す
         setShowManualInput(true);
         scrollToInputCard();
@@ -267,6 +272,7 @@ export default function CameraScreen() {
       if (pendingPhotoUri == null) {
         setPendingPhotoUri(newUri);
         setPendingPhotoSource('product');
+        setExcludePhotoFromSave(false);
         // 撮影後は手入力カードを開き、サムネ位置（入力カード）へスクロールして変化を示す
         setShowManualInput(true);
         scrollToInputCard();
@@ -299,6 +305,7 @@ export default function CameraScreen() {
     if (!ocrPhotoUri) return;
     setPendingPhotoUri(ocrPhotoUri);
     setPendingPhotoSource('ocr');
+    setExcludePhotoFromSave(false);
     setOcrPhotoUri(null);
     // この値札写真を直接採用したので、同じ写真を指していた候補案内は不要
     setNewPhotoCandidate((prev) => (prev?.source === 'ocr' ? null : prev));
@@ -310,6 +317,7 @@ export default function CameraScreen() {
     if (!newPhotoCandidate) return;
     setPendingPhotoUri(newPhotoCandidate.uri);
     setPendingPhotoSource(newPhotoCandidate.source);
+    setExcludePhotoFromSave(false);
     if (newPhotoCandidate.source === 'ocr') setOcrPhotoUri(null);
     setNewPhotoCandidate(null);
     scrollToInputCard();
@@ -318,6 +326,7 @@ export default function CameraScreen() {
   // 「履歴に残す写真」欄の「今の保存写真を使う」：候補を消すだけで保存対象写真は変えない
   function handleKeepCurrentPhoto() {
     setNewPhotoCandidate(null);
+    setExcludePhotoFromSave(false);
   }
 
   function handleRemovePhoto() {
@@ -332,6 +341,7 @@ export default function CameraScreen() {
           onPress: () => {
             setPendingPhotoUri(null);
             setPendingPhotoSource(null);
+            setExcludePhotoFromSave(false);
             setNewPhotoCandidate(null);
             setPhotoPreviewVisible(false);
           },
@@ -527,7 +537,8 @@ export default function CameraScreen() {
   async function handleSaveCandidate() {
     if (!canSave || !activeTrip) return;
     let savedPhotoUri: string | undefined;
-    if (pendingPhotoUri && Platform.OS !== 'web') {
+    // 「写真なしで保存」が選ばれている時は、保存対象写真があってもコピーしない（既存の写真なし保存と同じ扱い）。
+    if (pendingPhotoUri && !excludePhotoFromSave && Platform.OS !== 'web') {
       try {
         const FileSystem = await import('expo-file-system/legacy');
         const docsDir = FileSystem.documentDirectory;
@@ -572,6 +583,7 @@ export default function CameraScreen() {
     setOcrRawExpanded(false);
     setPendingPhotoUri(null);
     setPendingPhotoSource(null);
+    setExcludePhotoFromSave(false);
     setOcrPhotoUri(null);
     setOcrResultCandidate(null);
     setNewPhotoCandidate(null);
@@ -1194,17 +1206,29 @@ export default function CameraScreen() {
                     <View>
                       <View style={styles.saveSettingsDivider} />
                       <View style={styles.saveSettingsSection}>
-                        <ThemedText style={styles.saveSettingsSectionLabel}>履歴に残す写真</ThemedText>
+                        <View style={styles.saveSettingsSectionLabelRow}>
+                          <ThemedText style={styles.saveSettingsSectionLabel}>履歴に残す写真</ThemedText>
+                          {pendingPhotoUri != null && (
+                            <TouchableOpacity
+                              onPress={() => setExcludePhotoFromSave((v) => !v)}
+                              hitSlop={8}
+                              activeOpacity={0.6}>
+                              <ThemedText style={styles.photoExcludeLinkText}>
+                                {excludePhotoFromSave ? '写真を残す' : '写真なしで保存'}
+                              </ThemedText>
+                            </TouchableOpacity>
+                          )}
+                        </View>
                         <View style={styles.photoSettingsRow}>
                           <TouchableOpacity
                             style={styles.photoSettingsThumbWrap}
                             onPress={
-                              pendingPhotoUri != null
+                              pendingPhotoUri != null && !excludePhotoFromSave
                                 ? () => setPhotoPreviewVisible(true)
                                 : handleAddPhoto
                             }
                             activeOpacity={0.8}>
-                            {pendingPhotoUri != null ? (
+                            {pendingPhotoUri != null && !excludePhotoFromSave ? (
                               <Image
                                 source={{ uri: pendingPhotoUri }}
                                 style={styles.photoSettingsThumb}
@@ -1220,13 +1244,15 @@ export default function CameraScreen() {
                           </TouchableOpacity>
                           <View style={styles.photoSettingsInfo}>
                             <ThemedText style={styles.photoSettingsRowText}>
-                              {pendingPhotoUri == null
-                                ? '写真なし'
-                                : pendingPhotoSource === 'ocr'
-                                  ? 'OCR写真を保存中'
-                                  : '商品写真を保存に使用中'}
+                              {excludePhotoFromSave
+                                ? '写真なしで保存します'
+                                : pendingPhotoUri == null
+                                  ? '写真なし'
+                                  : pendingPhotoSource === 'ocr'
+                                    ? 'OCR写真を保存中'
+                                    : '商品写真を保存に使用中'}
                             </ThemedText>
-                            {pendingPhotoUri != null && pendingPhotoSource === 'ocr' && (
+                            {pendingPhotoUri != null && !excludePhotoFromSave && pendingPhotoSource === 'ocr' && (
                               <ThemedText style={styles.photoSettingsHint}>
                                 商品写真に変更できます
                               </ThemedText>
@@ -2318,6 +2344,11 @@ const styles = StyleSheet.create({
   photoSettingsHint: {
     fontSize: 11.5,
     fontWeight: '500',
+    color: color.muted,
+  },
+  photoExcludeLinkText: {
+    fontSize: 12,
+    fontWeight: '600',
     color: color.muted,
   },
   photoSettingsActionsRow: {

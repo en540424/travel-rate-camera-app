@@ -156,7 +156,7 @@ export default function ItemEditScreen() {
           </Pressable>
           <View style={styles.photoTextWrap}>
             <ThemedText style={styles.photoTitle}>保存写真</ThemedText>
-            <ThemedText style={styles.photoSub}>履歴・候補一覧で見出しに使われます</ThemedText>
+            <ThemedText style={styles.photoSub}>履歴一覧で表示されます</ThemedText>
           </View>
           {Platform.OS !== 'web' && (
             <Pressable onPress={handlePhoto} style={({ pressed }) => [styles.photoBtn, pressed && styles.pressed]}>

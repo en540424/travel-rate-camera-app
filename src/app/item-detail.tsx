@@ -214,6 +214,7 @@ const styles = StyleSheet.create({
   heroLabel: { fontSize: 12, fontWeight: '700', color: color.primary, marginBottom: 2 },
   heroJpy: {
     fontSize: 38,
+    lineHeight: 46,
     fontWeight: '700',
     color: color.text,
     letterSpacing: -1.2,
