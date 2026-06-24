@@ -607,6 +607,9 @@ export default function CameraScreen() {
           style={styles.scrollView}
           contentContainerStyle={[styles.scroll, showFooter && styles.scrollWithFooter]}
           showsVerticalScrollIndicator={false}
+          // 撮影前の純粋なスタート画面（OCR結果なし・手入力/保存設定が未展開）は1画面に収まるため、
+          // 上下スワイプで動いてしまわないようスクロールそのものを止める。結果・保存設定表示中は通常通り有効。
+          scrollEnabled={showInputCard}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
 
