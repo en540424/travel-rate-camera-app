@@ -287,18 +287,17 @@ export default function ItemEditScreen() {
           </View>
         </View>
 
-        <View style={styles.actionsGroup}>
-          {/* 保存 */}
-          <Pressable onPress={handleSave} style={({ pressed }) => [styles.saveBtn, pressed && styles.pressed]}>
-            <ThemedText style={styles.saveBtnText}>保存する</ThemedText>
-          </Pressable>
-
-          {/* 削除（控えめ） */}
-          <Pressable onPress={handleDelete} style={styles.deleteLink}>
-            <ThemedText style={styles.deleteLinkText}>🗑 この記録を削除</ThemedText>
-          </Pressable>
-        </View>
       </ScrollView>
+
+      {/* 固定フッター：保存 + 削除（ScrollView外に出すことでタブバーinsetの影響を受けない） */}
+      <View style={styles.footer}>
+        <Pressable onPress={handleSave} style={({ pressed }) => [styles.saveBtn, pressed && styles.pressed]}>
+          <ThemedText style={styles.saveBtnText}>保存する</ThemedText>
+        </Pressable>
+        <Pressable onPress={handleDelete} style={styles.deleteLink}>
+          <ThemedText style={styles.deleteLinkText}>🗑 この記録を削除</ThemedText>
+        </Pressable>
+      </View>
 
       <PhotoModal uri={photoOpen ? item.image_uri : null} onClose={() => setPhotoOpen(false)} />
 
@@ -323,20 +322,25 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: color.inputBorder,
   },
   missingBtnText: { fontSize: 15, fontWeight: '700', color: color.body },
-  // ScrollView本体に明示flex:1を与え、screen内の利用可能高さを正しく確定させる
-  // （contentContainerのflexGrow:1がこれを基準に「埋めるべき残り空間」を決められるようにする）。
+  // ScrollView本体にflex:1を与え、screen内の利用可能高さを正しく確定させる。
   scrollView: { flex: 1 },
   scroll: {
-    flexGrow: 1,
     padding: 18,
-    paddingBottom: 20,
+    paddingBottom: 8,
     maxWidth: 480, width: '100%', alignSelf: 'center',
   },
   // 入力項目同士の間隔（写真／金額／プレビュー／メモ／ステータス）。
   formGroup: { gap: 14 },
-  // ステータス〜保存ボタン、保存ボタン〜削除リンクの間隔は固定値にする
-  // （下タブとの距離はscroll.paddingBottomで別に確保しているので、ここは詰めてよい）。
-  actionsGroup: { gap: 8, marginTop: 14 },
+  // 保存ボタン＋削除リンクの固定フッター（ScrollView外）。タブバーのbottom inset影響を受けない。
+  footer: {
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    paddingBottom: 16,
+    gap: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: color.line2,
+    backgroundColor: color.bgScreen,
+  },
   photoRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -433,7 +437,7 @@ const styles = StyleSheet.create({
     ...shadow.cta,
   },
   saveBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
-  deleteLink: { alignItems: 'center', paddingVertical: 6 },
+  deleteLink: { alignItems: 'center', paddingVertical: 4 },
   deleteLinkText: { fontSize: 14, fontWeight: '600', color: color.danger },
   pressed: { opacity: 0.85 },
 });
