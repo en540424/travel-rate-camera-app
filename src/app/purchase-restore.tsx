@@ -1,10 +1,17 @@
+import { Redirect } from 'expo-router';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { PrimaryButton } from '@/components/ui';
+import { SHOW_PRO } from '@/config/feature-flags';
 import { color, radius, shadow } from '@/theme/tokens';
 
 export default function PurchaseRestoreScreen() {
+  // 初回MVPはPro未実装。ルート直接アクセスでも購入復元画面へ進めないようガードする（P0-02）
+  if (!SHOW_PRO) {
+    return <Redirect href="/(tabs)/settings" />;
+  }
+
   function handleRestore() {
     Alert.alert(
       '購入の復元は準備中です',

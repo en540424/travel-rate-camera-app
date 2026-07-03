@@ -31,14 +31,16 @@ export function useHistory() {
   const [totalCount, setTotalCount] = useState(0);
 
   const load = useCallback(async () => {
-    const limit = isPro ? 500 : FREE_HISTORY_LIMIT;
+    // 初回MVPは保存上限を露出しない方針のため、表示件数はFREE_HISTORY_LIMIT(30)で切らない（P0-04）。
+    // Pro側と同じ上限(500)を無料版でも使う。FREE_LIMITS.saves自体は変更しない。
+    const limit = 500;
     const [rows, count] = await Promise.all([
       activeTrip ? getHistoryForTrip(db, activeTrip.id, limit) : getHistory(db, limit),
       activeTrip ? getHistoryCountForTrip(db, activeTrip.id) : getHistoryCount(db),
     ]);
     setHistory(rows);
     setTotalCount(count);
-  }, [db, isPro, activeTrip]);
+  }, [db, activeTrip]);
 
   useEffect(() => {
     load().catch(console.error);

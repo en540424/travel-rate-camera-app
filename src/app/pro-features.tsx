@@ -1,8 +1,9 @@
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { GhostButton, PrimaryButton } from '@/components/ui';
+import { SHOW_PRO } from '@/config/feature-flags';
 import { FREE_LIMITS, PRO_OCR_QUOTA } from '@/config/limits';
 import { color, radius, shadow } from '@/theme/tokens';
 
@@ -23,6 +24,10 @@ const ROWS: CompareRow[] = [
 ];
 
 export default function ProFeaturesScreen() {
+  // 初回MVPはPro未実装。ルート直接アクセスでも購入画面へ進めないようガードする（P0-02）
+  if (!SHOW_PRO) {
+    return <Redirect href="/(tabs)/settings" />;
+  }
   return (
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.scroll}>

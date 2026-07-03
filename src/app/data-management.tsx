@@ -5,6 +5,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 
 import { ThemedText } from '@/components/themed-text';
 import { SettingRow, SettingSection } from '@/components/ui';
+import { SHOW_PRO } from '@/config/feature-flags';
 import { useHistory } from '@/hooks/use-history';
 import { useTrips } from '@/hooks/use-trips';
 import { color, radius, shadow } from '@/theme/tokens';
@@ -97,11 +98,23 @@ export default function DataManagementScreen() {
           </ThemedText>
         </View>
 
-        {/* エクスポート（Pro予定） */}
-        <SettingSection title="エクスポート">
-          <SettingRow label="CSVで書き出し" badge="Pro予定" />
-          <SettingRow label="PDFで書き出し" badge="Pro予定" />
-        </SettingSection>
+        {/* バックアップなしの告知（P0-07） */}
+        <View style={styles.noteCard}>
+          <ThemedText style={styles.noteTitle}>バックアップについて</ThemedText>
+          <ThemedText style={styles.noteBody}>
+            現在、データはこの端末内に保存されています。{'\n'}
+            アプリを削除すると、保存した旅行・履歴・写真は失われる場合があります。{'\n'}
+            機種変更やバックアップ機能は今後の検討項目です。
+          </ThemedText>
+        </View>
+
+        {/* エクスポート（Pro予定）。初回MVPはPro露出ゼロのためSHOW_PROで非表示（P0追加小修正） */}
+        {SHOW_PRO && (
+          <SettingSection title="エクスポート">
+            <SettingRow label="CSVで書き出し" badge="Pro予定" />
+            <SettingRow label="PDFで書き出し" badge="Pro予定" />
+          </SettingSection>
+        )}
 
         {/* 危険な操作 */}
         <SettingSection title="危険な操作">
@@ -150,6 +163,7 @@ const styles = StyleSheet.create({
   },
   statValue: {
     fontSize: 26,
+    lineHeight: 32,
     fontWeight: '700',
     letterSpacing: -0.5,
     fontVariant: ['tabular-nums'],

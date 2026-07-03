@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { EmptyState } from '@/components/ui';
 import { FALLBACK_BUDGET_JPY } from '@/constants/camera-screen';
+import { SHOW_PRO } from '@/config/feature-flags';
 import { CURRENCIES } from '@/constants/currencies';
 import { FREE_HISTORY_LIMIT } from '@/db/queries/history';
 import type { HistoryRow } from '@/db/queries/history';
@@ -173,7 +174,8 @@ export default function HistoryScreen() {
         </View>
       </View>
 
-      {isLimited && (
+      {/* 初回MVPはPro未実装・保存上限も表示しないためSHOW_PROで非表示（P0-01/P0-03） */}
+      {SHOW_PRO && isLimited && (
         <TouchableOpacity style={styles.proBanner} onPress={() => router.push('/pro')}>
           <ThemedText style={styles.proBannerText}>
             Pro版で無制限に保存（現在 {FREE_HISTORY_LIMIT} 件まで）→

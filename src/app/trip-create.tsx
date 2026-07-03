@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import type { CurrencyCode } from '@/constants/currencies';
@@ -37,19 +37,30 @@ export default function TripCreateScreen() {
     if (cur !== 'JPY' && r <= 0) return;
     const bud = parseFloat(budget) || 0;
 
-    const trip = await createTrip(nm, bud, cur, r);
+    // 保存失敗時に何も表示されない箇所があったため try/catch + Alert を追加（P0-08）。
+    // 保存ロジック本体（createTrip/editTrip）は変更しない。
+    try {
+      const trip = await createTrip(nm, bud, cur, r);
 
-    // 開始日 / 終了日 は既存 editTrip で設定（任意・スキーマ変更なし）
-    const s = startDate.trim();
-    const e = endDate.trim();
-    const dateFields: { started_at?: string; ended_at?: string } = {};
-    if (DATE_RE.test(s)) dateFields.started_at = s;
-    if (DATE_RE.test(e)) dateFields.ended_at = e;
-    if (Object.keys(dateFields).length > 0) {
-      await editTrip(trip.id, dateFields);
+      // 開始日 / 終了日 は既存 editTrip で設定（任意・スキーマ変更なし）
+      const s = startDate.trim();
+      const e = endDate.trim();
+      const dateFields: { started_at?: string; ended_at?: string } = {};
+      if (DATE_RE.test(s)) dateFields.started_at = s;
+      if (DATE_RE.test(e)) dateFields.ended_at = e;
+      if (Object.keys(dateFields).length > 0) {
+        await editTrip(trip.id, dateFields);
+      }
+
+      router.replace('/trip-created');
+    } catch (err) {
+      console.warn('[trip-create save error]', err);
+      Alert.alert(
+        '保存できませんでした',
+        '旅行の作成中にエラーが発生しました。もう一度お試しください。',
+        [{ text: 'OK' }],
+      );
     }
-
-    router.replace('/trip-created');
   }
 
   return (
@@ -233,7 +244,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   previewLabel: { fontSize: 12.5, fontWeight: '700', color: color.primaryDark },
-  previewValue: { fontSize: 14, fontWeight: '700', color: color.primaryDark, fontVariant: ['tabular-nums'] },
+  previewValue: { fontSize: 14, lineHeight: 19, fontWeight: '700', color: color.primaryDark, fontVariant: ['tabular-nums'] },
   budgetRow: {
     flexDirection: 'row',
     alignItems: 'center',

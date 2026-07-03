@@ -167,7 +167,19 @@ export default function ItemEditScreen() {
     if (isPurchased !== ((item.is_purchased ?? 0) === 1)) {
       updates.push(togglePurchased(item.id, item.is_purchased ?? 0));
     }
-    if (updates.length > 0) await Promise.all(updates);
+    // 保存失敗時に何も表示されない箇所があったため try/catch + Alert を追加（P0-08）。
+    // 保存ロジック本体（updateAmount/updateMemo/togglePurchased）は変更しない。
+    try {
+      if (updates.length > 0) await Promise.all(updates);
+    } catch (err) {
+      console.warn('[item-edit save error]', err);
+      Alert.alert(
+        '保存できませんでした',
+        '記録の更新中にエラーが発生しました。もう一度お試しください。',
+        [{ text: 'OK' }],
+      );
+      return;
+    }
     setPhotoChanged(false);
     setHasUnsavedChanges(false);
     router.back();

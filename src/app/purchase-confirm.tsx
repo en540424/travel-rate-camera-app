@@ -1,8 +1,9 @@
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { GhostButton, PrimaryButton } from '@/components/ui';
+import { SHOW_PRO } from '@/config/feature-flags';
 import { PRICE_PLACEHOLDER, PRO_OCR_QUOTA } from '@/config/limits';
 import { color, radius, shadow } from '@/theme/tokens';
 
@@ -20,6 +21,10 @@ const INCLUDED: IncludedFeature[] = [
 ];
 
 export default function PurchaseConfirmScreen() {
+  // 初回MVPはPro未実装。ルート直接アクセスでも購入画面へ進めないようガードする（P0-02）
+  if (!SHOW_PRO) {
+    return <Redirect href="/(tabs)/settings" />;
+  }
   return (
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -132,9 +137,10 @@ const styles = StyleSheet.create({
   planSub: { fontSize: 12, fontWeight: '500', color: color.darkSub, flexShrink: 1 },
   planPrice: {
     fontSize: 26,
+    lineHeight: 32,
     fontWeight: '700',
     color: '#FFFFFF',
-    letterSpacing: -0.6,
+    letterSpacing: -0.3,
     fontVariant: ['tabular-nums'],
   },
   planPriceUnit: { fontSize: 14, fontWeight: '600', color: color.darkSub },

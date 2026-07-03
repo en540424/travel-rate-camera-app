@@ -1,8 +1,9 @@
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { GhostButton, PrimaryButton, SecondaryButton } from '@/components/ui';
+import { SHOW_PRO } from '@/config/feature-flags';
 import { PRO_OCR_QUOTA } from '@/config/limits';
 import { color, radius, shadow } from '@/theme/tokens';
 
@@ -15,6 +16,11 @@ const UNLOCKED: { label: string; value: string }[] = [
 export default function PurchaseCompleteScreen() {
   function toMain() { router.dismissAll(); router.navigate('/'); }
   function toSettings() { router.dismissAll(); router.navigate('/settings'); }
+
+  // 初回MVPはPro未実装。ルート直接アクセスでも購入完了画面へ進めないようガードする（P0-02）
+  if (!SHOW_PRO) {
+    return <Redirect href="/(tabs)/settings" />;
+  }
 
   return (
     <View style={styles.screen}>

@@ -20,6 +20,7 @@ import {
 } from '@/constants/camera-screen';
 import { DT } from '@/constants/designTokens';
 import { FREE_LIMITS } from '@/config/limits';
+import { SHOW_PRO } from '@/config/feature-flags';
 import { useHistory } from '@/hooks/use-history';
 import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
@@ -96,6 +97,8 @@ export default function CameraScreen() {
   const [ocrPhotoZoomVisible, setOcrPhotoZoomVisible] = useState(false);
   // 撮影した値札写真の縦横比（width/height）。読み込み時に確定し、プレビュー高さを実寸に合わせる。
   const [ocrImgAspect, setOcrImgAspect] = useState(0.75);
+  // [診断] OCRデバッグパネル開閉 — リリース前に削除
+  const [showOcrDebug, setShowOcrDebug] = useState(false);
 
   const scrollViewRef = useRef<ScrollView>(null);
   const inputCardYRef = useRef(0);
@@ -105,6 +108,8 @@ export default function CameraScreen() {
   const memoRowYRef = useRef(0);
   // 保存の設定内メモ欄のref（フォーカス制御用）
   const memoInputRef = useRef<TextInput>(null);
+  // 手入力金額フィールドのref（openManualInput時のフォーカス制御用）
+  const amountInputRef = useRef<TextInput>(null);
   // OCR写真プレビュー（読み取った値札）の縦スクロールを中心位置にするための参照
   const ocrPhotoPreviewScrollRef = useRef<ScrollView>(null);
   // 再読み取りで撮影した直後の写真URI。OCR処理が終わりhandleOcrResultが呼ばれるまでocrPhotoUriへは反映しない
@@ -358,11 +363,18 @@ export default function CameraScreen() {
 
   function handleOcrResult(raw: string) {
     if (isWeb) return;
+    // [診断ログ] 開発ビルドのみ出力。本番では実行されない（P0-06）
+    if (__DEV__) {
+      console.log('[OCR Raw Text]', raw);
+      console.log('[OCR Lines]', raw.split('\n').map((l, i) => `${i + 1}: ${l.trim()}`).filter((l) => l.length > 3));
+      console.log('[EUR Debug Active Trip] name:', activeTrip?.name ?? '(none)', '/ base_currency:', activeTrip?.base_currency ?? '(none)', '/ rate:', activeTrip?.manual_rate ?? 0);
+      console.log('[EUR Debug Extract Call] currencyForDisplay:', currencyForDisplay, '/ raw.length:', raw.length);
+    }
     const newPhotoUri = lastScannedPhotoUriRef.current;
     lastScannedPhotoUriRef.current = null;
     const newResult = {
       raw,
-      prices: extractPriceCandidates(raw, isJpyMode),
+      prices: extractPriceCandidates(raw, currencyForDisplay),
       memoLines: extractMemoLines(raw),
     };
 
@@ -502,7 +514,8 @@ export default function CameraScreen() {
 
   function openManualInput() {
     setShowManualInput(true);
-    scrollToInputCard();
+    scrollToManualAdjust();
+    setTimeout(() => { amountInputRef.current?.focus(); }, 350);
   }
 
   function handleCopyRawToMemo() {
@@ -957,14 +970,11 @@ export default function CameraScreen() {
                       </View>
                       <ThemedText style={styles.ocrFailTitle}>金額を読み取れませんでした</ThemedText>
                       <ThemedText style={styles.ocrFailDesc}>
-                        明るい場所で撮り直すか、下の欄に金額を手で入力できます。読み取った文字はメモに使えます。
+                        値札全体が入るよう少し離して、明るい場所で撮り直してください。読めない場合は下の欄に手入力できます。
                       </ThemedText>
                       <PrimaryButton
                         title="✎ 手入力で金額を入れる"
-                        onPress={() => {
-                          setShowManualInput(true);
-                          scrollToInputCard();
-                        }}
+                        onPress={openManualInput}
                         style={styles.ocrFailPrimary}
                       />
                       <View style={styles.ocrFailSubRow}>
@@ -1084,6 +1094,79 @@ export default function CameraScreen() {
                     )}
                   </View>
                 )}
+              {/* ===== 開発用OCR診断パネル =====
+                  本番ユーザーには一切表示しない（P0-05）。__DEV__ビルドでのみ表示・操作可能。 */}
+              {__DEV__ && (
+              <TouchableOpacity
+                onPress={() => setShowOcrDebug((v) => !v)}
+                style={{ padding: 8, marginTop: 10, backgroundColor: '#1a1a2e', borderRadius: 6 }}
+                activeOpacity={0.8}>
+                <ThemedText style={{ fontSize: 11, color: '#6cb6ff', textAlign: 'center' }}>
+                  {showOcrDebug ? '▲ OCRデバッグ 閉じる' : '▼ OCRデバッグ 表示'}
+                </ThemedText>
+              </TouchableOpacity>
+              )}
+              {__DEV__ && showOcrDebug && (() => {
+                const raw = ocrResult.raw;
+                const rawLines = raw.split('\n');
+                const hasEur     = /€/.test(raw);
+                const hasEurWord = /EUR/i.test(raw);
+                const hasDot     = /\d+\.\d+/.test(raw);
+                const hasComma   = /\d+,\d+/.test(raw);
+                const hasNum     = /\d/.test(raw);
+                const hasPct     = /%/.test(raw);
+                const hasSpace   = /^\d{1,3}\s+\d{2}$/m.test(raw);
+                const hasSplitDec = (() => {
+                  const ls = raw.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                  return ls.some((l, i) => /^\d{1,3}[.,]$/.test(l) && i + 1 < ls.length && /^\d{2}$/.test(ls[i + 1]));
+                })();
+                const hasSplitNum = (() => {
+                  const ls = raw.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                  return ls.some((l, i) => /^\d{1,2}$/.test(l) && i + 1 < ls.length && /^\d{2}$/.test(ls[i + 1]));
+                })();
+                const cands      = ocrResult.prices;
+                let reason: string;
+                if (cands.length > 0)              { reason = '候補あり (' + cands.length + '件)'; }
+                else if (!hasNum)                  { reason = 'rawに数字なし'; }
+                else if ((hasEur || hasEurWord) && !hasDot && !hasComma) { reason = '€/EUR記号あり・数値形式不一致'; }
+                else if (hasPct && !hasDot && !hasComma) { reason = '%のみ確認・価格形式なし'; }
+                else                               { reason = '数字あり・regex不一致'; }
+                const monoFont = Platform.OS === 'ios' ? 'Courier New' : 'monospace';
+                return (
+                  <ScrollView
+                    nestedScrollEnabled
+                    style={{ maxHeight: 320, backgroundColor: '#0d1117', borderRadius: 6, marginTop: 4 }}>
+                    <ThemedText
+                      selectable
+                      style={{ fontSize: 10, color: '#e6edf3', fontFamily: monoFont, padding: 8, lineHeight: 16 }}>
+                      {'[Currency]\n'}
+                      {'  base:    ' + (activeTrip?.base_currency ?? '(none)') + '\n'}
+                      {'  display: ' + currencyForDisplay + '\n'}
+                      {'  passed:  ' + currencyForDisplay + '\n\n'}
+                      {'[Raw] len=' + raw.length + '\n'}
+                      {raw + '\n\n'}
+                      {'[Lines]\n'}
+                      {rawLines.map((l, i) => i + ': ' + l).join('\n') + '\n\n'}
+                      {'[Search]\n'}
+                      {'  €:           ' + (hasEur     ? 'true' : 'false') + '\n'}
+                      {'  EUR:         ' + (hasEurWord ? 'true' : 'false') + '\n'}
+                      {'  dot(1.99):   ' + (hasDot     ? 'true' : 'false') + '\n'}
+                      {'  comma(1,99): ' + (hasComma   ? 'true' : 'false') + '\n'}
+                      {'  number:      ' + (hasNum     ? 'true' : 'false') + '\n'}
+                      {'  %:           ' + (hasPct     ? 'true' : 'false') + '\n'}
+                      {'  space(1 99): ' + (hasSpace    ? 'true' : 'false') + '\n'}
+                      {'  split dec:   ' + (hasSplitDec ? 'true' : 'false') + '\n'}
+                      {'  split num:   ' + (hasSplitNum ? 'true' : 'false') + '\n\n'}
+                      {'[Candidates] count=' + cands.length + '\n'}
+                      {JSON.stringify(cands) + '\n\n'}
+                      {'[UI decision]\n'}
+                      {'  prices.length: ' + cands.length + '\n'}
+                      {'  ocrResult:     set\n'}
+                      {'  reason:        ' + reason}
+                    </ThemedText>
+                  </ScrollView>
+                );
+              })()}
               </View>
               )}
 
@@ -1159,13 +1242,13 @@ export default function CameraScreen() {
                       {isReverse ? '¥' : c.symbol}
                     </ThemedText>
                     <TextInput
+                      ref={amountInputRef}
                       style={styles.inputAmountField}
                       value={nativeAmount}
                       onChangeText={setNativeAmount}
                       placeholder="0"
                       placeholderTextColor={DT.colors.textMuted}
                       keyboardType="decimal-pad"
-                      inputMode="decimal"
                       selectTextOnFocus
                       returnKeyType="done"
                       onSubmitEditing={() => Keyboard.dismiss()}
@@ -1442,8 +1525,8 @@ export default function CameraScreen() {
                 </View>
               )}
 
-              {/* 保存上限（無料版） */}
-              {!isPro && totalCount >= NEAR_SAVE_LIMIT && (
+              {/* 保存上限（無料版）。初回MVPは上限を露出しないためSHOW_PROで非表示（P0-03） */}
+              {SHOW_PRO && !isPro && totalCount >= NEAR_SAVE_LIMIT && (
                 <SaveLimitBanner currentCount={totalCount} isPro={isPro} />
               )}
 

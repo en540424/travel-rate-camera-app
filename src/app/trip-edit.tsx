@@ -61,10 +61,21 @@ export default function TripEditScreen() {
     const r = cur === 'JPY' ? 0 : parseFloat(rate) || 0;
     if (cur !== 'JPY' && r <= 0) return;
     const bud = parseFloat(budget) || 0;
-    await editTrip(id, { name: nm, budget_jpy: bud, base_currency: cur, manual_rate: r });
-    if (cur !== 'JPY' && r > 0) await saveRate(cur, r);
-    if (makeActive && activeTrip?.id !== id) await switchTrip(id);
-    router.back();
+    // 保存失敗時に何も表示されない箇所があったため try/catch + Alert を追加（P0-08）。
+    // 保存ロジック本体（editTrip/saveRate/switchTrip）は変更しない。
+    try {
+      await editTrip(id, { name: nm, budget_jpy: bud, base_currency: cur, manual_rate: r });
+      if (cur !== 'JPY' && r > 0) await saveRate(cur, r);
+      if (makeActive && activeTrip?.id !== id) await switchTrip(id);
+      router.back();
+    } catch (err) {
+      console.warn('[trip-edit save error]', err);
+      Alert.alert(
+        '保存できませんでした',
+        '旅行の更新中にエラーが発生しました。もう一度お試しください。',
+        [{ text: 'OK' }],
+      );
+    }
   }
 
   function handleSave() {
@@ -190,13 +201,13 @@ const styles = StyleSheet.create({
   chipTextSelected: { color: color.primaryDark, fontWeight: '700' },
   rateRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1.5, borderColor: color.inputBorder, borderRadius: radius.chip, paddingHorizontal: 14, backgroundColor: color.card },
   ratePrefix: { fontSize: 15, fontWeight: '600', color: color.body },
-  rateInput: { flex: 1, fontSize: 18, fontWeight: '700', color: color.text, paddingVertical: 12, fontVariant: ['tabular-nums'] },
+  rateInput: { flex: 1, fontSize: 18, lineHeight: 24, fontWeight: '700', color: color.text, paddingVertical: 12, fontVariant: ['tabular-nums'] },
   rateSuffix: { fontSize: 15, fontWeight: '600', color: color.body },
   warnBanner: { backgroundColor: color.candidateSoft, borderRadius: radius.chip, padding: 12, borderWidth: 1, borderColor: color.candidateBorder },
   warnText: { fontSize: 12.5, fontWeight: '600', color: color.candidateText, lineHeight: 19 },
   budgetRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1.5, borderColor: color.inputBorder, borderRadius: radius.chip, paddingHorizontal: 14, backgroundColor: color.card },
   budgetPrefix: { fontSize: 18, fontWeight: '700', color: color.body },
-  budgetInput: { flex: 1, fontSize: 16, fontWeight: '600', color: color.text, paddingVertical: 13, fontVariant: ['tabular-nums'] },
+  budgetInput: { flex: 1, fontSize: 16, lineHeight: 22, fontWeight: '600', color: color.text, paddingVertical: 13, fontVariant: ['tabular-nums'] },
   activeToggle: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12,
     backgroundColor: color.primarySoft2, borderRadius: radius.card, borderWidth: 1, borderColor: color.primaryBorder, padding: 14,
