@@ -913,6 +913,9 @@ const styles = StyleSheet.create({
   // 月合計（summaryStatItem＝全面カラーカード）とは別カードタイプにする。
   // 白カード＋左アクセントバーで、月合計の「再掲」に見えないようにしつつ、
   // カード感（角丸・影）は残す。
+  // 左だけborderLeftWidthで太くしていたが、右/上/下に枠が無いと親カード（白背景）と
+  // 同化して見えるため、記録カード（historyCard）と同じ薄い枠線を全周に敷いた上で
+  // 左だけ色付きアクセントを重ねる。
   daySummaryItem: {
     flex: 1,
     backgroundColor: CALENDAR_REFINED.cardBg,
@@ -920,6 +923,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 8,
     gap: 2,
+    borderWidth: 1,
+    borderColor: CALENDAR_REFINED.lineStrong,
     borderLeftWidth: 3,
     ...NESTED_CARD_SHADOW,
   },
