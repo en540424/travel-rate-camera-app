@@ -40,9 +40,6 @@ const OCR_PHOTO_PREVIEW_FRAME_HEIGHT = 110;
 /** 撮影前メイン画面の撮影モード。価格OCR（既定）/ 商品写真（補助） */
 type CaptureMode = 'ocr' | 'photo';
 
-/** 価格OCRモードの表示フェーズ。scanning は CameraPreview 内部 state のため camera に含める。 */
-type Phase = 'camera' | 'scanning' | 'result';
-
 export default function CameraScreen() {
   const insets = useSafeAreaInsets();
   // 保存成功トースト（Alertではない軽量通知）。文言が入ると表示、Toast側で自動的にnullへ戻す。
@@ -222,15 +219,11 @@ export default function CameraScreen() {
   const manualOpen = manualOpenByDefault || manualAdjustExpanded;
   const ocrSuccess = ocrResult != null && ocrResult.prices.length > 0;
 
-  // 表示フェーズ（価格OCRモードのカメラ↔結果確認）。
-  // 'scanning' は CameraPreview 内部 state のため index 側からは観測せず 'camera' に含める
-  // （カメラ表示中＝フッター非表示なので、読み取るCTAを隠す問題は起きない）。
-  // result = ライブカメラを撮影済みプレビューに切替済み（cameraLive=false）かつ OCR結果あり。
-  const phase: Phase = !cameraLive && ocrResult != null ? 'result' : 'camera';
-  const isPriceOcrMode = captureMode === 'ocr';
-  // 固定フッターは「価格OCRモードで結果確認中、かつOCR成功（価格候補あり）」のときだけ。
-  // → カメラ表示中・スキャン中・商品写真モード中・OCR失敗時は出さない。
-  const showFooter = !isWeb && isPriceOcrMode && phase === 'result' && ocrSuccess;
+  // 固定フッターは「入力カード（OCR結果 or 手入力）表示中」は常に使う。
+  // 手入力時だけScrollView内インラインにしていたところ、下タブ/キーボードに隠れて
+  // 保存できない実機不具合が出たため、OCR成功時と同じ「実績のある固定フッター」に統一する。
+  // → カメラ表示中・スキャン中は出さない（showInputCardがfalseのため自動的に非表示）。
+  const showFooter = !isWeb && showInputCard;
   // 価格未選択（＝金額未確定）なら保存ボタンだけ disabled。手入力で金額が入れば canSave で有効化される。
   const saveDisabled = !canSave;
 
@@ -634,13 +627,13 @@ export default function CameraScreen() {
 
   return (
     <View style={styles.screen}>
-      {/* 手入力時（金額・メモ）、キーボード表示で下部の保存ボタンが隠れないための対応。
-          既存のscrollTo系（scrollToManualAdjust等）はキーボード高さを考慮しないため、
-          KeyboardAvoidingViewでスクロール可能領域自体を確保する。OCR成功時の固定フッター・Modalには影響しない。 */}
+      {/* 手入力時（金額・メモ）、キーボード表示で保存フッターが隠れないための対応。
+          保存フッター（saveFooter、position:absolute/bottom:0）もこの内側に置くことで、
+          KeyboardAvoidingViewのpaddingがフッターの位置計算にも反映され、キーボードより上に来る。
+          このタブ画面の直上に他要素はないため keyboardVerticalOffset は既定の0のままでよい。 */}
       <KeyboardAvoidingView
         style={styles.flexOne}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={insets.top}>
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <SafeAreaView style={styles.safe} edges={['top']}>
         <ScrollView
           ref={scrollViewRef}
@@ -1595,10 +1588,10 @@ export default function CameraScreen() {
           </View>
         </ScrollView>
       </SafeAreaView>
-      </KeyboardAvoidingView>
 
-      {/* 価格OCR・結果確認中のみ表示する画面下固定の保存フッター（縦長緩和）。
-          下タブの上に収まる位置。価格未選択でも消さず保存ボタンだけ disabled。保存処理は既存ハンドラを呼ぶだけ。 */}
+      {/* 入力カード（OCR結果 or 手入力）表示中の画面下固定の保存フッター。
+          下タブの上に収まる位置。価格未選択でも消さず保存ボタンだけ disabled。保存処理は既存ハンドラを呼ぶだけ。
+          KeyboardAvoidingView内に置くことで、キーボード表示中もボタンが隠れないようにする。 */}
       {showFooter && (
         <View style={styles.saveFooter}>
           <PrimaryButton
@@ -1612,14 +1605,17 @@ export default function CameraScreen() {
             onPress={handleSaveCandidate}
             disabled={saveDisabled}
           />
-          <TouchableOpacity
-            style={styles.footerNextShot}
-            onPress={handleRescan}
-            activeOpacity={0.7}>
-            <ThemedText style={styles.footerNextShotText}>保存しないで次を撮る →</ThemedText>
-          </TouchableOpacity>
+          {ocrResult != null && (
+            <TouchableOpacity
+              style={styles.footerNextShot}
+              onPress={handleRescan}
+              activeOpacity={0.7}>
+              <ThemedText style={styles.footerNextShotText}>保存しないで次を撮る →</ThemedText>
+            </TouchableOpacity>
+          )}
         </View>
       )}
+      </KeyboardAvoidingView>
 
       {/* 保存写真プレビュー */}
       {pendingPhotoUri != null && Platform.OS !== 'web' && (

@@ -2,7 +2,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { useFocusEffect } from 'expo-router';
 import { Image } from 'expo-image';
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, View, type ImageStyle, type StyleProp } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PhotoModal } from '@/components/photo-modal';
@@ -44,11 +44,22 @@ const FLAG_IMAGES: Partial<Record<CurrencyCode, number>> = {
   JPY: require('@/assets/flags/jp.png') as number,
 };
 
-// 日本・韓国のPNGは正方形に近く（縦横比約1.5）box比率（28×18≒1.56）とほぼ一致するため、
-// contain/coverどちらでもbox一杯まで表示され、より横長な他国旗（米/英/台/タイ/EU）より
-// 大きく見えやすい。他国旗はそのままに、この2通貨だけ表示サイズを少し小さくして収まりを合わせる。
-// PNG自体は一切編集しない。
-const FLAG_IMAGE_COMPACT_CURRENCIES = new Set<CurrencyCode>(['JPY', 'KRW']);
+// 表示styleだけの微調整（PNGは一切編集しない）。
+// JPYは標準サイズのまま触らない。
+// KRWは赤青の丸が相対的に小さく見え他国旗よりごちゃっと見えるため、少しだけ大きめに。
+// USD/GBP/TWD/THB/EURは、日本より自然に見えるよう少しだけ枠内に収めて小さめに。
+const FLAG_IMAGE_LARGE_CURRENCIES = new Set<CurrencyCode>(['KRW']);
+const FLAG_IMAGE_COMPACT_CURRENCIES = new Set<CurrencyCode>(['USD', 'GBP', 'TWD', 'THB', 'EUR']);
+
+function getFlagImageStyle(currency: CurrencyCode | null): StyleProp<ImageStyle> {
+  if (currency != null && FLAG_IMAGE_LARGE_CURRENCIES.has(currency)) {
+    return [styles.flagImage, styles.flagImageLarge];
+  }
+  if (currency != null && FLAG_IMAGE_COMPACT_CURRENCIES.has(currency)) {
+    return [styles.flagImage, styles.flagImageCompact];
+  }
+  return styles.flagImage;
+}
 
 function getDayCurrency(rows: HistoryRow[]): CurrencyCode | null {
   for (const r of rows) return r.currency as CurrencyCode;
@@ -323,10 +334,7 @@ export default function CalendarScreen() {
                             <View style={styles.flagWrapper}>
                               <Image
                                 source={flagImage}
-                                style={[
-                                  styles.flagImage,
-                                  flagCurrency != null && FLAG_IMAGE_COMPACT_CURRENCIES.has(flagCurrency) && styles.flagImageCompact,
-                                ]}
+                                style={getFlagImageStyle(flagCurrency)}
                                 contentFit="cover"
                               />
                             </View>
@@ -754,9 +762,9 @@ const styles = StyleSheet.create({
     // 念のための保険。通常はflagImage/flagImageCompactのサイズで収まる
     overflow: 'hidden',
   },
-  flagImage: { width: 28, height: 18 },
-  // JPY/KRWのみ適用。box比率(28×18)に近い正方形寄りPNGが枠一杯に見えるのを抑える表示上の補正
-  flagImageCompact: { width: 22, height: 15 },
+  flagImage: { width: 28, height: 18 }, // JPYの標準サイズ（触らない）
+  flagImageLarge: { width: 31, height: 20 }, // KRWのみ。他より少しだけ大きく見えるように
+  flagImageCompact: { width: 24, height: 16 }, // USD/GBP/TWD/THB/EURのみ。少しだけ小さく収める
   flagExtra: { fontSize: 9, fontWeight: '700' as const, color: CALENDAR_REFINED.textFaint, lineHeight: 11 },
 
   dotsRow: {
