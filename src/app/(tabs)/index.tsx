@@ -657,7 +657,7 @@ export default function CameraScreen() {
                 </ThemedText>
                 {isJpyMode ? (
                   <View style={[styles.rateChip, styles.rateChipRow]}>
-                    <CurrencyFlagImage currency="JPY" size={14} />
+                    <CurrencyFlagImage currency="JPY" size={14} outlined />
                     <ThemedText style={styles.rateChipText}>JPY 国内</ThemedText>
                   </View>
                 ) : (
@@ -665,7 +665,7 @@ export default function CameraScreen() {
                     style={[styles.rateChip, styles.rateChipRow]}
                     onPress={cycleCurrency}
                     activeOpacity={0.75}>
-                    <CurrencyFlagImage currency={currencyForDisplay} size={14} />
+                    <CurrencyFlagImage currency={currencyForDisplay} size={14} outlined />
                     <ThemedText style={styles.rateChipText} numberOfLines={1}>
                       {rate > 0 ? formatRate(rate, currencyForDisplay) : 'レート未設定'}
                     </ThemedText>

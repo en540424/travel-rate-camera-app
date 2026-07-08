@@ -78,7 +78,7 @@ export function ActiveTripSwitchSheet({ visible, onClose, trips, activeTripId, o
                   )}
                 </View>
                 <View style={styles.rowSubLine}>
-                  <CurrencyFlagImage currency={t.base_currency} size={13} />
+                  <CurrencyFlagImage currency={t.base_currency} size={13} outlined />
                   <ThemedText style={styles.rowSub} numberOfLines={1}>
                     {ratePart}・{moneyPart}
                   </ThemedText>

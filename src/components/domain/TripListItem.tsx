@@ -33,7 +33,7 @@ export function TripListItem({
   return (
     <Pressable onPress={onPress} disabled={onPress == null}>
       <SectionCard padding={spacing.md} style={[styles.container, selected && styles.selected, style]}>
-        <CurrencyFlagImage currency={currency} size={22} />
+        <CurrencyFlagImage currency={currency} size={22} outlined />
         <View style={styles.body}>
           <View style={styles.nameRow}>
             <Text style={styles.name} numberOfLines={1}>

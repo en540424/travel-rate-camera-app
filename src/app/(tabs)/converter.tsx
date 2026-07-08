@@ -161,7 +161,7 @@ export default function ConverterScreen() {
           {/* 旅行カード（旅行名・通貨・レートをまとめて表示） */}
           {isJpyMode ? (
             <View style={styles.tripCard}>
-              <CurrencyFlagImage currency={currency} size={20} />
+              <CurrencyFlagImage currency={currency} size={20} outlined />
               <View style={styles.tripTextWrap}>
                 <ThemedText style={styles.tripName} numberOfLines={1}>
                   {activeTrip.name}
@@ -173,7 +173,7 @@ export default function ConverterScreen() {
             <Pressable
               style={({ pressed }) => [styles.tripCard, pressed && styles.pressed]}
               onPress={() => router.push('/rate-setup')}>
-              <CurrencyFlagImage currency={currency} size={20} />
+              <CurrencyFlagImage currency={currency} size={20} outlined />
               <View style={styles.tripTextWrap}>
                 <ThemedText style={styles.tripName} numberOfLines={1}>
                   {activeTrip.name}

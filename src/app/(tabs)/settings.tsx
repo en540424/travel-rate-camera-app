@@ -94,7 +94,7 @@ export default function SettingsScreen() {
                   </View>
                   {activeTrip.base_currency === 'JPY' ? (
                     <View style={styles.heroCurrencyRow}>
-                      <CurrencyFlagImage currency="JPY" size={13} />
+                      <CurrencyFlagImage currency="JPY" size={13} outlined />
                       <ThemedText style={styles.heroCurrency}>国内</ThemedText>
                     </View>
                   ) : (

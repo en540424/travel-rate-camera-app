@@ -124,7 +124,7 @@ export default function CameraScreen() {
               <View style={styles.contextRow}>
                 {isJpyMode ? (
                   <View style={[styles.modeChip, styles.modeChipRow]}>
-                    <CurrencyFlagImage currency="JPY" size={15} />
+                    <CurrencyFlagImage currency="JPY" size={15} outlined />
                     <ThemedText style={styles.modeChipText}>
                       JPY 国内モード
                     </ThemedText>
@@ -134,7 +134,7 @@ export default function CameraScreen() {
                     style={[styles.modeChip, styles.modeChipRow]}
                     onPress={cycleCurrency}
                     activeOpacity={0.75}>
-                    <CurrencyFlagImage currency={selectedCurrency} size={15} />
+                    <CurrencyFlagImage currency={selectedCurrency} size={15} outlined />
                     <ThemedText style={styles.modeChipText}>
                       {selectedCurrency} → JPY
                     </ThemedText>

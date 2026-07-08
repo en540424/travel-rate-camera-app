@@ -99,7 +99,7 @@ export default function TripListScreen() {
                   <View style={styles.usingBadge}><ThemedText style={styles.usingBadgeText}>使用中</ThemedText></View>
                 </View>
                 <View style={styles.rateFlagRow}>
-                  <CurrencyFlagImage currency={cur} size={14} />
+                  <CurrencyFlagImage currency={cur} size={14} outlined />
                   <ThemedText style={styles.activeRate}>
                     {cur === 'JPY' ? '国内' : `¥${active.manual_rate}`}
                   </ThemedText>
@@ -169,7 +169,7 @@ export default function TripListScreen() {
                       {archived && <View style={styles.endBadge}><ThemedText style={styles.endBadgeText}>終了</ThemedText></View>}
                     </View>
                     <View style={styles.rateFlagRow}>
-                      <CurrencyFlagImage currency={cur} size={13} />
+                      <CurrencyFlagImage currency={cur} size={13} outlined />
                       {cur !== 'JPY' && (
                         <ThemedText style={styles.otherRate}>¥{t.manual_rate}</ThemedText>
                       )}

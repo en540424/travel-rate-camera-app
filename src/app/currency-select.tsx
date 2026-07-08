@@ -56,7 +56,7 @@ export default function CurrencySelectScreen() {
                 {i > 0 && <View style={styles.sep} />}
                 <Pressable onPress={() => pick(code)} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
                   <View style={styles.flagBox}>
-                    <CurrencyFlagImage currency={code} size={22} />
+                    <CurrencyFlagImage currency={code} size={22} outlined />
                   </View>
                   <View style={styles.rowText}>
                     <ThemedText style={styles.code}>{code}</ThemedText>

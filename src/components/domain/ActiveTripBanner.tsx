@@ -29,7 +29,7 @@ export function ActiveTripBanner({
   return (
     <Pressable onPress={onPress} disabled={onPress == null} style={[styles.container, style]}>
       <View style={styles.header}>
-        <CurrencyFlagImage currency={currency} size={20} />
+        <CurrencyFlagImage currency={currency} size={20} outlined />
         <Text style={styles.name} numberOfLines={1}>
           {tripName}
         </Text>

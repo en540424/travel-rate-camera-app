@@ -15,7 +15,7 @@ export interface RateInfoRowProps {
 export function RateInfoRow({ currency, rate, style }: RateInfoRowProps) {
   return (
     <View style={[styles.container, style]}>
-      <CurrencyFlagImage currency={currency} size={16} />
+      <CurrencyFlagImage currency={currency} size={16} outlined />
       <Text style={styles.text}>{formatRate(rate, currency)}</Text>
     </View>
   );

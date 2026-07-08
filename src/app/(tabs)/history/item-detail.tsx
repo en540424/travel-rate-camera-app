@@ -142,7 +142,7 @@ export default function ItemDetailScreen() {
           <View style={styles.infoRow}>
             <ThemedText style={styles.infoLabel}>通貨</ThemedText>
             <View style={styles.infoValueRow}>
-              <CurrencyFlagImage currency={item.currency} size={14} />
+              <CurrencyFlagImage currency={item.currency} size={14} outlined />
               <ThemedText style={styles.infoValue}>
                 {item.currency === 'JPY' ? '日本円' : item.currency}
               </ThemedText>

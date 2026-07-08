@@ -68,7 +68,7 @@ export default function RateSetupScreen() {
               <ThemedText style={styles.heroTrip} numberOfLines={1}>{activeTrip.name}</ThemedText>
               {isJpy ? (
                 <View style={styles.heroDirRow}>
-                  <CurrencyFlagImage currency="JPY" size={13} />
+                  <CurrencyFlagImage currency="JPY" size={13} outlined />
                   <ThemedText style={styles.heroDir}>国内</ThemedText>
                 </View>
               ) : (

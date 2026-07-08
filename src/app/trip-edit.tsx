@@ -193,7 +193,7 @@ export default function TripEditScreen() {
               const selected = currency === code;
               return (
                 <Pressable key={code} style={[styles.chip, styles.chipRow, selected && styles.chipSelected]} onPress={() => setCurrency(code)}>
-                  <CurrencyFlagImage currency={code} size={14} />
+                  <CurrencyFlagImage currency={code} size={14} outlined />
                   <ThemedText style={[styles.chipText, selected && styles.chipTextSelected]}>{code}</ThemedText>
                 </Pressable>
               );

@@ -414,7 +414,7 @@ export default function AnalyticsScreen() {
                 {tripSummary.map((t, i) => {
                   return (
                     <View key={i} style={[styles.tripRow, i > 0 && styles.tripRowBorder]}>
-                      <CurrencyFlagImage currency={t.currency as CurrencyCode} size={16} />
+                      <CurrencyFlagImage currency={t.currency as CurrencyCode} size={16} outlined />
                       <ThemedText style={styles.tripName} numberOfLines={1}>{t.name}</ThemedText>
                       <View style={styles.tripRight}>
                         <ThemedText style={styles.tripAmount}>{formatJpy(t.purchased)}</ThemedText>

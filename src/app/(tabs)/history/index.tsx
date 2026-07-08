@@ -146,7 +146,7 @@ export default function HistoryScreen() {
           {activeTrip.name}
         </ThemedText>
         <View style={[styles.rateChip, styles.rateChipRow]}>
-          <CurrencyFlagImage currency={activeTrip.base_currency} size={14} />
+          <CurrencyFlagImage currency={activeTrip.base_currency} size={14} outlined />
           <ThemedText style={styles.rateChipText} numberOfLines={1}>
             {formatRate(tripRate, activeTrip.base_currency)}
           </ThemedText>
