@@ -45,18 +45,15 @@ const FLAG_IMAGES: Partial<Record<CurrencyCode, number>> = {
 };
 
 // 表示styleだけの微調整（PNGは一切編集しない）。
-// JPYは標準サイズのまま触らない。
-// KRWは赤青の丸が相対的に小さく見え他国旗よりごちゃっと見えるため、少しだけ大きめに。
-// USD/GBP/TWD/THB/EURは、日本より自然に見えるよう少しだけ枠内に収めて小さめに。
-const FLAG_IMAGE_LARGE_CURRENCIES = new Set<CurrencyCode>(['KRW']);
-const FLAG_IMAGE_COMPACT_CURRENCIES = new Set<CurrencyCode>(['USD', 'GBP', 'TWD', 'THB', 'EUR']);
+// 外枠（flagWrapper）は全通貨で同じ固定サイズにする。米/英/台/タイ/EUは現状の見え方
+// （枠内に上下左右の余白がある状態）を標準とし、日本/韓国のPNGだけが正方形に近く
+// 標準サイズだと枠いっぱいに見えてしまうため、この2通貨だけ画像サイズを一段小さくして
+// 同じ外枠の中に余白ができるようにする（外枠自体・他5通貨のサイズは変えない）。
+const FLAG_IMAGE_INSET_CURRENCIES = new Set<CurrencyCode>(['JPY', 'KRW']);
 
 function getFlagImageStyle(currency: CurrencyCode | null): StyleProp<ImageStyle> {
-  if (currency != null && FLAG_IMAGE_LARGE_CURRENCIES.has(currency)) {
-    return [styles.flagImage, styles.flagImageLarge];
-  }
-  if (currency != null && FLAG_IMAGE_COMPACT_CURRENCIES.has(currency)) {
-    return [styles.flagImage, styles.flagImageCompact];
+  if (currency != null && FLAG_IMAGE_INSET_CURRENCIES.has(currency)) {
+    return styles.flagImageInset;
   }
   return styles.flagImage;
 }
@@ -754,17 +751,19 @@ const styles = StyleSheet.create({
 
   dayFlags: { fontSize: 30, lineHeight: 34 },
   flagWrapper: {
+    // 外枠は全通貨共通の固定サイズ（通貨によって枠自体が大きくなったり小さくなったりしない）
+    width: 32,
+    height: 21,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: CALENDAR_REFINED.flagBorder,
     borderRadius: 4,
-    padding: 3,
-    // 念のための保険。通常はflagImage/flagImageCompactのサイズで収まる
+    alignItems: 'center',
+    justifyContent: 'center',
     overflow: 'hidden',
   },
-  flagImage: { width: 28, height: 18 }, // JPYの標準サイズ（触らない）
-  flagImageLarge: { width: 31, height: 20 }, // KRWのみ。他より少しだけ大きく見えるように
-  flagImageCompact: { width: 24, height: 16 }, // USD/GBP/TWD/THB/EURのみ。少しだけ小さく収める
+  flagImage: { width: 26, height: 17 }, // USD/GBP/TWD/THB/EUR・現状の見え方（枠内に余白あり）
+  flagImageInset: { width: 20, height: 13 }, // JPY/KRWのみ。同じ外枠の中で少し内側に収める
   flagExtra: { fontSize: 9, fontWeight: '700' as const, color: CALENDAR_REFINED.textFaint, lineHeight: 11 },
 
   dotsRow: {

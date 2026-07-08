@@ -2,8 +2,8 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Keyboard, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CameraPreview } from '@/components/camera/CameraPreview';
@@ -203,6 +203,23 @@ export default function CameraScreen() {
   const showInputCard = ocrResult != null || showManualInput;
 
   const isWeb = Platform.OS === 'web';
+
+  // 保存フッター（saveFooter）がキーボードに隠れないための実キーボード高さ追跡。
+  // このタブ画面はreact-native-screens管理下にあり、KeyboardAvoidingViewの
+  // 自動パディングが効かなかったため、Keyboardイベントから高さを取得し
+  // saveFooterのbottomへ直接反映する（確実に動く手段に切り替え）。
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    if (isWeb) return;
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => setKeyboardHeight(e.endCoordinates.height));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [isWeb]);
 
   // 撮影後に見せる「読み取った値札」プレビュー画像（ヘッダー小サムネ／拡大モーダル用）。
   // 初回スキャンはpendingPhotoUriに、再スキャン以降はocrPhotoUriに入る（handleOcrResultでOCR完了時に確定）。
@@ -627,13 +644,6 @@ export default function CameraScreen() {
 
   return (
     <View style={styles.screen}>
-      {/* 手入力時（金額・メモ）、キーボード表示で保存フッターが隠れないための対応。
-          保存フッター（saveFooter、position:absolute/bottom:0）もこの内側に置くことで、
-          KeyboardAvoidingViewのpaddingがフッターの位置計算にも反映され、キーボードより上に来る。
-          このタブ画面の直上に他要素はないため keyboardVerticalOffset は既定の0のままでよい。 */}
-      <KeyboardAvoidingView
-        style={styles.flexOne}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <SafeAreaView style={styles.safe} edges={['top']}>
         <ScrollView
           ref={scrollViewRef}
@@ -1591,9 +1601,9 @@ export default function CameraScreen() {
 
       {/* 入力カード（OCR結果 or 手入力）表示中の画面下固定の保存フッター。
           下タブの上に収まる位置。価格未選択でも消さず保存ボタンだけ disabled。保存処理は既存ハンドラを呼ぶだけ。
-          KeyboardAvoidingView内に置くことで、キーボード表示中もボタンが隠れないようにする。 */}
+          bottomにkeyboardHeightを直接反映し、キーボード表示中も隠れないようにする。 */}
       {showFooter && (
-        <View style={styles.saveFooter}>
+        <View style={[styles.saveFooter, { bottom: keyboardHeight }]}>
           <PrimaryButton
             title={
               canSave
@@ -1615,7 +1625,6 @@ export default function CameraScreen() {
           )}
         </View>
       )}
-      </KeyboardAvoidingView>
 
       {/* 保存写真プレビュー */}
       {pendingPhotoUri != null && Platform.OS !== 'web' && (
@@ -1746,7 +1755,6 @@ const styles = StyleSheet.create({
     backgroundColor: color.bgScreen, // v2 地色（#F4F6F5）
   },
   safe: { flex: 1 },
-  flexOne: { flex: 1 },
   scrollView: { flex: 1 },
   scroll: {
     flexGrow: 1,
