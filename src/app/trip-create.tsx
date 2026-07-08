@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import type { CurrencyCode } from '@/constants/currencies';
@@ -92,6 +92,7 @@ export default function TripCreateScreen() {
 
   return (
     <View style={styles.screen}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {/* 旅行名 */}
         <View style={styles.field}>
@@ -216,12 +217,14 @@ export default function TripCreateScreen() {
         </Pressable>
         {!canCreate && <ThemedText style={styles.footerHint}>未入力の項目があります</ThemedText>}
       </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: color.bgScreen },
+  flex: { flex: 1 },
   scroll: {
     padding: 18,
     paddingBottom: 40,

@@ -1746,7 +1746,9 @@ const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
     paddingTop: 10,
-    paddingBottom: 64, // 下タブとの距離（安全側。窮屈にならない範囲で圧縮）
+    // 手入力時、下部の保存ボタンが下タブ/ホームインジケータに隠れないための余白。
+    // 64だと下タブの実高さを下回り、保存ボタンが隠れてスクロールでも逃げ場がなかったため引き上げた。
+    paddingBottom: 120,
     paddingHorizontal: 15, // v2 基準の画面左右余白
   },
   scrollWithFooter: {

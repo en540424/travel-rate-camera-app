@@ -315,7 +315,7 @@ export default function CalendarScreen() {
                         <View style={styles.dayCellFlagArea}>
                           {flagImage != null ? (
                             <View style={styles.flagWrapper}>
-                              <Image source={flagImage} style={styles.flagImage} contentFit="cover" />
+                              <Image source={flagImage} style={styles.flagImage} contentFit="contain" />
                             </View>
                           ) : (
                             <ThemedText style={styles.dayFlags}>{CURRENCIES[flagCurrency].flag}</ThemedText>
@@ -737,9 +737,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: CALENDAR_REFINED.flagBorder,
     borderRadius: 4,
-    padding: 3,
+    padding: 4,
     // 国旗ごとにPNGの縦横比が異なるため、overflow: 'hidden' がないと
-    // 一部の国旗（日本など）だけ枠からはみ出して大きく見えることがあった
+    // 一部の国旗（日本など）だけ枠からはみ出して大きく見えることがあった。
+    // contentFit="contain"と合わせ、どの国旗も枠内に収まって見えるようにする
     overflow: 'hidden',
   },
   flagImage: { width: 28, height: 18 },
