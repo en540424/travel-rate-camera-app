@@ -458,7 +458,12 @@ export default function CalendarScreen() {
                             const isPurchased = item.is_purchased === 1;
                             const c = CURRENCIES[item.currency as CurrencyCode];
                             return (
-                              <View key={item.id} style={styles.historyCard}>
+                              <View
+                                key={item.id}
+                                style={[
+                                  styles.historyCard,
+                                  isPurchased ? styles.historyCardPurchased : styles.historyCardCandidate,
+                                ]}>
                                 <View style={item.image_uri ? styles.calCardRow : undefined}>
                                   {item.image_uri && (
                                     <Pressable
@@ -949,7 +954,8 @@ const styles = StyleSheet.create({
 
   cardList: { gap: 8 },
 
-  // 商品カード（他ページと同じく、枠線だけでなく薄い影で浮かせる）
+  // 商品カード（他ページと同じく、枠線だけでなく薄い影で浮かせる）。
+  // 選択日合計カードと同じ考え方で、左端だけ購入済み/候補の色アクセントを重ねる。
   historyCard: {
     backgroundColor: CALENDAR_REFINED.cardBg,
     borderRadius: radius.chip,
@@ -957,8 +963,11 @@ const styles = StyleSheet.create({
     gap: 6,
     borderWidth: 1,
     borderColor: CALENDAR_REFINED.lineStrong,
+    borderLeftWidth: 3,
     ...NESTED_CARD_SHADOW,
   },
+  historyCardPurchased: { borderLeftColor: CALENDAR_REFINED.purchased },
+  historyCardCandidate: { borderLeftColor: CALENDAR_REFINED.candidate },
   calCardRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
