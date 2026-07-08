@@ -10,7 +10,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRef, useState } from 'react';
 
 import { ThemedText } from '@/components/themed-text';
-import { PriceResultCard } from '@/components/domain';
 import { EmptyState, PrimaryButton } from '@/components/ui';
 import type { ConversionDirection, CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES } from '@/constants/currencies';
@@ -20,7 +19,7 @@ import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { color, radius, shadow, spacing } from '@/theme/tokens';
 import { convert } from '@/utils/currency';
-import { formatJpy, formatRate } from '@/utils/format';
+import { formatForeign, formatJpy, formatRate } from '@/utils/format';
 
 async function copySelectedImageToPhotos(uri: string): Promise<string | undefined> {
   const docsDir = FileSystem.documentDirectory;
@@ -250,20 +249,26 @@ export default function ConverterScreen() {
                   </ThemedText>
                 </View>
               ) : (
-                <>
-                  <PriceResultCard
-                    label={isJpyMode ? 'そのまま保存' : '日本円換算'}
-                    jpyAmount={result}
-                    foreignAmount={isJpyMode ? undefined : amount}
-                    currency={isJpyMode ? undefined : currency}
-                    rate={isJpyMode ? undefined : effectiveRate}
-                  />
+                // 金額未入力時のプレースホルダーと高さを揃えるため、PriceResultCard（48pxの
+                // 大きな共通表示）は使わず、逆算モードと同じ圧縮済みstyle（resultAmount等）で表示する。
+                <View style={styles.resultReverse}>
+                  <ThemedText style={styles.resultLabel}>
+                    {isJpyMode ? 'そのまま保存' : '日本円換算'}
+                  </ThemedText>
+                  <ThemedText
+                    style={styles.resultAmount}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.5}>
+                    {formatJpy(result)}
+                  </ThemedText>
                   {!isJpyMode && (
-                    <ThemedText style={styles.resultHint} numberOfLines={1}>
-                      この旅行のレートで換算しています
+                    <ThemedText style={styles.resultRate} numberOfLines={1}>
+                      {formatForeign(amount, currency)}
+                      {effectiveRate > 0 ? `  ・  ${formatRate(effectiveRate, currency)}` : ''}
                     </ThemedText>
                   )}
-                </>
+                </View>
               )
             ) : (
               <ThemedText style={styles.resultPlaceholder}>
@@ -433,7 +438,6 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   resultRate: { fontSize: 12, fontWeight: '500', color: color.primaryDark, opacity: 0.7 },
-  resultHint: { fontSize: 11.5, fontWeight: '500', color: color.primaryDark, opacity: 0.7, marginTop: spacing.sm },
   resultPlaceholder: { fontSize: 13, fontWeight: '500', color: color.muted, textAlign: 'center' },
   useToCameraBtn: {
     height: 48,
