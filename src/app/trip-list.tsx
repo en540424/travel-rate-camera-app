@@ -91,7 +91,11 @@ export default function TripListScreen() {
               <View style={styles.budgetRow}>
                 <View>
                   <ThemedText style={styles.budgetLabel}>残り予算</ThemedText>
-                  <ThemedText style={styles.budgetValue}>
+                  <ThemedText
+                    style={styles.budgetValue}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.6}>
                     {active.budget_jpy > 0 ? formatJpy(remaining) : '予算未設定'}
                   </ThemedText>
                 </View>
@@ -138,7 +142,10 @@ export default function TripListScreen() {
               const remaining = Math.max(0, t.budget_jpy - s.used);
               const cur = t.base_currency;
               return (
-                <View key={t.id} style={[styles.otherCard, archived && styles.otherCardArchived]}>
+                <Pressable
+                  key={t.id}
+                  onPress={() => router.push({ pathname: '/trip-edit', params: { id: String(t.id) } })}
+                  style={({ pressed }) => [styles.otherCard, archived && styles.otherCardArchived, pressed && styles.pressed]}>
                   <View style={styles.otherTop}>
                     <View style={styles.nameWrap}>
                       <ThemedText style={styles.otherName} numberOfLines={1}>{t.name}</ThemedText>
@@ -154,14 +161,16 @@ export default function TripListScreen() {
                   <ThemedText style={styles.otherMeta}>
                     候補{s.candidateCount}・購入{s.purchasedCount}{monthLabel(t) !== '' ? `・${monthLabel(t)}` : ''}
                   </ThemedText>
-                  {!archived && (
+                  {archived ? (
+                    <ThemedText style={styles.archivedHint}>タップして詳細・復元</ThemedText>
+                  ) : (
                     <Pressable
                       onPress={() => switchTrip(t.id)}
                       style={({ pressed }) => [styles.useBtn, pressed && styles.pressed]}>
                       <ThemedText style={styles.useBtnText}>この旅行を使う</ThemedText>
                     </Pressable>
                   )}
-                </View>
+                </Pressable>
               );
             })}
           </>
@@ -193,10 +202,10 @@ const styles = StyleSheet.create({
   activeName: { fontSize: 18, fontWeight: '700', color: color.text, flexShrink: 1 },
   usingBadge: { backgroundColor: color.primary, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 2 },
   usingBadgeText: { fontSize: 11, fontWeight: '700', color: '#FFFFFF' },
-  activeRate: { fontSize: 12.5, fontWeight: '700', color: color.muted, fontVariant: ['tabular-nums'] },
+  activeRate: { fontSize: 12.5, lineHeight: 17, fontWeight: '700', color: color.muted, fontVariant: ['tabular-nums'] },
   budgetRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   budgetLabel: { fontSize: 12, fontWeight: '700', color: color.primary, marginBottom: 2 },
-  budgetValue: { fontSize: 30, fontWeight: '700', color: color.text, letterSpacing: -0.8, fontVariant: ['tabular-nums'] },
+  budgetValue: { fontSize: 30, lineHeight: 36, fontWeight: '700', color: color.text, letterSpacing: -0.4, fontVariant: ['tabular-nums'] },
   budgetMeta: { alignItems: 'flex-end', gap: 2 },
   budgetMetaText: { fontSize: 12, fontWeight: '500', color: color.muted, fontVariant: ['tabular-nums'] },
   statBoxes: { flexDirection: 'row', gap: 10 },
@@ -204,7 +213,7 @@ const styles = StyleSheet.create({
   statBoxCandidate: { backgroundColor: color.candidateSoft },
   statBoxPurchased: { backgroundColor: color.primarySoft },
   statBoxLabel: { fontSize: 11.5, fontWeight: '700', color: color.body },
-  statBoxValue: { fontSize: 15, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  statBoxValue: { fontSize: 15, lineHeight: 20, fontWeight: '700', fontVariant: ['tabular-nums'] },
   activeActions: { flexDirection: 'row', gap: 10 },
   actionBtn: { flex: 1, borderRadius: radius.button, borderWidth: 1.5, borderColor: color.inputBorder, paddingVertical: 11, alignItems: 'center' },
   actionBtnText: { fontSize: 14, fontWeight: '700', color: color.body },
@@ -216,9 +225,10 @@ const styles = StyleSheet.create({
   otherName: { fontSize: 15, fontWeight: '700', color: color.text, flexShrink: 1 },
   endBadge: { backgroundColor: color.line2, borderRadius: radius.pill, paddingHorizontal: 7, paddingVertical: 1 },
   endBadgeText: { fontSize: 10.5, fontWeight: '700', color: color.muted },
-  otherRate: { fontSize: 12, fontWeight: '600', color: color.muted, fontVariant: ['tabular-nums'] },
-  otherBudget: { fontSize: 16, fontWeight: '700', color: color.text, fontVariant: ['tabular-nums'] },
+  otherRate: { fontSize: 12, lineHeight: 16, fontWeight: '600', color: color.muted, fontVariant: ['tabular-nums'] },
+  otherBudget: { fontSize: 16, lineHeight: 21, fontWeight: '700', color: color.text, fontVariant: ['tabular-nums'] },
   otherMeta: { fontSize: 12, fontWeight: '500', color: color.muted },
+  archivedHint: { fontSize: 11.5, fontWeight: '600', color: color.muted, marginTop: 2 },
   useBtn: { backgroundColor: color.primary, borderRadius: radius.button, paddingVertical: 11, alignItems: 'center', marginTop: 4 },
   useBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
   pressed: { opacity: 0.85 },
