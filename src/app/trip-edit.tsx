@@ -10,6 +10,8 @@ import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { color, radius, shadow } from '@/theme/tokens';
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 export default function TripEditScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
   const id = params.id != null ? parseInt(params.id, 10) : NaN;
@@ -23,6 +25,8 @@ export default function TripEditScreen() {
   const [currency, setCurrency] = useState<CurrencyCode>('USD');
   const [rate, setRate] = useState('');
   const [budget, setBudget] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [makeActive, setMakeActive] = useState(false);
   const initedRef = useRef<number | null>(null);
   const origCurrencyRef = useRef<CurrencyCode>('USD');
@@ -35,6 +39,8 @@ export default function TripEditScreen() {
       origCurrencyRef.current = trip.base_currency;
       setRate(trip.manual_rate > 0 ? String(trip.manual_rate) : '');
       setBudget(trip.budget_jpy > 0 ? String(trip.budget_jpy) : '');
+      setStartDate(trip.started_at ?? '');
+      setEndDate(trip.ended_at ?? '');
       setMakeActive(trip.is_active === 1);
     }
   }, [trip]);
@@ -54,6 +60,29 @@ export default function TripEditScreen() {
   const canSave = name.trim() !== '' && (isJpy || parseFloat(rate) > 0);
   const isAlreadyActive = activeTrip?.id === trip.id;
 
+  /** 期間の入力チェック。問題があればAlertを出してnullを返す（保存はしない） */
+  function validateDates(): { started_at: string | null; ended_at: string | null } | null {
+    const s = startDate.trim();
+    const e = endDate.trim();
+    if (s !== '' && !DATE_RE.test(s)) {
+      Alert.alert('日付を確認してください', '開始日はYYYY-MM-DD形式で入力してください（例：2026-06-20）。', [{ text: 'OK' }]);
+      return null;
+    }
+    if (e !== '' && !DATE_RE.test(e)) {
+      Alert.alert('日付を確認してください', '終了日はYYYY-MM-DD形式で入力してください（例：2026-06-25）。', [{ text: 'OK' }]);
+      return null;
+    }
+    if (e !== '' && s === '') {
+      Alert.alert('開始日を確認してください', '終了日を設定する場合は、開始日も入力してください。', [{ text: 'OK' }]);
+      return null;
+    }
+    if (s !== '' && e !== '' && e < s) {
+      Alert.alert('終了日を確認してください', '終了日は開始日以降にしてください。', [{ text: 'OK' }]);
+      return null;
+    }
+    return { started_at: s === '' ? null : s, ended_at: e === '' ? null : e };
+  }
+
   async function doSave() {
     const nm = name.trim();
     if (!nm) return;
@@ -61,10 +90,19 @@ export default function TripEditScreen() {
     const r = cur === 'JPY' ? 0 : parseFloat(rate) || 0;
     if (cur !== 'JPY' && r <= 0) return;
     const bud = parseFloat(budget) || 0;
+    const dates = validateDates();
+    if (dates == null) return;
     // 保存失敗時に何も表示されない箇所があったため try/catch + Alert を追加（P0-08）。
     // 保存ロジック本体（editTrip/saveRate/switchTrip）は変更しない。
     try {
-      await editTrip(id, { name: nm, budget_jpy: bud, base_currency: cur, manual_rate: r });
+      await editTrip(id, {
+        name: nm,
+        budget_jpy: bud,
+        base_currency: cur,
+        manual_rate: r,
+        started_at: dates.started_at,
+        ended_at: dates.ended_at,
+      });
       if (cur !== 'JPY' && r > 0) await saveRate(cur, r);
       if (makeActive && activeTrip?.id !== id) await switchTrip(id);
       router.back();
@@ -177,6 +215,34 @@ export default function TripEditScreen() {
           </View>
         </View>
 
+        <View style={styles.field}>
+          <ThemedText style={styles.label}>期間（任意）</ThemedText>
+          <View style={styles.dateRow}>
+            <TextInput
+              style={[styles.input, styles.dateInput]}
+              value={startDate}
+              onChangeText={setStartDate}
+              placeholder="開始日 2026-06-20"
+              placeholderTextColor={color.faint2}
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={[styles.input, styles.dateInput]}
+              value={endDate}
+              onChangeText={setEndDate}
+              placeholder="終了日 2026-06-25"
+              placeholderTextColor={color.faint2}
+              autoCapitalize="none"
+            />
+          </View>
+          {endDate.trim() !== '' && (
+            <Pressable onPress={() => setEndDate('')} style={styles.clearDateBtn}>
+              <ThemedText style={styles.clearDateText}>終了日を設定しない（クリア）</ThemedText>
+            </Pressable>
+          )}
+          <ThemedText style={styles.dateHint}>空欄のままでも保存できます。設定する場合はYYYY-MM-DD形式で入力してください。</ThemedText>
+        </View>
+
         {/* アクティブ切替（アーカイブ済みの旅行はis_active整合性のため対象外） */}
         {trip.archived_at == null && (
           <Pressable
@@ -238,6 +304,11 @@ const styles = StyleSheet.create({
   budgetRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1.5, borderColor: color.inputBorder, borderRadius: radius.chip, paddingHorizontal: 14, backgroundColor: color.card },
   budgetPrefix: { fontSize: 18, fontWeight: '700', color: color.body },
   budgetInput: { flex: 1, fontSize: 16, lineHeight: 22, fontWeight: '600', color: color.text, paddingVertical: 13, fontVariant: ['tabular-nums'] },
+  dateRow: { flexDirection: 'row', gap: 10 },
+  dateInput: { flex: 1, fontSize: 13 },
+  clearDateBtn: { alignSelf: 'flex-start', paddingVertical: 4 },
+  clearDateText: { fontSize: 12.5, fontWeight: '600', color: color.primaryDark },
+  dateHint: { fontSize: 12, fontWeight: '500', color: color.muted },
   activeToggle: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12,
     backgroundColor: color.primarySoft2, borderRadius: radius.card, borderWidth: 1, borderColor: color.primaryBorder, padding: 14,

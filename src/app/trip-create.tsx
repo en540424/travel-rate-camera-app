@@ -12,6 +12,12 @@ import { formatJpy } from '@/utils/format';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** YYYY-MM-DD（ローカル日付。UTC変換によるズレを避けるため手組みする） */
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export default function TripCreateScreen() {
   const { createTrip, editTrip } = useTrips();
   const selectedCurrency = useSettingsStore((s) => s.selectedCurrency);
@@ -20,7 +26,7 @@ export default function TripCreateScreen() {
   const [currency, setCurrency] = useState<CurrencyCode>(selectedCurrency);
   const [rate, setRate] = useState('');
   const [budget, setBudget] = useState('');
-  const [startDate, setStartDate] = useState('');
+  const [startDate, setStartDate] = useState(todayStr());
   const [endDate, setEndDate] = useState('');
 
   const isJpy = currency === 'JPY';
@@ -28,6 +34,29 @@ export default function TripCreateScreen() {
   const canCreate = name.trim() !== '' && (isJpy || rateNum > 0);
 
   const previewJpy = !isJpy && rateNum > 0 ? Math.round(10 * rateNum) : null;
+
+  /** 期間の入力チェック。問題があればAlertを出してnullを返す（保存はしない） */
+  function validateDates(): { started_at: string | null; ended_at: string | null } | null {
+    const s = startDate.trim();
+    const e = endDate.trim();
+    if (s !== '' && !DATE_RE.test(s)) {
+      Alert.alert('日付を確認してください', '開始日はYYYY-MM-DD形式で入力してください（例：2026-06-20）。', [{ text: 'OK' }]);
+      return null;
+    }
+    if (e !== '' && !DATE_RE.test(e)) {
+      Alert.alert('日付を確認してください', '終了日はYYYY-MM-DD形式で入力してください（例：2026-06-25）。', [{ text: 'OK' }]);
+      return null;
+    }
+    if (e !== '' && s === '') {
+      Alert.alert('開始日を確認してください', '終了日を設定する場合は、開始日も入力してください。', [{ text: 'OK' }]);
+      return null;
+    }
+    if (s !== '' && e !== '' && e < s) {
+      Alert.alert('終了日を確認してください', '終了日は開始日以降にしてください。', [{ text: 'OK' }]);
+      return null;
+    }
+    return { started_at: s === '' ? null : s, ended_at: e === '' ? null : e };
+  }
 
   async function handleCreate() {
     const nm = name.trim();
@@ -37,19 +66,17 @@ export default function TripCreateScreen() {
     if (cur !== 'JPY' && r <= 0) return;
     const bud = parseFloat(budget) || 0;
 
+    const dates = validateDates();
+    if (dates == null) return;
+
     // 保存失敗時に何も表示されない箇所があったため try/catch + Alert を追加（P0-08）。
     // 保存ロジック本体（createTrip/editTrip）は変更しない。
     try {
       const trip = await createTrip(nm, bud, cur, r);
 
       // 開始日 / 終了日 は既存 editTrip で設定（任意・スキーマ変更なし）
-      const s = startDate.trim();
-      const e = endDate.trim();
-      const dateFields: { started_at?: string; ended_at?: string } = {};
-      if (DATE_RE.test(s)) dateFields.started_at = s;
-      if (DATE_RE.test(e)) dateFields.ended_at = e;
-      if (Object.keys(dateFields).length > 0) {
-        await editTrip(trip.id, dateFields);
+      if (dates.started_at != null || dates.ended_at != null) {
+        await editTrip(trip.id, { started_at: dates.started_at, ended_at: dates.ended_at });
       }
 
       router.replace('/trip-created');
@@ -164,6 +191,12 @@ export default function TripCreateScreen() {
               autoCapitalize="none"
             />
           </View>
+          {endDate.trim() !== '' && (
+            <Pressable onPress={() => setEndDate('')} style={styles.clearDateBtn}>
+              <ThemedText style={styles.clearDateText}>終了日を設定しない（クリア）</ThemedText>
+            </Pressable>
+          )}
+          <ThemedText style={styles.hint}>終了日は空欄のままでも作成できます。設定する場合はYYYY-MM-DD形式で入力してください。</ThemedText>
         </View>
       </ScrollView>
 
@@ -260,6 +293,8 @@ const styles = StyleSheet.create({
   hint: { fontSize: 12, fontWeight: '500', color: color.muted },
   dateRow: { flexDirection: 'row', gap: 10 },
   dateInput: { flex: 1, fontSize: 13 },
+  clearDateBtn: { alignSelf: 'flex-start', paddingVertical: 4 },
+  clearDateText: { fontSize: 12.5, fontWeight: '600', color: color.primaryDark },
   footer: {
     paddingHorizontal: 18,
     paddingTop: 12,
