@@ -503,8 +503,9 @@ export default function CalendarScreen() {
                                           </ThemedText>
                                         </View>
                                       </View>
-                                      {/* レート（補助情報）を右上、購入済み/候補バッジをその下に配置し、
-                                          左の金額ブロックと視線が交差しないようにまとめる。 */}
+                                      {/* レート（補助情報）→ 購入済み/候補バッジ → 削除を右側で縦に
+                                          まとめる。本文側のメモの有無・長さに引っ張られないよう、
+                                          この3つは cardTop 内の右カラムとして完結させる。 */}
                                       <View style={styles.cardTopRight}>
                                         <ThemedText style={styles.cardRate} numberOfLines={1}>
                                           {formatRate(item.rate_used, item.currency)}
@@ -526,6 +527,9 @@ export default function CalendarScreen() {
                                             {isPurchased ? '✓ 購入済み' : '候補'}
                                           </ThemedText>
                                         </Pressable>
+                                        <Pressable onPress={() => handleDeleteItem(item)} hitSlop={8}>
+                                          <ThemedText style={styles.deleteLink}>削除</ThemedText>
+                                        </Pressable>
                                       </View>
                                     </View>
 
@@ -535,12 +539,6 @@ export default function CalendarScreen() {
                                       </View>
                                     ) : null}
                                   </View>
-                                </View>
-
-                                <View style={styles.cardFooter}>
-                                  <Pressable onPress={() => handleDeleteItem(item)} hitSlop={8}>
-                                    <ThemedText style={styles.deleteLink}>削除</ThemedText>
-                                  </Pressable>
                                 </View>
                               </View>
                             );
@@ -1050,11 +1048,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // レートを右上（cardTopRight）へ移したため、削除ボタンのみを右寄せで表示する。
-  cardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-  },
   cardRate: {
     fontSize: 11,
     color: CALENDAR_REFINED.textMuted,
