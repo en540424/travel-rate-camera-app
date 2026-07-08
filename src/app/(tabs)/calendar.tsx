@@ -503,9 +503,9 @@ export default function CalendarScreen() {
                                           </ThemedText>
                                         </View>
                                       </View>
-                                      {/* レート（補助情報）→ 購入済み/候補バッジ → 削除を右側で縦に
-                                          まとめる。本文側のメモの有無・長さに引っ張られないよう、
-                                          この3つは cardTop 内の右カラムとして完結させる。 */}
+                                      {/* レート（補助情報）と購入済み/候補バッジだけを右側で縦にまとめる。
+                                          削除ボタンはここには置かず、下のメモ行の右端に配置する
+                                          （メモの有無で縦に段が増減しないように、上段はこの2つで完結させる）。 */}
                                       <View style={styles.cardTopRight}>
                                         <ThemedText style={styles.cardRate} numberOfLines={1}>
                                           {formatRate(item.rate_used, item.currency)}
@@ -527,17 +527,26 @@ export default function CalendarScreen() {
                                             {isPurchased ? '✓ 購入済み' : '候補'}
                                           </ThemedText>
                                         </Pressable>
-                                        <Pressable onPress={() => handleDeleteItem(item)} hitSlop={8}>
-                                          <ThemedText style={styles.deleteLink}>削除</ThemedText>
-                                        </Pressable>
                                       </View>
                                     </View>
 
-                                    {item.memo ? (
-                                      <View style={styles.memoChip}>
-                                        <ThemedText style={styles.memoChipText}>{item.memo}</ThemedText>
-                                      </View>
-                                    ) : null}
+                                    {/* 下段：メモ（あれば左〜中央）＋削除（常に右端）を同じ行に置く。
+                                        メモが無くても削除だけのための余白を作らないよう、この行自体は
+                                        常にコンパクトな1行として存在させる。 */}
+                                    <View style={styles.cardMemoRow}>
+                                      {item.memo ? (
+                                        <View style={[styles.memoChip, styles.memoChipInRow]}>
+                                          <ThemedText style={styles.memoChipText} numberOfLines={3}>
+                                            {item.memo}
+                                          </ThemedText>
+                                        </View>
+                                      ) : (
+                                        <View style={styles.memoRowSpacer} />
+                                      )}
+                                      <Pressable onPress={() => handleDeleteItem(item)} hitSlop={8}>
+                                        <ThemedText style={styles.deleteLink}>削除</ThemedText>
+                                      </Pressable>
+                                    </View>
                                   </View>
                                 </View>
                               </View>
@@ -1042,11 +1051,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
+  // メモ行（cardMemoRow）内で使う場合、alignSelf: flex-startを打ち消し
+  // （行の中で他要素と正しく並ぶように）、長文時のみ削除ボタン分の幅を
+  // 譲って縮む（flexShrink）。短文時は自分の文字幅のまま伸びない。
+  memoChipInRow: {
+    alignSelf: 'auto',
+    flexShrink: 1,
+  },
   memoChipText: {
     fontSize: 11,
     color: CALENDAR_REFINED.textSub,
     fontWeight: '500',
   },
+  // メモ＋削除の行。justifyContent: space-betweenにより、メモが短い時は
+  // メモチップが自分の文字幅のまま左に留まり、削除は右端に来る（間は空くだけで、
+  // メモの背景が無駄に伸びない）。メモが無い時は空のスペーサーを置き、
+  // 2要素構成を保って削除だけを右端に固定する（行自体の高さはほぼ変わらない）。
+  cardMemoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 4,
+  },
+  memoRowSpacer: { flex: 1 },
 
   cardRate: {
     fontSize: 11,
