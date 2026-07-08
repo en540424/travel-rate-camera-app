@@ -576,8 +576,10 @@ const CALENDAR_REFINED = {
   primaryStrong: '#087D74',
   primarySoft: '#D4ECE8',
   selectedBorder: '#14AFA2',
-  todayBg: '#C5EDE7',
-  todayText: '#087D74',
+  // 今日の強調は、購入済みドット/選択日枠と同じティール系だと意味が被るため、
+  // 中立なグレー系（チャコール寄り）に変更する。
+  todayBg: '#E7EBE9',
+  todayText: '#4A5754',
   purchased: '#1BB7AA',
   purchasedText: '#087D74',
   purchasedSoft: '#DDF5F0',
@@ -821,13 +823,10 @@ const styles = StyleSheet.create({
   },
 
   // ── 詳細パネル ──
+  // 親カード自体の背景・枠・影は持たせない（中の購入済み/候補カード・記録カードが
+  // 主役に見えるように、入れ子のカード感を弱める）。見出し＋余白だけでまとまりを保つ。
   detailCard: {
-    backgroundColor: CALENDAR_REFINED.cardBg,
-    borderRadius: radius.card,
     padding: 16,
-    borderWidth: 1,
-    borderColor: CALENDAR_REFINED.lineStrong,
-    ...shadow.card,
     gap: 12,
   },
   detailHintRow: {
@@ -895,17 +894,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
-  // 月合計（summaryStatItem）より一回り小さく・淡くして、「月合計の再掲」に
-  // 見えないようにする（選択日はその日だけの小さなサマリー、という位置づけ）。
+  // 月合計（summaryStatItem＝全面カラーカード）とは別カードタイプにする。
+  // 白カード＋左アクセントバーで、月合計の「再掲」に見えないようにしつつ、
+  // カード感（角丸・影）は残す。
   daySummaryItem: {
     flex: 1,
+    backgroundColor: CALENDAR_REFINED.cardBg,
     borderRadius: 8,
     paddingVertical: 6,
     paddingHorizontal: 8,
     gap: 2,
+    borderLeftWidth: 3,
+    ...shadow.card,
   },
-  daySummaryItemPurchased: { backgroundColor: CALENDAR_REFINED.purchasedSoft },
-  daySummaryItemCandidate: { backgroundColor: CALENDAR_REFINED.candidateSoft },
+  daySummaryItemPurchased: { borderLeftColor: CALENDAR_REFINED.purchased },
+  daySummaryItemCandidate: { borderLeftColor: CALENDAR_REFINED.candidate },
   daySummaryItemHeader: {
     flexDirection: 'row',
     alignItems: 'center',
