@@ -5,9 +5,9 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import { Alert, Keyboard, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { ThemedText } from '@/components/themed-text';
 import { PriceResultCard } from '@/components/domain';
@@ -42,24 +42,11 @@ export default function ConverterScreen() {
   const { addEntry } = useHistory();
   const { activeTrip } = useTrips();
 
-  // 換算画面は1画面に収まる想定のため、通常時はスクロールを明示的に無効化する。
-  // 実測（onLayout/onContentSizeChange）でのcanScroll判定は実機でふわつきが残ったため使わない。
-  // キーボード表示中だけ、入力欄・保存ボタンが隠れないようスクロールを許可する。
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  // 以前は「1画面に収まる想定」でscrollEnabledをキーボード表示状態に紐付け、
+  // キーボードを閉じると強制的にトップへ戻していたが、端末サイズによっては
+  // 画面が収まらず保存ボタンへスクロール到達できなくなる実機不具合があったため、
+  // ScrollViewは常時スクロール可能な標準状態に戻す（キーボード監視自体をやめる）。
   const scrollViewRef = useRef<ScrollView>(null);
-
-  useEffect(() => {
-    const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
-    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
-      setKeyboardVisible(false);
-      // キーボードを閉じた後、通常時は固定表示に戻すため位置をリセットする
-      scrollViewRef.current?.scrollTo({ y: 0, animated: false });
-    });
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
 
   // 通貨は常に現在の旅行の基準通貨。ここでは選ばせない。
   const tripCurrency = activeTrip?.base_currency ?? null;
@@ -151,7 +138,6 @@ export default function ConverterScreen() {
           ref={scrollViewRef}
           style={styles.scrollView}
           contentContainerStyle={styles.scroll}
-          scrollEnabled={keyboardVisible}
           bounces={false}
           alwaysBounceVertical={false}
           overScrollMode="never"
@@ -363,7 +349,7 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   scroll: {
     padding: 18,
-    paddingBottom: 24,
+    paddingBottom: 80,
     maxWidth: 480,
     width: '100%',
     alignSelf: 'center',
