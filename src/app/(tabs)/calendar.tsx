@@ -562,7 +562,9 @@ const CALENDAR_REFINED = {
   screenBg: color.bgScreen,
   cardBg: '#FFFFFF',
   calendarCardBg: '#FFFFFF',
-  calendarCardBorder: '#BFCDC9',
+  // 他ページ（history/analytics等）のカードと同じ、ほぼ見えない薄さの枠線に揃える。
+  // 以前の値（#BFCDC9）は他ページより濃く、黒っぽい枠線に見えていた。
+  calendarCardBorder: color.line,
   calendarGridBase: '#FFFFFF',
   dayCellBg: '#FFFFFF',
   otherMonthCellBg: '#F3F6F5',
@@ -587,7 +589,8 @@ const CALENDAR_REFINED = {
   saturday: '#3F7EEB',
   flagBorder: '#C3D2CE',
   line: '#C7D4D0',
-  lineStrong: '#B4C3BF',
+  // 月合計/選択日カード・記録カードの枠線。他ページと同じ薄さ（color.line）に揃える。
+  lineStrong: color.line,
   lineSoft: '#DCE5E2',
   detailInnerBg: '#F5F7F6',
   chipBg: '#E9EDEC',
@@ -892,15 +895,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
+  // 月合計（summaryStatItem）より一回り小さく・淡くして、「月合計の再掲」に
+  // 見えないようにする（選択日はその日だけの小さなサマリー、という位置づけ）。
   daySummaryItem: {
     flex: 1,
     borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    gap: 3,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    gap: 2,
   },
-  // 月集計カード（summaryStatPurchased/Candidate）と同じ配色にして、
-  // 背景と同化して見にくかった状態を解消する。
   daySummaryItemPurchased: { backgroundColor: CALENDAR_REFINED.purchasedSoft },
   daySummaryItemCandidate: { backgroundColor: CALENDAR_REFINED.candidateSoft },
   daySummaryItemHeader: {
@@ -914,7 +917,7 @@ const styles = StyleSheet.create({
     color: CALENDAR_REFINED.textSub,
   },
   daySummaryValue: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     color: CALENDAR_REFINED.textMain,
     fontVariant: ['tabular-nums'],
@@ -922,7 +925,7 @@ const styles = StyleSheet.create({
 
   cardList: { gap: 8 },
 
-  // 商品カード
+  // 商品カード（他ページと同じく、枠線だけでなく薄い影で浮かせる）
   historyCard: {
     backgroundColor: CALENDAR_REFINED.cardBg,
     borderRadius: radius.chip,
@@ -930,6 +933,7 @@ const styles = StyleSheet.create({
     gap: 6,
     borderWidth: 1,
     borderColor: CALENDAR_REFINED.lineStrong,
+    ...shadow.card,
   },
   calCardRow: {
     flexDirection: 'row',
