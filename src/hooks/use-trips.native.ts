@@ -7,6 +7,7 @@ import {
   getActiveTrips,
   getTripById,
   insertTrip,
+  restoreTrip as restoreTripInDb,
   setActiveTrip as setActiveTripInDb,
   updateTrip,
 } from '@/db/queries/trips';
@@ -75,10 +76,14 @@ export function useTrips() {
     if (activeTrip?.id === id) {
       const remaining = await loadTrips();
       const next = remaining[0] ?? null;
-      setActiveTrip(next);
       if (next) {
-        useSettingsStore.getState().setSelectedCurrency(next.base_currency);
+        // DB側のis_activeも新しいactive旅行に付け替える（switchTripと同じ経路を再利用）
+        await setActiveTripInDb(db, next.id);
+        const trip = await getTripById(db, next.id);
+        setActiveTrip(trip);
+        if (trip) useSettingsStore.getState().setSelectedCurrency(trip.base_currency);
       } else {
+        setActiveTrip(null);
         useSettingsStore.getState().setSelectedCurrency('USD');
       }
     }
@@ -93,5 +98,10 @@ export function useTrips() {
     }
   }
 
-  return { activeTrip, loadTrips, createTrip, editTrip, removeTrip, switchTrip };
+  /** アーカイブ済み旅行を復元。復元のみ行い、自動でのアクティブ化はしない（安全側） */
+  async function restoreTrip(id: number): Promise<void> {
+    await restoreTripInDb(db, id);
+  }
+
+  return { activeTrip, loadTrips, createTrip, editTrip, removeTrip, switchTrip, restoreTrip };
 }

@@ -111,19 +111,27 @@ export function useTrips() {
 
   async function removeTrip(id: number): Promise<void> {
     const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
-    const all = loadAll().map((t) =>
+    const archived = loadAll().map((t) =>
       t.id === id ? { ...t, archived_at: now, is_active: 0 as 0 | 1, updated_at: now } : t,
     );
+    if (activeTrip?.id !== id) {
+      persistAll(archived);
+      return;
+    }
+    const remaining = archived.filter((t) => t.archived_at === null);
+    const next = remaining[0] ?? null;
+    // DB(localStorage)側のis_activeも新しいactive旅行に付け替える（switchTripと同じ考え方）
+    const all = archived.map((t) => ({
+      ...t,
+      is_active: (next != null && t.id === next.id ? 1 : 0) as 0 | 1,
+    }));
     persistAll(all);
-    if (activeTrip?.id === id) {
-      const remaining = all.filter((t) => t.archived_at === null);
-      const next = remaining[0] ?? null;
-      setActiveTrip(next);
-      if (next) {
-        useSettingsStore.getState().setSelectedCurrency(next.base_currency);
-      } else {
-        useSettingsStore.getState().setSelectedCurrency('USD');
-      }
+    const updatedNext = next ? all.find((t) => t.id === next.id) ?? null : null;
+    setActiveTrip(updatedNext);
+    if (updatedNext) {
+      useSettingsStore.getState().setSelectedCurrency(updatedNext.base_currency);
+    } else {
+      useSettingsStore.getState().setSelectedCurrency('USD');
     }
   }
 
@@ -142,5 +150,14 @@ export function useTrips() {
     }
   }
 
-  return { activeTrip, loadTrips, createTrip, editTrip, removeTrip, switchTrip };
+  /** アーカイブ済み旅行を復元。復元のみ行い、自動でのアクティブ化はしない（安全側） */
+  async function restoreTrip(id: number): Promise<void> {
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const all = loadAll().map((t) =>
+      t.id === id ? { ...t, archived_at: null, updated_at: now } : t,
+    );
+    persistAll(all);
+  }
+
+  return { activeTrip, loadTrips, createTrip, editTrip, removeTrip, switchTrip, restoreTrip };
 }

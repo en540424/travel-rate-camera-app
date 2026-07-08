@@ -84,3 +84,11 @@ export async function archiveTrip(db: SQLiteDatabase, id: number): Promise<void>
     id,
   );
 }
+
+/** アーカイブ済み旅行を復元（archived_at解除のみ。is_activeは呼び出し側の旅行切替処理に委ねる） */
+export async function restoreTrip(db: SQLiteDatabase, id: number): Promise<void> {
+  await db.runAsync(
+    "UPDATE trips SET archived_at = NULL, updated_at = datetime('now') WHERE id = ?",
+    id,
+  );
+}

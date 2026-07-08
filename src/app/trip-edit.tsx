@@ -14,7 +14,7 @@ export default function TripEditScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
   const id = params.id != null ? parseInt(params.id, 10) : NaN;
   const { tripMap } = useAllHistory();
-  const { activeTrip, editTrip, switchTrip, removeTrip } = useTrips();
+  const { activeTrip, editTrip, switchTrip, removeTrip, restoreTrip } = useTrips();
   const { saveRate } = useRates();
 
   const trip = tripMap.get(id);
@@ -109,6 +109,28 @@ export default function TripEditScreen() {
     );
   }
 
+  function handleRestore() {
+    Alert.alert(
+      '旅行を復元しますか？',
+      'この旅行をアーカイブから戻します。保存済みの履歴データはそのまま残ります。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '復元する',
+          onPress: async () => {
+            try {
+              await restoreTrip(id);
+              router.back();
+            } catch (err) {
+              console.warn('[trip-edit restore error]', err);
+              Alert.alert('復元できませんでした', 'もう一度お試しください。', [{ text: 'OK' }]);
+            }
+          },
+        },
+      ],
+    );
+  }
+
   return (
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
@@ -155,18 +177,20 @@ export default function TripEditScreen() {
           </View>
         </View>
 
-        {/* アクティブ切替 */}
-        <Pressable
-          onPress={() => !isAlreadyActive && setMakeActive((v) => !v)}
-          style={styles.activeToggle}>
-          <View style={styles.activeToggleText}>
-            <ThemedText style={styles.activeToggleTitle}>アクティブな旅行にする</ThemedText>
-            <ThemedText style={styles.activeToggleSub}>カメラ・履歴がこの旅行になります</ThemedText>
-          </View>
-          <View style={[styles.switch, (makeActive || isAlreadyActive) && styles.switchOn]}>
-            <View style={[styles.knob, (makeActive || isAlreadyActive) && styles.knobOn]} />
-          </View>
-        </Pressable>
+        {/* アクティブ切替（アーカイブ済みの旅行はis_active整合性のため対象外） */}
+        {trip.archived_at == null && (
+          <Pressable
+            onPress={() => !isAlreadyActive && setMakeActive((v) => !v)}
+            style={styles.activeToggle}>
+            <View style={styles.activeToggleText}>
+              <ThemedText style={styles.activeToggleTitle}>アクティブな旅行にする</ThemedText>
+              <ThemedText style={styles.activeToggleSub}>カメラ・履歴がこの旅行になります</ThemedText>
+            </View>
+            <View style={[styles.switch, (makeActive || isAlreadyActive) && styles.switchOn]}>
+              <View style={[styles.knob, (makeActive || isAlreadyActive) && styles.knobOn]} />
+            </View>
+          </Pressable>
+        )}
       </ScrollView>
 
       <View style={styles.footer}>
@@ -176,9 +200,15 @@ export default function TripEditScreen() {
           style={({ pressed }) => [styles.saveBtn, !canSave && styles.saveBtnDisabled, pressed && canSave && styles.pressed]}>
           <ThemedText style={[styles.saveBtnText, !canSave && styles.saveBtnTextDisabled]}>変更を保存</ThemedText>
         </Pressable>
-        <Pressable onPress={handleArchive} style={styles.archiveBtn}>
-          <ThemedText style={styles.archiveText}>🗄 旅行を終了してアーカイブ</ThemedText>
-        </Pressable>
+        {trip.archived_at == null ? (
+          <Pressable onPress={handleArchive} style={styles.archiveBtn}>
+            <ThemedText style={styles.archiveText}>🗄 旅行を終了してアーカイブ</ThemedText>
+          </Pressable>
+        ) : (
+          <Pressable onPress={handleRestore} style={styles.archiveBtn}>
+            <ThemedText style={styles.archiveText}>↩ アーカイブを解除して復元</ThemedText>
+          </Pressable>
+        )}
       </View>
     </View>
   );
