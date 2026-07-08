@@ -35,9 +35,15 @@ export function PriceResultCard({
   return (
     <View style={[styles.container, style]}>
       <Text style={[styles.label, isDark && styles.labelDark]}>{label}</Text>
-      <Text style={[styles.value, isDark && styles.valueDark]}>{formatJpy(jpyAmount)}</Text>
+      <Text
+        style={[styles.value, isDark && styles.valueDark]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.5}>
+        {formatJpy(jpyAmount)}
+      </Text>
       {foreignAmount != null && currency != null && (
-        <Text style={[styles.sub, isDark && styles.subDark]}>
+        <Text style={[styles.sub, isDark && styles.subDark]} numberOfLines={1} ellipsizeMode="tail">
           {formatForeign(foreignAmount, currency)}
           {rate != null && rate > 0 ? `  ・  ${formatRate(rate, currency)}` : ''}
         </Text>

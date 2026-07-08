@@ -17,8 +17,8 @@ export default function RootLayout() {
     <DbProvider>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <AnimatedSplashOverlay />
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="(tabs)" />
+        <Stack screenOptions={{ headerShown: false, headerBackButtonDisplayMode: 'minimal' }}>
+          <Stack.Screen name="(tabs)" options={{ title: '' }} />
           <Stack.Screen
             name="rate-setup"
             options={{
