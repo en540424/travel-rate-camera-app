@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, Keyboard, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -204,23 +204,6 @@ export default function CameraScreen() {
 
   const isWeb = Platform.OS === 'web';
 
-  // 保存フッター（saveFooter）がキーボードに隠れないための実キーボード高さ追跡。
-  // このタブ画面はreact-native-screens管理下にあり、KeyboardAvoidingViewの
-  // 自動パディングが効かなかったため、Keyboardイベントから高さを取得し
-  // saveFooterのbottomへ直接反映する（確実に動く手段に切り替え）。
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  useEffect(() => {
-    if (isWeb) return;
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, (e) => setKeyboardHeight(e.endCoordinates.height));
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, [isWeb]);
-
   // 撮影後に見せる「読み取った値札」プレビュー画像（ヘッダー小サムネ／拡大モーダル用）。
   // 初回スキャンはpendingPhotoUriに、再スキャン以降はocrPhotoUriに入る（handleOcrResultでOCR完了時に確定）。
   const ocrPreviewUri = ocrPhotoUri ?? pendingPhotoUri;
@@ -236,11 +219,9 @@ export default function CameraScreen() {
   const manualOpen = manualOpenByDefault || manualAdjustExpanded;
   const ocrSuccess = ocrResult != null && ocrResult.prices.length > 0;
 
-  // 固定フッターは「入力カード（OCR結果 or 手入力）表示中」は常に使う。
-  // 手入力時だけScrollView内インラインにしていたところ、下タブ/キーボードに隠れて
-  // 保存できない実機不具合が出たため、OCR成功時と同じ「実績のある固定フッター」に統一する。
-  // → カメラ表示中・スキャン中は出さない（showInputCardがfalseのため自動的に非表示）。
-  const showFooter = !isWeb && showInputCard;
+  // 固定フッターは「OCR成功時（価格候補あり）」だけ。手入力時は固定フッター化を試みたが
+  // 実機で解消しなかったため、手入力時はカード内インラインの保存ボタンに一本化する。
+  const showFooter = !isWeb && ocrSuccess;
   // 価格未選択（＝金額未確定）なら保存ボタンだけ disabled。手入力で金額が入れば canSave で有効化される。
   const saveDisabled = !canSave;
 
@@ -1541,7 +1522,10 @@ export default function CameraScreen() {
               )}
 
               {/* 保存ボタン（カードの主役アクション）。
-                  OCR成功時は固定フッターへ移すため、ここでは非表示（重複回避）。 */}
+                  OCR成功時は固定フッターへ移すため、ここでは非表示（重複回避）。
+                  手入力時は固定フッター化を試みたが実機で解消しなかったため、
+                  ScrollView内・カードの自然な位置にインライン表示する。
+                  下に十分な余白（manualSaveBtn）を持たせ、押す前にキーボードを閉じる。 */}
               {!showFooter && (
                 <PrimaryButton
                   title={
@@ -1551,8 +1535,12 @@ export default function CameraScreen() {
                         ? '購入済みとして保存'
                         : '買い物候補に保存'
                   }
-                  onPress={handleSaveCandidate}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    handleSaveCandidate();
+                  }}
                   disabled={saveDisabled}
+                  style={styles.manualSaveBtn}
                 />
               )}
 
@@ -1599,11 +1587,11 @@ export default function CameraScreen() {
         </ScrollView>
       </SafeAreaView>
 
-      {/* 入力カード（OCR結果 or 手入力）表示中の画面下固定の保存フッター。
+      {/* 価格OCR・結果確認中（OCR成功時）のみ表示する画面下固定の保存フッター。
           下タブの上に収まる位置。価格未選択でも消さず保存ボタンだけ disabled。保存処理は既存ハンドラを呼ぶだけ。
-          bottomにkeyboardHeightを直接反映し、キーボード表示中も隠れないようにする。 */}
+          手入力時はここではなく、カード内インラインの保存ボタン（manualSaveBtn）を使う。 */}
       {showFooter && (
-        <View style={[styles.saveFooter, { bottom: keyboardHeight }]}>
+        <View style={styles.saveFooter}>
           <PrimaryButton
             title={
               canSave
@@ -2089,6 +2077,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: color.body,
+  },
+  // 手入力時のインライン保存ボタン。下タブ/画面端に詰まって見えないよう余白を確保する
+  manualSaveBtn: {
+    marginBottom: 24,
   },
   nextShotBtn: {
     alignItems: 'center',

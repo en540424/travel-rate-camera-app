@@ -45,15 +45,14 @@ const FLAG_IMAGES: Partial<Record<CurrencyCode, number>> = {
 };
 
 // 表示styleだけの微調整（PNGは一切編集しない）。
-// 外枠（flagWrapper）は全通貨で同じ固定サイズにする。米/英/台/タイ/EUは現状の見え方
-// （枠内に上下左右の余白がある状態）を標準とし、日本/韓国のPNGだけが正方形に近く
-// 標準サイズだと枠いっぱいに見えてしまうため、この2通貨だけ画像サイズを一段小さくして
-// 同じ外枠の中に余白ができるようにする（外枠自体・他5通貨のサイズは変えない）。
-const FLAG_IMAGE_INSET_CURRENCIES = new Set<CurrencyCode>(['JPY', 'KRW']);
+// 日本・韓国は標準サイズのまま一切触らない（白背景のため余白を作っても見た目上意味がない）。
+// 外枠（flagWrapper）は全通貨で同じ固定サイズのまま変えない。
+// 米/英/台/タイ/EURだけ、その同じ外枠の中で画像を少し小さくし、上下左右に余白ができるようにする。
+const FLAG_IMAGE_COMPACT_CURRENCIES = new Set<CurrencyCode>(['USD', 'GBP', 'TWD', 'THB', 'EUR']);
 
 function getFlagImageStyle(currency: CurrencyCode | null): StyleProp<ImageStyle> {
-  if (currency != null && FLAG_IMAGE_INSET_CURRENCIES.has(currency)) {
-    return styles.flagImageInset;
+  if (currency != null && FLAG_IMAGE_COMPACT_CURRENCIES.has(currency)) {
+    return styles.flagImageCompact;
   }
   return styles.flagImage;
 }
@@ -762,8 +761,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  flagImage: { width: 26, height: 17 }, // USD/GBP/TWD/THB/EUR・現状の見え方（枠内に余白あり）
-  flagImageInset: { width: 20, height: 13 }, // JPY/KRWのみ。同じ外枠の中で少し内側に収める
+  flagImage: { width: 28, height: 18 }, // JPY/KRWの標準サイズ（この2通貨は一切触らない）
+  flagImageCompact: { width: 24, height: 16 }, // USD/GBP/TWD/THB/EURのみ。同じ外枠の中で少し小さく収める
   flagExtra: { fontSize: 9, fontWeight: '700' as const, color: CALENDAR_REFINED.textFaint, lineHeight: 11 },
 
   dotsRow: {
