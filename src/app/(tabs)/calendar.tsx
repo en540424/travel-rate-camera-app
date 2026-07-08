@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PhotoModal } from '@/components/photo-modal';
 import { ThemedText } from '@/components/themed-text';
+import { CurrencyFlagImage } from '@/components/domain';
 import type { CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES } from '@/constants/currencies';
 import type { HistoryRow } from '@/db/queries/history';
@@ -209,10 +210,6 @@ export default function CalendarScreen() {
     );
   }
 
-  const activeTripFlag = activeTrip
-    ? (CURRENCIES[activeTrip.base_currency as CurrencyCode]?.flag ?? '✈️')
-    : '';
-
   return (
     <View style={styles.screen}>
       <SafeAreaView style={styles.safe} edges={['top']}>
@@ -225,10 +222,9 @@ export default function CalendarScreen() {
           <View style={styles.header}>
             <ThemedText style={styles.screenTitle}>買い物カレンダー</ThemedText>
             {activeTrip && (
-              <View style={styles.tripChip}>
-                <ThemedText style={styles.tripChipText}>
-                  {activeTripFlag} {activeTrip.name}
-                </ThemedText>
+              <View style={[styles.tripChip, styles.tripChipRow]}>
+                <CurrencyFlagImage currency={activeTrip.base_currency} size={16} outlined />
+                <ThemedText style={styles.tripChipText}>{activeTrip.name}</ThemedText>
               </View>
             )}
           </View>
@@ -413,9 +409,6 @@ export default function CalendarScreen() {
                   Array.from(tripGroups.entries()).map(([tripId, rows], groupIndex) => {
                     const trip = tripId !== null ? tripMap.get(tripId) : undefined;
                     const tripName = trip?.name ?? (tripId !== null ? `旅行 #${tripId}` : '未分類');
-                    const groupFlag = trip
-                      ? (CURRENCIES[trip.base_currency as CurrencyCode]?.flag ?? '')
-                      : '';
 
                     const purchasedRows = rows.filter((r) => r.is_purchased === 1);
                     const candidateRows = rows.filter((r) => r.is_purchased === 0);
@@ -429,9 +422,9 @@ export default function CalendarScreen() {
 
                         {/* 旅行ヘッダー */}
                         <View style={styles.tripGroupHeader}>
-                          {groupFlag ? (
-                            <ThemedText style={styles.tripGroupFlag}>{groupFlag}</ThemedText>
-                          ) : null}
+                          {trip && (
+                            <CurrencyFlagImage currency={trip.base_currency} size={16} outlined />
+                          )}
                           <ThemedText style={styles.tripGroupName}>{tripName}</ThemedText>
                         </View>
 
@@ -482,7 +475,11 @@ export default function CalendarScreen() {
                                     <View style={styles.cardTop}>
                                       <View style={styles.cardLeft}>
                                         <View style={styles.cardFlagBadge}>
-                                          <ThemedText style={styles.cardFlag}>{c.flag}</ThemedText>
+                                          <CurrencyFlagImage
+                                            currency={item.currency as CurrencyCode}
+                                            size={14}
+                                            outlined
+                                          />
                                         </View>
                                         <View style={styles.cardAmounts}>
                                           {item.currency !== 'JPY' && (
@@ -620,6 +617,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     paddingHorizontal: 10,
     paddingVertical: 4,
+  },
+  tripChipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   tripChipText: {
     fontSize: 12,
@@ -866,7 +868,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  tripGroupFlag: { fontSize: 18, lineHeight: 22 },
   tripGroupName: {
     fontSize: 14,
     fontWeight: '700',
@@ -953,7 +954,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
     paddingVertical: 2,
   },
-  cardFlag: { fontSize: 14, lineHeight: 18 },
   cardAmounts: { gap: 1 },
   cardForeign: {
     fontSize: 12,
