@@ -1,16 +1,27 @@
-import { Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Linking, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { SettingRow, SettingSection } from '@/components/ui';
+import { EXTERNAL_LINKS } from '@/config/external-links';
 import { color, radius, shadow } from '@/theme/tokens';
 
 // app.json の version を正とする（手動同期）
 const APP_VERSION = '1.0.0';
 
-export default function AppInfoScreen() {
-  function showPlaceholder(title: string) {
-    Alert.alert(title, '準備中です。公開までに用意します。');
+async function openExternalUrl(label: string, url: string) {
+  try {
+    const canOpen = await Linking.canOpenURL(url);
+    if (!canOpen) {
+      Alert.alert('開けませんでした', `${label}のページを開けませんでした。時間をおいて再度お試しください。`);
+      return;
+    }
+    await Linking.openURL(url);
+  } catch {
+    Alert.alert('開けませんでした', `${label}のページを開けませんでした。時間をおいて再度お試しください。`);
   }
+}
+
+export default function AppInfoScreen() {
 
   return (
     <View style={styles.screen}>
@@ -27,13 +38,25 @@ export default function AppInfoScreen() {
         </View>
 
         <SettingSection title="規約・プライバシー">
-          <SettingRow label="プライバシーポリシー" onPress={() => showPlaceholder('プライバシーポリシー')} />
-          <SettingRow label="利用規約" onPress={() => showPlaceholder('利用規約')} />
-          <SettingRow label="ライセンス" onPress={() => showPlaceholder('ライセンス')} />
+          <SettingRow
+            label="プライバシーポリシー"
+            onPress={() => openExternalUrl('プライバシーポリシー', EXTERNAL_LINKS.privacyPolicy)}
+          />
+          <SettingRow
+            label="利用規約"
+            onPress={() => openExternalUrl('利用規約', EXTERNAL_LINKS.terms)}
+          />
+          <SettingRow
+            label="ライセンス"
+            onPress={() => openExternalUrl('ライセンス', EXTERNAL_LINKS.licenses)}
+          />
         </SettingSection>
 
         <SettingSection title="サポート">
-          <SettingRow label="お問い合わせ" onPress={() => showPlaceholder('お問い合わせ')} />
+          <SettingRow
+            label="お問い合わせ"
+            onPress={() => openExternalUrl('お問い合わせ', EXTERNAL_LINKS.contact)}
+          />
         </SettingSection>
 
         <ThemedText style={styles.copyright}>© 2026 旅レートカメラ</ThemedText>
