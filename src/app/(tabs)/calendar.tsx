@@ -599,6 +599,17 @@ const CALENDAR_REFINED = {
   danger: '#D84A4A',
 } as const;
 
+// 選択日の親カード（detailCard）の中にある子カード（購入済み/候補・記録カード）用の影。
+// shadow.card（親カードにも使用）のままだと、親子で濃さが同じで同化して見えるため、
+// 子カード側だけ少し強めにして「カードの中にカードがある」浮き出し感を出す。
+const NESTED_CARD_SHADOW = {
+  shadowColor: '#10211F',
+  shadowOpacity: 0.1,
+  shadowRadius: 5,
+  shadowOffset: { width: 0, height: 2 },
+  elevation: 3,
+} as const;
+
 // ─── スタイル ────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
@@ -910,7 +921,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     gap: 2,
     borderLeftWidth: 3,
-    ...shadow.card,
+    ...NESTED_CARD_SHADOW,
   },
   daySummaryItemPurchased: { borderLeftColor: CALENDAR_REFINED.purchased },
   daySummaryItemCandidate: { borderLeftColor: CALENDAR_REFINED.candidate },
@@ -941,7 +952,7 @@ const styles = StyleSheet.create({
     gap: 6,
     borderWidth: 1,
     borderColor: CALENDAR_REFINED.lineStrong,
-    ...shadow.card,
+    ...NESTED_CARD_SHADOW,
   },
   calCardRow: {
     flexDirection: 'row',
