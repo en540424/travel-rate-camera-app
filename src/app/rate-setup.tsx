@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { CURRENCIES } from '@/constants/currencies';
@@ -31,10 +31,21 @@ export default function RateSetupScreen() {
       router.back();
       return;
     }
-    await saveRate(currency, rateNum);
-    await editTrip(activeTrip.id, { manual_rate: rateNum });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    router.back();
+    // 保存失敗時に何も表示されない箇所があったため try/catch + Alert を追加（S-08）。
+    // 保存ロジック本体（saveRate/editTrip）・保存時レート固定仕様は変更しない。
+    try {
+      await saveRate(currency, rateNum);
+      await editTrip(activeTrip.id, { manual_rate: rateNum });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      router.back();
+    } catch (err) {
+      console.warn('[rate-setup save error]', err);
+      Alert.alert(
+        '保存できませんでした',
+        'レートの保存中にエラーが発生しました。もう一度お試しください。',
+        [{ text: 'OK' }],
+      );
+    }
   }
 
   if (!activeTrip) {
@@ -57,7 +68,11 @@ export default function RateSetupScreen() {
               <ThemedText style={styles.heroDir}>{isJpy ? '🇯🇵 国内' : `${currency} → JPY`}</ThemedText>
             </View>
             <ThemedText style={styles.heroLabel}>現在のレート</ThemedText>
-            <ThemedText style={styles.heroRate}>
+            <ThemedText
+              style={styles.heroRate}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.55}>
               {isJpy ? '円のみ（換算なし）' : activeTrip.manual_rate > 0 ? `1 ${currency} = ¥${activeTrip.manual_rate}` : 'レート未設定'}
             </ThemedText>
           </View>
@@ -138,7 +153,7 @@ const styles = StyleSheet.create({
   heroTrip: { fontSize: 15, fontWeight: '700', color: '#FFFFFF', flexShrink: 1 },
   heroDir: { fontSize: 12.5, fontWeight: '700', color: color.primaryAccent },
   heroLabel: { fontSize: 12, fontWeight: '700', color: color.primaryAccent },
-  heroRate: { fontSize: 26, fontWeight: '700', color: '#FFFFFF', letterSpacing: -0.6, fontVariant: ['tabular-nums'] },
+  heroRate: { fontSize: 26, lineHeight: 32, fontWeight: '700', color: '#FFFFFF', letterSpacing: -0.3, fontVariant: ['tabular-nums'] },
   jpyNote: { fontSize: 13.5, fontWeight: '500', color: color.body, lineHeight: 21, paddingHorizontal: 4 },
   field: { gap: 8 },
   label: { fontSize: 13, fontWeight: '700', color: color.body },
@@ -158,7 +173,7 @@ const styles = StyleSheet.create({
   previewRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   previewFrom: { fontSize: 14, fontWeight: '600', color: color.body, fontVariant: ['tabular-nums'] },
   previewArrow: { fontSize: 14, color: color.faint2 },
-  previewTo: { fontSize: 15, fontWeight: '700', color: color.text, fontVariant: ['tabular-nums'] },
+  previewTo: { fontSize: 15, lineHeight: 20, fontWeight: '700', color: color.text, fontVariant: ['tabular-nums'] },
   note: { fontSize: 12, fontWeight: '500', color: color.primary, paddingHorizontal: 4 },
   footer: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 28, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: color.line2, backgroundColor: color.card },
   saveBtn: { height: 52, borderRadius: radius.button, backgroundColor: color.primary, alignItems: 'center', justifyContent: 'center', ...shadow.cta },

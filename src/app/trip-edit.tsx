@@ -141,7 +141,15 @@ export default function TripEditScreen() {
         {
           text: '終了する',
           style: 'destructive',
-          onPress: async () => { await removeTrip(id); router.back(); },
+          onPress: async () => {
+            try {
+              await removeTrip(id);
+              router.back();
+            } catch (err) {
+              console.warn('[trip-edit archive error]', err);
+              Alert.alert('旅行をアーカイブできませんでした', 'もう一度お試しください。', [{ text: 'OK' }]);
+            }
+          },
         },
       ],
     );

@@ -1,6 +1,7 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
+  Alert,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -53,9 +54,19 @@ export default function SettingsScreen() {
     [history, tripBudgetJpy, activeTrip?.id],
   );
 
+  // 旅行切替失敗時に無言で終わらないよう try/catch + Alert を追加（S-08）。切替処理本体は変更しない。
   async function handleSwitch(id: number) {
-    await switchTrip(id);
-    setShowSwitch(false);
+    try {
+      await switchTrip(id);
+      setShowSwitch(false);
+    } catch (err) {
+      console.warn('[settings switch error]', err);
+      Alert.alert(
+        '旅行を切り替えできませんでした',
+        'もう一度お試しください。',
+        [{ text: 'OK' }],
+      );
+    }
   }
 
   const dateRange = activeTrip ? formatDateRange(activeTrip.started_at, activeTrip.ended_at) : null;

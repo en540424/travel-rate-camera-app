@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { CURRENCIES } from '@/constants/currencies';
@@ -27,6 +27,20 @@ function monthLabel(t: TripRow): string {
 export default function TripListScreen() {
   const { activeTrip, switchTrip } = useTrips();
   const { history, tripMap, reload } = useAllHistory();
+
+  // 旅行切替失敗時に無言で終わらないよう try/catch + Alert を追加（S-08）。切替処理本体は変更しない。
+  async function handleSwitchTrip(id: number) {
+    try {
+      await switchTrip(id);
+    } catch (err) {
+      console.warn('[trip-list switch error]', err);
+      Alert.alert(
+        '旅行を切り替えできませんでした',
+        'もう一度お試しください。',
+        [{ text: 'OK' }],
+      );
+    }
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -165,7 +179,7 @@ export default function TripListScreen() {
                     <ThemedText style={styles.archivedHint}>タップして詳細・復元</ThemedText>
                   ) : (
                     <Pressable
-                      onPress={() => switchTrip(t.id)}
+                      onPress={() => { void handleSwitchTrip(t.id); }}
                       style={({ pressed }) => [styles.useBtn, pressed && styles.pressed]}>
                       <ThemedText style={styles.useBtnText}>この旅行を使う</ThemedText>
                     </Pressable>
