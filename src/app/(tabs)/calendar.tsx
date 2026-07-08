@@ -577,9 +577,9 @@ const CALENDAR_REFINED = {
   primarySoft: '#D4ECE8',
   selectedBorder: '#14AFA2',
   // 今日の強調は、購入済みドット/選択日枠と同じティール系だと意味が被るため、
-  // 中立なグレー系（チャコール寄り）に変更する。
-  todayBg: '#E7EBE9',
-  todayText: '#4A5754',
+  // チャコール塗りつぶし＋白文字（B案）にする。
+  todayBg: '#1F2933',
+  todayText: '#FFFFFF',
   purchased: '#1BB7AA',
   purchasedText: '#087D74',
   purchasedSoft: '#DDF5F0',
@@ -823,10 +823,15 @@ const styles = StyleSheet.create({
   },
 
   // ── 詳細パネル ──
-  // 親カード自体の背景・枠・影は持たせない（中の購入済み/候補カード・記録カードが
-  // 主役に見えるように、入れ子のカード感を弱める）。見出し＋余白だけでまとまりを保つ。
+  // 選択日エリア全体を1枚の白カード＋薄い影でまとめる（他ページのカードに近い見た目）。
+  // 枠線は目立たせない薄さ（lineStrong＝color.line）にする。
   detailCard: {
+    backgroundColor: CALENDAR_REFINED.cardBg,
+    borderRadius: radius.card,
     padding: 16,
+    borderWidth: 1,
+    borderColor: CALENDAR_REFINED.lineStrong,
+    ...shadow.card,
     gap: 12,
   },
   detailHintRow: {
