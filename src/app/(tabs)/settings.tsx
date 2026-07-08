@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { SettingRow, SettingSection } from '@/components/ui';
 import { ActiveTripSwitchSheet } from '@/components/domain/ActiveTripSwitchSheet';
+import { CurrencyFlagImage } from '@/components/domain/CurrencyFlagImage';
 import { FALLBACK_BUDGET_JPY } from '@/constants/camera-screen';
 import { SHOW_PRO } from '@/config/feature-flags';
 import type { TripRow } from '@/db/queries/trips';
@@ -91,9 +92,16 @@ export default function SettingsScreen() {
                       <ThemedText style={styles.heroBadgeText}>使用中</ThemedText>
                     </View>
                   </View>
-                  <ThemedText style={styles.heroCurrency}>
-                    {activeTrip.base_currency === 'JPY' ? '🇯🇵 国内' : `${activeTrip.base_currency} → JPY`}
-                  </ThemedText>
+                  {activeTrip.base_currency === 'JPY' ? (
+                    <View style={styles.heroCurrencyRow}>
+                      <CurrencyFlagImage currency="JPY" size={13} />
+                      <ThemedText style={styles.heroCurrency}>国内</ThemedText>
+                    </View>
+                  ) : (
+                    <ThemedText style={styles.heroCurrency}>
+                      {`${activeTrip.base_currency} → JPY`}
+                    </ThemedText>
+                  )}
                 </View>
 
                 <View style={styles.heroBudgetRow}>
@@ -296,6 +304,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: color.dark,
+  },
+  heroCurrencyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   heroCurrency: {
     fontSize: 13,

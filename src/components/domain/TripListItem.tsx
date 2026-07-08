@@ -1,7 +1,8 @@
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { SectionCard } from '@/components/ui';
-import { CURRENCIES, type CurrencyCode } from '@/constants/currencies';
+import { CurrencyFlagImage } from '@/components/domain/CurrencyFlagImage';
+import type { CurrencyCode } from '@/constants/currencies';
 import { color, spacing, typography } from '@/theme/tokens';
 import { formatJpy, formatRate } from '@/utils/format';
 
@@ -29,12 +30,10 @@ export function TripListItem({
   onPress,
   style,
 }: TripListItemProps) {
-  const info = CURRENCIES[currency];
-
   return (
     <Pressable onPress={onPress} disabled={onPress == null}>
       <SectionCard padding={spacing.md} style={[styles.container, selected && styles.selected, style]}>
-        <Text style={styles.flag}>{info.flag}</Text>
+        <CurrencyFlagImage currency={currency} size={22} />
         <View style={styles.body}>
           <View style={styles.nameRow}>
             <Text style={styles.name} numberOfLines={1}>
@@ -65,9 +64,6 @@ const styles = StyleSheet.create({
   selected: {
     borderColor: color.primary,
     backgroundColor: color.primarySoft,
-  },
-  flag: {
-    fontSize: 22,
   },
   body: {
     flex: 1,

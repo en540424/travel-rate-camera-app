@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { CurrencyFlagImage } from '@/components/domain';
 import type { CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES, CURRENCY_CODES } from '@/constants/currencies';
 import { useTrips } from '@/hooks/use-trips';
@@ -111,15 +112,15 @@ export default function TripCreateScreen() {
           <ThemedText style={styles.label}>通貨</ThemedText>
           <View style={styles.chips}>
             {CURRENCY_CODES.map((code) => {
-              const c = CURRENCIES[code];
               const selected = currency === code;
               return (
                 <Pressable
                   key={code}
-                  style={[styles.chip, selected && styles.chipSelected]}
+                  style={[styles.chip, styles.chipRow, selected && styles.chipSelected]}
                   onPress={() => setCurrency(code)}>
+                  <CurrencyFlagImage currency={code} size={14} />
                   <ThemedText style={[styles.chipText, selected && styles.chipTextSelected]}>
-                    {c.flag} {code}
+                    {code}
                   </ThemedText>
                 </Pressable>
               );
@@ -254,6 +255,7 @@ const styles = StyleSheet.create({
     borderColor: color.inputBorder,
     backgroundColor: color.card,
   },
+  chipRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   chipSelected: { borderColor: color.primary, backgroundColor: color.primarySoft },
   chipText: { fontSize: 13, fontWeight: '600', color: color.body },
   chipTextSelected: { color: color.primaryDark, fontWeight: '700' },

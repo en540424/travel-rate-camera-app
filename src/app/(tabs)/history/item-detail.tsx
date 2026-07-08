@@ -6,7 +6,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 
 import { PhotoModal } from '@/components/photo-modal';
 import { ThemedText } from '@/components/themed-text';
-import { CURRENCIES } from '@/constants/currencies';
+import { CurrencyFlagImage } from '@/components/domain';
 import type { HistoryRow } from '@/db/queries/history';
 import { useHistory } from '@/hooks/use-history';
 import { useTrips } from '@/hooks/use-trips';
@@ -141,9 +141,12 @@ export default function ItemDetailScreen() {
         <View style={styles.infoCard}>
           <View style={styles.infoRow}>
             <ThemedText style={styles.infoLabel}>通貨</ThemedText>
-            <ThemedText style={styles.infoValue}>
-              {CURRENCIES[item.currency].flag} {item.currency === 'JPY' ? '日本円' : item.currency}
-            </ThemedText>
+            <View style={styles.infoValueRow}>
+              <CurrencyFlagImage currency={item.currency} size={14} />
+              <ThemedText style={styles.infoValue}>
+                {item.currency === 'JPY' ? '日本円' : item.currency}
+              </ThemedText>
+            </View>
           </View>
           <View style={styles.infoSep} />
           <View style={styles.infoRow}>
@@ -262,6 +265,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   infoLabel: { fontSize: 13, fontWeight: '600', color: color.muted },
+  infoValueRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   infoValue: { fontSize: 14, fontWeight: '600', color: color.text, flexShrink: 1, textAlign: 'right' },
   infoSep: { height: StyleSheet.hairlineWidth, backgroundColor: color.line2, marginLeft: 16 },
   footer: {

@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { CURRENCIES, type CurrencyCode } from '@/constants/currencies';
+import { CurrencyFlagImage } from '@/components/domain/CurrencyFlagImage';
+import type { CurrencyCode } from '@/constants/currencies';
 import { color, radius, spacing, typography } from '@/theme/tokens';
 import { formatJpy, formatRate } from '@/utils/format';
 
@@ -25,12 +26,10 @@ export function ActiveTripBanner({
   onPress,
   style,
 }: ActiveTripBannerProps) {
-  const info = CURRENCIES[currency];
-
   return (
     <Pressable onPress={onPress} disabled={onPress == null} style={[styles.container, style]}>
       <View style={styles.header}>
-        <Text style={styles.flag}>{info.flag}</Text>
+        <CurrencyFlagImage currency={currency} size={20} />
         <Text style={styles.name} numberOfLines={1}>
           {tripName}
         </Text>
@@ -63,9 +62,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
     marginBottom: spacing.sm,
-  },
-  flag: {
-    fontSize: 20,
   },
   name: {
     ...typography.h2,

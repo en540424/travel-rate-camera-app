@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 're
 
 import { ThemedText } from '@/components/themed-text';
 import { ActionSheet } from '@/components/ui';
-import { CURRENCIES } from '@/constants/currencies';
+import { CurrencyFlagImage } from '@/components/domain/CurrencyFlagImage';
 import type { TripRow } from '@/db/queries/trips';
 import { useAllHistory } from '@/hooks/use-all-history';
 import { color, radius } from '@/theme/tokens';
@@ -49,10 +49,7 @@ export function ActiveTripSwitchSheet({ visible, onClose, trips, activeTripId, o
           const archived = t.archived_at != null;
           const used = usedByTrip.get(t.id) ?? 0;
           const remaining = Math.max(0, t.budget_jpy - used);
-          const ratePart =
-            t.base_currency === 'JPY'
-              ? '🇯🇵 国内'
-              : `${CURRENCIES[t.base_currency].flag} ¥${t.manual_rate}`;
+          const ratePart = t.base_currency === 'JPY' ? '国内' : `¥${t.manual_rate}`;
           const moneyPart = archived
             ? `使用 ${formatJpy(used)}`
             : t.budget_jpy > 0
@@ -80,9 +77,12 @@ export function ActiveTripSwitchSheet({ visible, onClose, trips, activeTripId, o
                     </View>
                   )}
                 </View>
-                <ThemedText style={styles.rowSub} numberOfLines={1}>
-                  {ratePart}・{moneyPart}
-                </ThemedText>
+                <View style={styles.rowSubLine}>
+                  <CurrencyFlagImage currency={t.base_currency} size={13} />
+                  <ThemedText style={styles.rowSub} numberOfLines={1}>
+                    {ratePart}・{moneyPart}
+                  </ThemedText>
+                </View>
               </View>
               {selected && <ThemedText style={styles.check}>✓</ThemedText>}
             </Pressable>
@@ -146,6 +146,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  rowSubLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   rowName: {
     fontSize: 15,

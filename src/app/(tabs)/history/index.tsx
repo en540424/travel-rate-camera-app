@@ -5,10 +5,10 @@ import { FlatList, Pressable, StyleSheet, TouchableOpacity, View } from 'react-n
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
+import { CurrencyFlagImage } from '@/components/domain';
 import { EmptyState } from '@/components/ui';
 import { FALLBACK_BUDGET_JPY } from '@/constants/camera-screen';
 import { SHOW_PRO } from '@/config/feature-flags';
-import { CURRENCIES } from '@/constants/currencies';
 import { FREE_HISTORY_LIMIT } from '@/db/queries/history';
 import type { HistoryRow } from '@/db/queries/history';
 import { useHistory } from '@/hooks/use-history';
@@ -137,7 +137,6 @@ export default function HistoryScreen() {
     );
   }
 
-  const tripFlag = activeTrip ? CURRENCIES[activeTrip.base_currency]?.flag ?? '' : '';
   const tripRate = activeTrip?.manual_rate ?? 0;
 
   const listHeader = activeTrip && (
@@ -146,9 +145,10 @@ export default function HistoryScreen() {
         <ThemedText style={styles.title} numberOfLines={1}>
           {activeTrip.name}
         </ThemedText>
-        <View style={styles.rateChip}>
+        <View style={[styles.rateChip, styles.rateChipRow]}>
+          <CurrencyFlagImage currency={activeTrip.base_currency} size={14} />
           <ThemedText style={styles.rateChipText} numberOfLines={1}>
-            {tripFlag} {formatRate(tripRate, activeTrip.base_currency)}
+            {formatRate(tripRate, activeTrip.base_currency)}
           </ThemedText>
         </View>
       </View>
@@ -298,6 +298,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     paddingHorizontal: 12,
     paddingVertical: 6,
+  },
+  rateChipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   rateChipText: {
     fontSize: 13,

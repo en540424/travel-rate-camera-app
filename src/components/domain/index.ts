@@ -1,5 +1,6 @@
 export * from './ActiveTripBanner';
 export * from './ConversionSummaryCard';
+export * from './CurrencyFlagImage';
 export * from './ItemCard';
 export * from './PriceResultCard';
 export * from './ProFeatureBadge';

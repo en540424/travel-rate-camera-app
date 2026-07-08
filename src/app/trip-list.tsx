@@ -3,7 +3,7 @@ import { useCallback, useMemo } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { CURRENCIES } from '@/constants/currencies';
+import { CurrencyFlagImage } from '@/components/domain';
 import type { TripRow } from '@/db/queries/trips';
 import { useAllHistory } from '@/hooks/use-all-history';
 import { useTrips } from '@/hooks/use-trips';
@@ -98,9 +98,12 @@ export default function TripListScreen() {
                   <ThemedText style={styles.activeName} numberOfLines={1}>{active.name}</ThemedText>
                   <View style={styles.usingBadge}><ThemedText style={styles.usingBadgeText}>使用中</ThemedText></View>
                 </View>
-                <ThemedText style={styles.activeRate}>
-                  {cur === 'JPY' ? '🇯🇵 国内' : `${CURRENCIES[cur].flag} ¥${active.manual_rate}`}
-                </ThemedText>
+                <View style={styles.rateFlagRow}>
+                  <CurrencyFlagImage currency={cur} size={14} />
+                  <ThemedText style={styles.activeRate}>
+                    {cur === 'JPY' ? '国内' : `¥${active.manual_rate}`}
+                  </ThemedText>
+                </View>
               </View>
               <View style={styles.budgetRow}>
                 <View>
@@ -165,9 +168,12 @@ export default function TripListScreen() {
                       <ThemedText style={styles.otherName} numberOfLines={1}>{t.name}</ThemedText>
                       {archived && <View style={styles.endBadge}><ThemedText style={styles.endBadgeText}>終了</ThemedText></View>}
                     </View>
-                    <ThemedText style={styles.otherRate}>
-                      {cur === 'JPY' ? '🇯🇵' : `${CURRENCIES[cur].flag} ¥${t.manual_rate}`}
-                    </ThemedText>
+                    <View style={styles.rateFlagRow}>
+                      <CurrencyFlagImage currency={cur} size={13} />
+                      {cur !== 'JPY' && (
+                        <ThemedText style={styles.otherRate}>¥{t.manual_rate}</ThemedText>
+                      )}
+                    </View>
                   </View>
                   <ThemedText style={styles.otherBudget}>
                     {archived ? `使用 ${formatJpy(s.used)}` : t.budget_jpy > 0 ? `残り ${formatJpy(remaining)}` : '予算未設定'}
@@ -212,6 +218,7 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   activeTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  rateFlagRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   nameWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
   activeName: { fontSize: 18, fontWeight: '700', color: color.text, flexShrink: 1 },
   usingBadge: { backgroundColor: color.primary, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 2 },

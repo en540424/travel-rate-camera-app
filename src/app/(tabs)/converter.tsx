@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRef, useState } from 'react';
 
 import { ThemedText } from '@/components/themed-text';
+import { CurrencyFlagImage } from '@/components/domain';
 import { EmptyState, PrimaryButton } from '@/components/ui';
 import type { ConversionDirection, CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES } from '@/constants/currencies';
@@ -160,7 +161,7 @@ export default function ConverterScreen() {
           {/* 旅行カード（旅行名・通貨・レートをまとめて表示） */}
           {isJpyMode ? (
             <View style={styles.tripCard}>
-              <ThemedText style={styles.tripFlag}>{currencyInfo.flag}</ThemedText>
+              <CurrencyFlagImage currency={currency} size={20} />
               <View style={styles.tripTextWrap}>
                 <ThemedText style={styles.tripName} numberOfLines={1}>
                   {activeTrip.name}
@@ -172,7 +173,7 @@ export default function ConverterScreen() {
             <Pressable
               style={({ pressed }) => [styles.tripCard, pressed && styles.pressed]}
               onPress={() => router.push('/rate-setup')}>
-              <ThemedText style={styles.tripFlag}>{currencyInfo.flag}</ThemedText>
+              <CurrencyFlagImage currency={currency} size={20} />
               <View style={styles.tripTextWrap}>
                 <ThemedText style={styles.tripName} numberOfLines={1}>
                   {activeTrip.name}
@@ -396,7 +397,6 @@ const styles = StyleSheet.create({
     backgroundColor: color.card,
     ...shadow.card,
   },
-  tripFlag: { fontSize: 20 },
   tripTextWrap: { flex: 1, gap: 1 },
   tripName: { fontSize: 14, fontWeight: '700', color: color.text },
   tripSub: { fontSize: 12.5, fontWeight: '500', color: color.muted },

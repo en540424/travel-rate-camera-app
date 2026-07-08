@@ -9,6 +9,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { CameraPreview } from '@/components/camera/CameraPreview';
 import { ThemedText } from '@/components/themed-text';
 import {
+  CurrencyFlagImage,
   SaveLimitBanner,
 } from '@/components/domain';
 import { ActionSheet, EmptyState, SectionCard, SecondaryButton, PrimaryButton, Toast } from '@/components/ui';
@@ -655,16 +656,18 @@ export default function CameraScreen() {
                   {tripName}
                 </ThemedText>
                 {isJpyMode ? (
-                  <View style={styles.rateChip}>
-                    <ThemedText style={styles.rateChipText}>🇯🇵 JPY 国内</ThemedText>
+                  <View style={[styles.rateChip, styles.rateChipRow]}>
+                    <CurrencyFlagImage currency="JPY" size={14} />
+                    <ThemedText style={styles.rateChipText}>JPY 国内</ThemedText>
                   </View>
                 ) : (
                   <TouchableOpacity
-                    style={styles.rateChip}
+                    style={[styles.rateChip, styles.rateChipRow]}
                     onPress={cycleCurrency}
                     activeOpacity={0.75}>
+                    <CurrencyFlagImage currency={currencyForDisplay} size={14} />
                     <ThemedText style={styles.rateChipText} numberOfLines={1}>
-                      {c.flag} {rate > 0 ? formatRate(rate, currencyForDisplay) : 'レート未設定'}
+                      {rate > 0 ? formatRate(rate, currencyForDisplay) : 'レート未設定'}
                     </ThemedText>
                   </TouchableOpacity>
                 )}
@@ -1783,6 +1786,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     paddingHorizontal: spacing.md,
     paddingVertical: 6,
+  },
+  rateChipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   rateChipText: {
     fontSize: 13,

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { CurrencyFlagImage } from '@/components/domain';
 import { CURRENCIES } from '@/constants/currencies';
 import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
@@ -65,7 +66,14 @@ export default function RateSetupScreen() {
           <View style={styles.hero}>
             <View style={styles.heroTop}>
               <ThemedText style={styles.heroTrip} numberOfLines={1}>{activeTrip.name}</ThemedText>
-              <ThemedText style={styles.heroDir}>{isJpy ? '🇯🇵 国内' : `${currency} → JPY`}</ThemedText>
+              {isJpy ? (
+                <View style={styles.heroDirRow}>
+                  <CurrencyFlagImage currency="JPY" size={13} />
+                  <ThemedText style={styles.heroDir}>国内</ThemedText>
+                </View>
+              ) : (
+                <ThemedText style={styles.heroDir}>{`${currency} → JPY`}</ThemedText>
+              )}
             </View>
             <ThemedText style={styles.heroLabel}>現在のレート</ThemedText>
             <ThemedText
@@ -158,6 +166,7 @@ const styles = StyleSheet.create({
   hero: { backgroundColor: color.dark, borderRadius: radius.cardLg, padding: 18, gap: 6, ...shadow.raised },
   heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 4 },
   heroTrip: { fontSize: 15, fontWeight: '700', color: '#FFFFFF', flexShrink: 1 },
+  heroDirRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   heroDir: { fontSize: 12.5, fontWeight: '700', color: color.primaryAccent },
   heroLabel: { fontSize: 12, fontWeight: '700', color: color.primaryAccent },
   heroRate: { fontSize: 26, lineHeight: 32, fontWeight: '700', color: '#FFFFFF', letterSpacing: -0.3, fontVariant: ['tabular-nums'] },

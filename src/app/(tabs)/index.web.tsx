@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CameraPreview } from '@/components/camera/CameraPreview';
 import { ThemedText } from '@/components/themed-text';
+import { CurrencyFlagImage } from '@/components/domain';
 import type { ConversionDirection, CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES, FOREIGN_CURRENCY_CODES } from '@/constants/currencies';
 import {
@@ -122,18 +123,20 @@ export default function CameraScreen() {
 
               <View style={styles.contextRow}>
                 {isJpyMode ? (
-                  <View style={styles.modeChip}>
+                  <View style={[styles.modeChip, styles.modeChipRow]}>
+                    <CurrencyFlagImage currency="JPY" size={15} />
                     <ThemedText style={styles.modeChipText}>
-                      🇯🇵 JPY 国内モード
+                      JPY 国内モード
                     </ThemedText>
                   </View>
                 ) : (
                   <TouchableOpacity
-                    style={styles.modeChip}
+                    style={[styles.modeChip, styles.modeChipRow]}
                     onPress={cycleCurrency}
                     activeOpacity={0.75}>
+                    <CurrencyFlagImage currency={selectedCurrency} size={15} />
                     <ThemedText style={styles.modeChipText}>
-                      {c.flag} {selectedCurrency} → JPY
+                      {selectedCurrency} → JPY
                     </ThemedText>
                   </TouchableOpacity>
                 )}
@@ -362,6 +365,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.border,
+  },
+  modeChipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   modeChipText: {
     fontSize: 15,

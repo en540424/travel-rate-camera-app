@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { CurrencyFlagImage } from '@/components/domain';
 import type { CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES, CURRENCY_CODES } from '@/constants/currencies';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -55,7 +56,7 @@ export default function CurrencySelectScreen() {
                 {i > 0 && <View style={styles.sep} />}
                 <Pressable onPress={() => pick(code)} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
                   <View style={styles.flagBox}>
-                    <ThemedText style={styles.flagText}>{c.flag}</ThemedText>
+                    <CurrencyFlagImage currency={code} size={22} />
                   </View>
                   <View style={styles.rowText}>
                     <ThemedText style={styles.code}>{code}</ThemedText>
@@ -101,7 +102,6 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, paddingHorizontal: 14 },
   pressed: { backgroundColor: color.line3 },
   flagBox: { width: 36, height: 36, borderRadius: radius.chip, backgroundColor: color.bg, alignItems: 'center', justifyContent: 'center' },
-  flagText: { fontSize: 18 },
   rowText: { flex: 1 },
   code: { fontSize: 15, fontWeight: '700', color: color.text },
   nameJa: { fontSize: 12, fontWeight: '500', color: color.muted },

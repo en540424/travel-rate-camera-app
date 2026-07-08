@@ -4,8 +4,9 @@ import { Pressable, ScrollView, StyleSheet, TouchableOpacity, View, useWindowDim
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
+import { CurrencyFlagImage } from '@/components/domain';
 import { DT } from '@/constants/designTokens';
-import { CURRENCIES } from '@/constants/currencies';
+import type { CurrencyCode } from '@/constants/currencies';
 import type { HistoryRow } from '@/db/queries/history';
 import { useAllHistory } from '@/hooks/use-all-history';
 import { formatJpy } from '@/utils/format';
@@ -411,10 +412,9 @@ export default function AnalyticsScreen() {
               <ThemedText style={styles.cardTitle}>{tripSummaryTitle}</ThemedText>
               <View style={styles.tripList}>
                 {tripSummary.map((t, i) => {
-                  const flag = CURRENCIES[t.currency as keyof typeof CURRENCIES]?.flag ?? '🌍';
                   return (
                     <View key={i} style={[styles.tripRow, i > 0 && styles.tripRowBorder]}>
-                      <ThemedText style={styles.tripFlag}>{flag}</ThemedText>
+                      <CurrencyFlagImage currency={t.currency as CurrencyCode} size={16} />
                       <ThemedText style={styles.tripName} numberOfLines={1}>{t.name}</ThemedText>
                       <View style={styles.tripRight}>
                         <ThemedText style={styles.tripAmount}>{formatJpy(t.purchased)}</ThemedText>
@@ -716,10 +716,6 @@ const styles = StyleSheet.create({
   tripRowBorder: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: DT.colors.border,
-  },
-  tripFlag: {
-    fontSize: 20,
-    lineHeight: 24,
   },
   tripName: {
     flex: 1,
