@@ -464,7 +464,7 @@ export default function CalendarScreen() {
                                   styles.historyCard,
                                   isPurchased ? styles.historyCardPurchased : styles.historyCardCandidate,
                                 ]}>
-                                <View style={item.image_uri ? styles.calCardRow : undefined}>
+                                <View style={styles.calCardRow}>
                                   {item.image_uri && (
                                     <Pressable
                                       onPress={() => setPhotoModalUri(item.image_uri!)}
@@ -476,7 +476,7 @@ export default function CalendarScreen() {
                                       />
                                     </Pressable>
                                   )}
-                                  <View style={item.image_uri ? styles.calCardRight : undefined}>
+                                  <View style={styles.calCardRight}>
                                     <View style={styles.cardTop}>
                                       <View style={styles.cardLeft}>
                                         <View style={styles.cardFlagBadge}>
@@ -503,23 +503,30 @@ export default function CalendarScreen() {
                                           </ThemedText>
                                         </View>
                                       </View>
-                                      <Pressable
-                                        style={[
-                                          styles.badge,
-                                          isPurchased && styles.badgePurchased,
-                                        ]}
-                                        onPress={() =>
-                                          togglePurchased(item.id, item.is_purchased ?? 0)
-                                        }
-                                        hitSlop={8}>
-                                        <ThemedText
-                                          style={[
-                                            styles.badgeText,
-                                            isPurchased && styles.badgeTextPurchased,
-                                          ]}>
-                                          {isPurchased ? '✓ 購入済み' : '候補'}
+                                      {/* レート（補助情報）を右上、購入済み/候補バッジをその下に配置し、
+                                          左の金額ブロックと視線が交差しないようにまとめる。 */}
+                                      <View style={styles.cardTopRight}>
+                                        <ThemedText style={styles.cardRate} numberOfLines={1}>
+                                          {formatRate(item.rate_used, item.currency)}
                                         </ThemedText>
-                                      </Pressable>
+                                        <Pressable
+                                          style={[
+                                            styles.badge,
+                                            isPurchased && styles.badgePurchased,
+                                          ]}
+                                          onPress={() =>
+                                            togglePurchased(item.id, item.is_purchased ?? 0)
+                                          }
+                                          hitSlop={8}>
+                                          <ThemedText
+                                            style={[
+                                              styles.badgeText,
+                                              isPurchased && styles.badgeTextPurchased,
+                                            ]}>
+                                            {isPurchased ? '✓ 購入済み' : '候補'}
+                                          </ThemedText>
+                                        </Pressable>
+                                      </View>
                                     </View>
 
                                     {item.memo ? (
@@ -531,9 +538,6 @@ export default function CalendarScreen() {
                                 </View>
 
                                 <View style={styles.cardFooter}>
-                                  <ThemedText style={styles.cardRate}>
-                                    {formatRate(item.rate_used, item.currency)}
-                                  </ThemedText>
                                   <Pressable onPress={() => handleDeleteItem(item)} hitSlop={8}>
                                     <ThemedText style={styles.deleteLink}>削除</ThemedText>
                                   </Pressable>
@@ -987,6 +991,14 @@ const styles = StyleSheet.create({
     gap: 8,
     flex: 1,
   },
+  // レート（補助情報）＋購入済み/候補バッジの右上スタック。
+  // flex指定なし（内容幅のみ）にすることで、cardLeftのflex:1が金額表示を優先し、
+  // 金額が長くても崩れないようにする。
+  cardTopRight: {
+    alignItems: 'flex-end',
+    gap: 3,
+    flexShrink: 0,
+  },
   cardFlagBadge: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
@@ -1038,10 +1050,10 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
+  // レートを右上（cardTopRight）へ移したため、削除ボタンのみを右寄せで表示する。
   cardFooter: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
   },
   cardRate: {
     fontSize: 11,
