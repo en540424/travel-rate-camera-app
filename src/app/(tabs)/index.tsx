@@ -3,7 +3,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, Keyboard, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CameraPreview } from '@/components/camera/CameraPreview';
@@ -634,6 +634,13 @@ export default function CameraScreen() {
 
   return (
     <View style={styles.screen}>
+      {/* 手入力時（金額・メモ）、キーボード表示で下部の保存ボタンが隠れないための対応。
+          既存のscrollTo系（scrollToManualAdjust等）はキーボード高さを考慮しないため、
+          KeyboardAvoidingViewでスクロール可能領域自体を確保する。OCR成功時の固定フッター・Modalには影響しない。 */}
+      <KeyboardAvoidingView
+        style={styles.flexOne}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={insets.top}>
       <SafeAreaView style={styles.safe} edges={['top']}>
         <ScrollView
           ref={scrollViewRef}
@@ -1588,6 +1595,7 @@ export default function CameraScreen() {
           </View>
         </ScrollView>
       </SafeAreaView>
+      </KeyboardAvoidingView>
 
       {/* 価格OCR・結果確認中のみ表示する画面下固定の保存フッター（縦長緩和）。
           下タブの上に収まる位置。価格未選択でも消さず保存ボタンだけ disabled。保存処理は既存ハンドラを呼ぶだけ。 */}
@@ -1742,6 +1750,7 @@ const styles = StyleSheet.create({
     backgroundColor: color.bgScreen, // v2 地色（#F4F6F5）
   },
   safe: { flex: 1 },
+  flexOne: { flex: 1 },
   scrollView: { flex: 1 },
   scroll: {
     flexGrow: 1,

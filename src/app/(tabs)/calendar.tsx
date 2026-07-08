@@ -44,6 +44,12 @@ const FLAG_IMAGES: Partial<Record<CurrencyCode, number>> = {
   JPY: require('@/assets/flags/jp.png') as number,
 };
 
+// 日本・韓国のPNGは正方形に近く（縦横比約1.5）box比率（28×18≒1.56）とほぼ一致するため、
+// contain/coverどちらでもbox一杯まで表示され、より横長な他国旗（米/英/台/タイ/EU）より
+// 大きく見えやすい。他国旗はそのままに、この2通貨だけ表示サイズを少し小さくして収まりを合わせる。
+// PNG自体は一切編集しない。
+const FLAG_IMAGE_COMPACT_CURRENCIES = new Set<CurrencyCode>(['JPY', 'KRW']);
+
 function getDayCurrency(rows: HistoryRow[]): CurrencyCode | null {
   for (const r of rows) return r.currency as CurrencyCode;
   return null;
@@ -315,7 +321,14 @@ export default function CalendarScreen() {
                         <View style={styles.dayCellFlagArea}>
                           {flagImage != null ? (
                             <View style={styles.flagWrapper}>
-                              <Image source={flagImage} style={styles.flagImage} contentFit="contain" />
+                              <Image
+                                source={flagImage}
+                                style={[
+                                  styles.flagImage,
+                                  flagCurrency != null && FLAG_IMAGE_COMPACT_CURRENCIES.has(flagCurrency) && styles.flagImageCompact,
+                                ]}
+                                contentFit="cover"
+                              />
                             </View>
                           ) : (
                             <ThemedText style={styles.dayFlags}>{CURRENCIES[flagCurrency].flag}</ThemedText>
@@ -737,13 +750,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: CALENDAR_REFINED.flagBorder,
     borderRadius: 4,
-    padding: 4,
-    // 国旗ごとにPNGの縦横比が異なるため、overflow: 'hidden' がないと
-    // 一部の国旗（日本など）だけ枠からはみ出して大きく見えることがあった。
-    // contentFit="contain"と合わせ、どの国旗も枠内に収まって見えるようにする
+    padding: 3,
+    // 念のための保険。通常はflagImage/flagImageCompactのサイズで収まる
     overflow: 'hidden',
   },
   flagImage: { width: 28, height: 18 },
+  // JPY/KRWのみ適用。box比率(28×18)に近い正方形寄りPNGが枠一杯に見えるのを抑える表示上の補正
+  flagImageCompact: { width: 22, height: 15 },
   flagExtra: { fontSize: 9, fontWeight: '700' as const, color: CALENDAR_REFINED.textFaint, lineHeight: 11 },
 
   dotsRow: {
