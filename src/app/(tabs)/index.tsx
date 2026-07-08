@@ -40,6 +40,9 @@ const OCR_PHOTO_PREVIEW_FRAME_HEIGHT = 110;
 /** 撮影前メイン画面の撮影モード。価格OCR（既定）/ 商品写真（補助） */
 type CaptureMode = 'ocr' | 'photo';
 
+/** 価格OCRモードの表示フェーズ。scanning は CameraPreview 内部 state のため camera に含める。 */
+type Phase = 'camera' | 'scanning' | 'result';
+
 export default function CameraScreen() {
   const insets = useSafeAreaInsets();
   // 保存成功トースト（Alertではない軽量通知）。文言が入ると表示、Toast側で自動的にnullへ戻す。
@@ -219,9 +222,15 @@ export default function CameraScreen() {
   const manualOpen = manualOpenByDefault || manualAdjustExpanded;
   const ocrSuccess = ocrResult != null && ocrResult.prices.length > 0;
 
-  // 固定フッターは「OCR成功時（価格候補あり）」だけ。手入力時は固定フッター化を試みたが
-  // 実機で解消しなかったため、手入力時はカード内インラインの保存ボタンに一本化する。
-  const showFooter = !isWeb && ocrSuccess;
+  // 表示フェーズ（価格OCRモードのカメラ↔結果確認）。
+  // 'scanning' は CameraPreview 内部 state のため index 側からは観測せず 'camera' に含める
+  // （カメラ表示中＝フッター非表示なので、読み取るCTAを隠す問題は起きない）。
+  // result = ライブカメラを撮影済みプレビューに切替済み（cameraLive=false）かつ OCR結果あり。
+  const phase: Phase = !cameraLive && ocrResult != null ? 'result' : 'camera';
+  const isPriceOcrMode = captureMode === 'ocr';
+  // 固定フッターは「価格OCRモードで結果確認中、かつOCR成功（価格候補あり）」のときだけ。
+  // → カメラ表示中・スキャン中・商品写真モード中・OCR失敗時は出さない。
+  const showFooter = !isWeb && isPriceOcrMode && phase === 'result' && ocrSuccess;
   // 価格未選択（＝金額未確定）なら保存ボタンだけ disabled。手入力で金額が入れば canSave で有効化される。
   const saveDisabled = !canSave;
 
@@ -1522,10 +1531,7 @@ export default function CameraScreen() {
               )}
 
               {/* 保存ボタン（カードの主役アクション）。
-                  OCR成功時は固定フッターへ移すため、ここでは非表示（重複回避）。
-                  手入力時は固定フッター化を試みたが実機で解消しなかったため、
-                  ScrollView内・カードの自然な位置にインライン表示する。
-                  下に十分な余白（manualSaveBtn）を持たせ、押す前にキーボードを閉じる。 */}
+                  OCR成功時は固定フッターへ移すため、ここでは非表示（重複回避）。 */}
               {!showFooter && (
                 <PrimaryButton
                   title={
@@ -1535,12 +1541,8 @@ export default function CameraScreen() {
                         ? '購入済みとして保存'
                         : '買い物候補に保存'
                   }
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    handleSaveCandidate();
-                  }}
+                  onPress={handleSaveCandidate}
                   disabled={saveDisabled}
-                  style={styles.manualSaveBtn}
                 />
               )}
 
@@ -1587,9 +1589,8 @@ export default function CameraScreen() {
         </ScrollView>
       </SafeAreaView>
 
-      {/* 価格OCR・結果確認中（OCR成功時）のみ表示する画面下固定の保存フッター。
-          下タブの上に収まる位置。価格未選択でも消さず保存ボタンだけ disabled。保存処理は既存ハンドラを呼ぶだけ。
-          手入力時はここではなく、カード内インラインの保存ボタン（manualSaveBtn）を使う。 */}
+      {/* 価格OCR・結果確認中のみ表示する画面下固定の保存フッター（縦長緩和）。
+          下タブの上に収まる位置。価格未選択でも消さず保存ボタンだけ disabled。保存処理は既存ハンドラを呼ぶだけ。 */}
       {showFooter && (
         <View style={styles.saveFooter}>
           <PrimaryButton
@@ -2077,10 +2078,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: color.body,
-  },
-  // 手入力時のインライン保存ボタン。下タブ/画面端に詰まって見えないよう余白を確保する
-  manualSaveBtn: {
-    marginBottom: 24,
   },
   nextShotBtn: {
     alignItems: 'center',

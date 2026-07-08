@@ -354,7 +354,10 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   scroll: {
     padding: 18,
-    paddingBottom: 80,
+    // 結果カード圧縮後は80だと余分にスクロールできる余地が大きすぎたため、
+    // 保存ボタンへ確実に届く程度の余白を残しつつ縮小する（scrollEnabledは
+    // 端末サイズ差の安全弁として常時有効のまま変更しない）。
+    paddingBottom: 32,
     maxWidth: 480,
     width: '100%',
     alignSelf: 'center',
