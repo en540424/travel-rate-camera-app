@@ -100,7 +100,7 @@ export default function HistoryScreen() {
 
     return (
       <Pressable
-        style={styles.card}
+        style={[styles.card, { borderLeftColor: tone.dot }]}
         onPress={() => openDetail(item.id)}
         android_ripple={{ color: color.line2 }}>
         <View style={styles.thumb}>
@@ -153,23 +153,27 @@ export default function HistoryScreen() {
         </View>
       </View>
 
-      <View style={styles.summaryRow}>
-        <View style={styles.budgetCol}>
-          <ThemedText style={styles.budgetLabel}>残り予算</ThemedText>
-          <ThemedText style={styles.budgetValue} numberOfLines={1}>
-            {tripBudgetJpy > 0 ? formatJpy(stats.remainingBudget) : '未設定'}
-          </ThemedText>
-        </View>
-        <View style={styles.statusTotals}>
-          <View style={styles.statusLine}>
-            <View style={[styles.statusDot, { backgroundColor: color.purchased }]} />
-            <ThemedText style={styles.statusLineLabel}>購入済み</ThemedText>
-            <ThemedText style={styles.statusLineValue}>{formatJpy(stats.purchasedTotalJpy)}</ThemedText>
+      {/* 残り予算・購入済み・候補を1枚の白カードにまとめ、背景と同化しないようにする。
+          購入済み/候補は全面色ではなく、薄い背景の小さなチップで軽くアクセントを付ける程度に留める。 */}
+      <View style={styles.summaryCard}>
+        <View style={styles.summaryRow}>
+          <View style={styles.budgetCol}>
+            <ThemedText style={styles.budgetLabel}>残り予算</ThemedText>
+            <ThemedText style={styles.budgetValue} numberOfLines={1}>
+              {tripBudgetJpy > 0 ? formatJpy(stats.remainingBudget) : '未設定'}
+            </ThemedText>
           </View>
-          <View style={styles.statusLine}>
-            <View style={[styles.statusDot, { backgroundColor: color.candidate }]} />
-            <ThemedText style={styles.statusLineLabel}>候補</ThemedText>
-            <ThemedText style={styles.statusLineValue}>{formatJpy(stats.candidateTotalJpy)}</ThemedText>
+          <View style={styles.statusTotals}>
+            <View style={[styles.statusLine, { backgroundColor: color.purchasedSoft }]}>
+              <View style={[styles.statusDot, { backgroundColor: color.purchased }]} />
+              <ThemedText style={styles.statusLineLabel}>購入済み</ThemedText>
+              <ThemedText style={styles.statusLineValue}>{formatJpy(stats.purchasedTotalJpy)}</ThemedText>
+            </View>
+            <View style={[styles.statusLine, { backgroundColor: color.candidateSoft }]}>
+              <View style={[styles.statusDot, { backgroundColor: color.candidate }]} />
+              <ThemedText style={styles.statusLineLabel}>候補</ThemedText>
+              <ThemedText style={styles.statusLineValue}>{formatJpy(stats.candidateTotalJpy)}</ThemedText>
+            </View>
           </View>
         </View>
       </View>
@@ -310,6 +314,16 @@ const styles = StyleSheet.create({
     color: color.primaryDark,
   },
 
+  // 残り予算・購入済み・候補をまとめる白カード。背景から分離させるための
+  // 薄い枠線＋薄い影のみ（他画面のカードと同じ強さ）。
+  summaryCard: {
+    backgroundColor: color.card,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: color.line,
+    padding: 14,
+    ...shadow.card,
+  },
   summaryRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -335,12 +349,16 @@ const styles = StyleSheet.create({
   statusTotals: {
     alignItems: 'flex-end',
     gap: 6,
-    paddingBottom: 4,
   },
+  // 購入済み/候補を、全面色ではなく薄い背景の小さなチップとして見せる
+  // （backgroundColorは描画時にpurchasedSoft/candidateSoftを指定）。
   statusLine: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: radius.chip,
   },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
   statusLineLabel: { fontSize: 12, fontWeight: '600', color: color.body },
@@ -391,6 +409,8 @@ const styles = StyleSheet.create({
   segmentCountActive: { color: color.muted },
 
   cardGap: { height: 10 },
+  // カレンダー画面の商品カードと同じ思想（白カード＋左端の購入済み/候補アクセント）。
+  // borderLeftColorは描画時にtone.dot（購入済み=緑/候補=黄色）で上書きする。
   card: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -399,6 +419,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
     borderWidth: 1,
     borderColor: color.line,
+    borderLeftWidth: 3,
     paddingVertical: 9,
     paddingHorizontal: 9,
     ...shadow.card,
