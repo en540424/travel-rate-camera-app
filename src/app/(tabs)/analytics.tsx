@@ -647,6 +647,9 @@ const styles = StyleSheet.create({
   monthRow: {
     flexDirection: 'row',
     marginTop: DT.spacing.sm - 2,
+    // barsRowと同じgapにして列位置を揃える（gap不一致だと横スクロール月表示で
+    // 棒とラベルが右へ行くほどズレ、選択日付が棒の見た目位置と合わなくなる）
+    gap: 2,
   },
   barMonthLabel: {
     flex: 1,

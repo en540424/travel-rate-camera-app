@@ -620,10 +620,11 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   summaryCardTitle: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
-    color: CALENDAR_REFINED.textSub,
-    marginBottom: 6,
+    color: CALENDAR_REFINED.primaryStrong,
+    marginBottom: 8,
+    letterSpacing: 0.2,
   },
   summaryTwoCol: { flexDirection: 'row', gap: 6 },
   summaryStatItem: { flex: 1, borderRadius: radius.chip, padding: 8, gap: 3 },
@@ -737,6 +738,9 @@ const styles = StyleSheet.create({
     borderColor: CALENDAR_REFINED.flagBorder,
     borderRadius: 4,
     padding: 3,
+    // 国旗ごとにPNGの縦横比が異なるため、overflow: 'hidden' がないと
+    // 一部の国旗（日本など）だけ枠からはみ出して大きく見えることがあった
+    overflow: 'hidden',
   },
   flagImage: { width: 28, height: 18 },
   flagExtra: { fontSize: 9, fontWeight: '700' as const, color: CALENDAR_REFINED.textFaint, lineHeight: 11 },
@@ -851,12 +855,13 @@ const styles = StyleSheet.create({
 
   // 選択日の合計・選択日の記録の小見出し
   sectionLabel: {
-    fontSize: 10.5,
+    fontSize: 12.5,
     fontWeight: '700',
-    color: CALENDAR_REFINED.textFaint,
-    marginBottom: 4,
+    color: CALENDAR_REFINED.primaryStrong,
+    marginBottom: 8,
+    letterSpacing: 0.2,
   },
-  sectionLabelRecords: { marginTop: 4 },
+  sectionLabelRecords: { marginTop: 10 },
 
   // 選択日の合計
   daySummaryRow: {

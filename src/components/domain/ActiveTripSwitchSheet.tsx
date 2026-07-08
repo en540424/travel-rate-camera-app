@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ActionSheet } from '@/components/ui';
@@ -24,6 +24,7 @@ export interface ActiveTripSwitchSheetProps {
  */
 export function ActiveTripSwitchSheet({ visible, onClose, trips, activeTripId, onSelect }: ActiveTripSwitchSheetProps) {
   const { history } = useAllHistory();
+  const { height: windowHeight } = useWindowDimensions();
 
   const usedByTrip = useMemo(() => {
     const m = new Map<number, number>();
@@ -39,7 +40,10 @@ export function ActiveTripSwitchSheet({ visible, onClose, trips, activeTripId, o
       <ThemedText style={styles.title}>使う旅行を切り替え</ThemedText>
       <ThemedText style={styles.subtitle}>カメラと履歴が、選んだ旅行に切り替わります</ThemedText>
 
-      <View style={styles.list}>
+      <ScrollView
+        style={{ maxHeight: windowHeight * 0.55 }}
+        contentContainerStyle={styles.list}
+        showsVerticalScrollIndicator={false}>
         {trips.map((t) => {
           const selected = t.id === activeTripId;
           const archived = t.archived_at != null;
@@ -84,7 +88,7 @@ export function ActiveTripSwitchSheet({ visible, onClose, trips, activeTripId, o
             </Pressable>
           );
         })}
-      </View>
+      </ScrollView>
 
       <Pressable
         onPress={onClose}
