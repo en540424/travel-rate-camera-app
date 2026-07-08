@@ -101,6 +101,13 @@ export default function RateSetupScreen() {
                 </View>
               </View>
 
+              {/* 保存済み記録への影響についての注記（仕様であり不具合ではないことを明記） */}
+              <View style={styles.noteCard}>
+                <ThemedText style={styles.noteCardText}>
+                  ⓘ 新しいレートは、これから保存する記録に使われます。すでに保存した記録の円換算額は、保存した時点のレートのまま変わりません（仕様です）。
+                </ThemedText>
+              </View>
+
               {/* 換算プレビュー */}
               <View style={styles.preview}>
                 <ThemedText style={styles.previewTitle}>換算プレビュー</ThemedText>
@@ -165,6 +172,14 @@ const styles = StyleSheet.create({
   ratePrefix: { fontSize: 15, fontWeight: '600', color: color.body },
   rateInput: { flex: 1, fontSize: 22, fontWeight: '700', color: color.text, paddingVertical: 12, fontVariant: ['tabular-nums'] },
   rateSuffix: { fontSize: 15, fontWeight: '600', color: color.body },
+  noteCard: {
+    backgroundColor: color.candidateSoft,
+    borderRadius: radius.chip,
+    borderWidth: 1,
+    borderColor: color.candidateBorder,
+    padding: 12,
+  },
+  noteCardText: { fontSize: 12.5, fontWeight: '600', color: color.candidateText, lineHeight: 19 },
   preview: {
     backgroundColor: color.card, borderRadius: radius.card, borderWidth: 1, borderColor: color.line,
     padding: 14, gap: 10, ...shadow.card,
