@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { GhostButton, PrimaryButton } from '@/components/ui';
+import { GhostButton, PrimaryButton, SecondaryButton } from '@/components/ui';
 import { useTrips } from '@/hooks/use-trips';
 import { color, radius, shadow } from '@/theme/tokens';
 import { formatJpy } from '@/utils/format';
@@ -20,6 +20,9 @@ function dateRange(start: string | null, end: string | null): string {
 export default function TripCreatedScreen() {
   const { activeTrip } = useTrips();
 
+  // レート必須の通貨で未設定（0）のまま作成された場合だけ強く誘導する（通常は作成時にレート入力が必須のため基本発生しない想定）。
+  const rateNeedsSetup = !!activeTrip && activeTrip.base_currency !== 'JPY' && activeTrip.manual_rate <= 0;
+
   function openCamera() {
     router.dismissAll();
     router.navigate('/');
@@ -27,6 +30,10 @@ export default function TripCreatedScreen() {
   function openList() {
     router.dismissAll();
     router.navigate('/trip-list');
+  }
+  function openRateSetup() {
+    router.dismissAll();
+    router.navigate('/rate-setup');
   }
 
   return (
@@ -47,7 +54,7 @@ export default function TripCreatedScreen() {
           <View style={styles.summary}>
             <View style={styles.sumRow}>
               <ThemedText style={styles.sumLabel}>レート</ThemedText>
-              <ThemedText style={styles.sumValue}>
+              <ThemedText style={[styles.sumValue, rateNeedsSetup && styles.sumValueWarn]}>
                 {activeTrip.base_currency === 'JPY'
                   ? '円のみ'
                   : activeTrip.manual_rate > 0
@@ -70,7 +77,22 @@ export default function TripCreatedScreen() {
           </View>
         )}
 
+        {rateNeedsSetup ? (
+          <ThemedText style={styles.rateHintWarn}>
+            この旅行で使うレートを設定してください。設定するまで円換算は表示されません。
+          </ThemedText>
+        ) : (
+          activeTrip && activeTrip.base_currency !== 'JPY' && (
+            <ThemedText style={styles.rateHint}>
+              レートはあとから設定画面で変更できます。
+            </ThemedText>
+          )
+        )}
+
         <View style={styles.actions}>
+          {rateNeedsSetup ? (
+            <SecondaryButton title="レートを設定する" onPress={openRateSetup} />
+          ) : null}
           <PrimaryButton title="📷 カメラを開く" onPress={openCamera} />
           <GhostButton title="旅行一覧へ" onPress={openList} />
         </View>
@@ -95,5 +117,11 @@ const styles = StyleSheet.create({
   sumLabel: { fontSize: 13, fontWeight: '600', color: color.muted },
   sumValue: { fontSize: 14, fontWeight: '700', color: color.text, fontVariant: ['tabular-nums'] },
   sumSep: { height: StyleSheet.hairlineWidth, backgroundColor: color.line2, marginLeft: 16 },
+  sumValueWarn: { color: color.candidateText },
+  rateHint: { fontSize: 12, fontWeight: '500', color: color.muted, textAlign: 'center', marginTop: 8, paddingHorizontal: 8 },
+  rateHintWarn: {
+    fontSize: 12.5, fontWeight: '600', color: color.candidateText, textAlign: 'center',
+    marginTop: 10, paddingHorizontal: 12,
+  },
   actions: { width: '100%', gap: 10, marginTop: 16 },
 });
