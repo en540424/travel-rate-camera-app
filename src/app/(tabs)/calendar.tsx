@@ -431,7 +431,7 @@ export default function CalendarScreen() {
                         {/* 選択日の合計 */}
                         <ThemedText style={styles.sectionLabel}>選択日の合計</ThemedText>
                         <View style={styles.daySummaryRow}>
-                          <View style={styles.daySummaryItem}>
+                          <View style={[styles.daySummaryItem, styles.daySummaryItemPurchased]}>
                             <View style={styles.daySummaryItemHeader}>
                               <View style={[styles.dot, styles.dotPurchased]} />
                               <ThemedText style={styles.daySummaryLabel}>購入済み合計</ThemedText>
@@ -440,7 +440,7 @@ export default function CalendarScreen() {
                               {formatJpy(purchasedTotal)}
                             </ThemedText>
                           </View>
-                          <View style={styles.daySummaryItem}>
+                          <View style={[styles.daySummaryItem, styles.daySummaryItemCandidate]}>
                             <View style={styles.daySummaryItemHeader}>
                               <View style={[styles.dot, styles.dotCandidate]} />
                               <ThemedText style={styles.daySummaryLabel}>候補合計</ThemedText>
@@ -557,7 +557,9 @@ export default function CalendarScreen() {
 // ─── カレンダー専用カラーセット ──────────────────────────────────────
 
 const CALENDAR_REFINED = {
-  screenBg: '#FCFFFE',
+  // 他タブ（index/converter/settings/history）と同じ画面背景（color.bgScreen）に合わせる。
+  // 以前の値（#FCFFFE）は他タブより緑/青がかって見えていた。
+  screenBg: color.bgScreen,
   cardBg: '#FFFFFF',
   calendarCardBg: '#FFFFFF',
   calendarCardBorder: '#BFCDC9',
@@ -577,9 +579,10 @@ const CALENDAR_REFINED = {
   purchased: '#1BB7AA',
   purchasedText: '#087D74',
   purchasedSoft: '#DDF5F0',
-  candidate: '#F2BD3D',
+  // 分析画面（DT.colors.candidate/candidateBg）の候補黄色に合わせる。
+  candidate: '#F59E0B',
   candidateText: '#8A620F',
-  candidateSoft: '#FFF5E0',
+  candidateSoft: '#FEF3C7',
   sunday: '#E24D4A',
   saturday: '#3F7EEB',
   flagBorder: '#C3D2CE',
@@ -891,14 +894,15 @@ const styles = StyleSheet.create({
   },
   daySummaryItem: {
     flex: 1,
-    backgroundColor: CALENDAR_REFINED.cardBg,
     borderRadius: 8,
     paddingVertical: 8,
     paddingHorizontal: 10,
     gap: 3,
-    borderWidth: 1,
-    borderColor: CALENDAR_REFINED.lineSoft,
   },
+  // 月集計カード（summaryStatPurchased/Candidate）と同じ配色にして、
+  // 背景と同化して見にくかった状態を解消する。
+  daySummaryItemPurchased: { backgroundColor: CALENDAR_REFINED.purchasedSoft },
+  daySummaryItemCandidate: { backgroundColor: CALENDAR_REFINED.candidateSoft },
   daySummaryItemHeader: {
     flexDirection: 'row',
     alignItems: 'center',
