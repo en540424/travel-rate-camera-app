@@ -4,6 +4,7 @@ import { Alert, StyleSheet, type ColorValue } from 'react-native';
 
 import { DT } from '@/constants/designTokens';
 import { useUnsavedChangesStore } from '@/stores/unsaved-changes-store';
+import { triggerTabScrollReset } from '@/utils/tab-scroll-reset';
 
 type IconName = NonNullable<SymbolViewProps['name']>;
 
@@ -26,9 +27,15 @@ export default function TabsLayout() {
       }}
       // 商品編集画面で未保存の変更がある間だけ、下タブ移動の前に確認Alertを出す。
       // 編集画面の戻るボタン（headerBackTitle）はこの対象外（タブ切替のみガードする）。
+      // 未保存の変更が無い通常のタブ切替時は、切替先タブのスクロールを先頭へ戻す
+      // （tabPressはタブバー押下時のみ発火し、タブ内の詳細/編集画面から戻る操作では
+      // 発火しないため、そちらのスクロール位置維持には影響しない）。
       screenListeners={({ navigation, route }) => ({
         tabPress: (e) => {
-          if (!useUnsavedChangesStore.getState().hasUnsavedChanges) return;
+          if (!useUnsavedChangesStore.getState().hasUnsavedChanges) {
+            triggerTabScrollReset(route.name);
+            return;
+          }
           e.preventDefault();
           Alert.alert(
             '変更内容を破棄しますか？',

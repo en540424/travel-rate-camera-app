@@ -1,5 +1,5 @@
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -10,6 +10,7 @@ import type { CurrencyCode } from '@/constants/currencies';
 import type { HistoryRow } from '@/db/queries/history';
 import { useAllHistory } from '@/hooks/use-all-history';
 import { formatJpy } from '@/utils/format';
+import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
 
 type Period = 'today' | 'month' | 'year';
 
@@ -55,6 +56,15 @@ function matchesPeriod(
 }
 
 export default function AnalyticsScreen() {
+  // 下タブでこのタブ（分析）を押した時（＝タブ切替で入ってきた時）だけ先頭へ戻す。
+  // (tabs)/_layout.tsxのtabPressからtriggerTabScrollResetで呼ばれる。
+  const scrollRef = useRef<ScrollView>(null);
+  useEffect(() => {
+    return registerTabScrollReset('analytics', () => {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+    });
+  }, []);
+
   const { history, tripMap, reload } = useAllHistory();
   const { width: windowWidth } = useWindowDimensions();
   const [period, setPeriod] = useState<Period>('year');
@@ -200,6 +210,7 @@ export default function AnalyticsScreen() {
     <View style={styles.screen}>
       <SafeAreaView style={styles.safe} edges={['top']}>
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}>
 

@@ -1,7 +1,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { useFocusEffect } from 'expo-router';
 import { Image } from 'expo-image';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, View, type ImageStyle, type StyleProp } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -15,6 +15,7 @@ import { useAllHistory } from '@/hooks/use-all-history';
 import { useTrips } from '@/hooks/use-trips';
 import { color, radius, shadow } from '@/theme/tokens';
 import { formatJpy, formatRate } from '@/utils/format';
+import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
 
 // ─── 日付ユーティリティ ──────────────────────────────────────────
 
@@ -108,6 +109,16 @@ export default function CalendarScreen() {
   const [displayYear, setDisplayYear] = useState(today.getFullYear());
   const [displayMonth, setDisplayMonth] = useState(today.getMonth());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
+  // 下タブでこのタブ（カレンダー）を押した時（＝タブ切替で入ってきた時）だけ先頭へ戻す。
+  // (tabs)/_layout.tsxのtabPress（タブバー押下）からtriggerTabScrollResetで呼ばれる。
+  // タブ内の詳細画面遷移は無いため、通常のフォーカスでは影響しない。
+  const scrollRef = useRef<ScrollView>(null);
+  useEffect(() => {
+    return registerTabScrollReset('calendar', () => {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+    });
+  }, []);
 
   const { history, tripMap, togglePurchased, removeEntry, reload } = useAllHistory();
   const { activeTrip } = useTrips();
@@ -214,6 +225,7 @@ export default function CalendarScreen() {
     <View style={styles.screen}>
       <SafeAreaView style={styles.safe} edges={['top']}>
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled">

@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Keyboard, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -30,6 +30,7 @@ import { color, radius, shadow, spacing, statusColor, typography } from '@/theme
 import { convert } from '@/utils/currency';
 import { extractMemoLines, extractPriceCandidates } from '@/utils/extract-prices';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
+import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
 const MEMO_PREVIEW_COUNT = 3;
@@ -102,6 +103,14 @@ export default function CameraScreen() {
   const [showOcrDebug, setShowOcrDebug] = useState(false);
 
   const scrollViewRef = useRef<ScrollView>(null);
+  // 下タブでこのタブ（カメラ）を押した時（＝タブ切替で入ってきた時）だけ先頭へ戻す。
+  // (tabs)/_layout.tsxのtabPress（タブバー押下）からtriggerTabScrollResetで呼ばれる。
+  // タブ内の詳細/編集画面遷移は無いため、通常のフォーカスでは影響しない。
+  useEffect(() => {
+    return registerTabScrollReset('index', () => {
+      scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+    });
+  }, []);
   const inputCardYRef = useRef(0);
   // 「✎ 金額を修正」展開時のスクロール先（編集パネルのSectionCard内オフセット）
   const manualAdjustYRef = useRef(0);

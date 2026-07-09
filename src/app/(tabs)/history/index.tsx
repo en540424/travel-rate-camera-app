@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -16,6 +16,7 @@ import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { color, radius, shadow, statusColor } from '@/theme/tokens';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
+import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
 // 履歴メイン画面 v4（design 濃いタブ「履歴」/ history-v4-main）。
@@ -51,6 +52,18 @@ function openDetail(id: number) {
 }
 
 export default function HistoryScreen() {
+  // 下タブでこのタブ（履歴）を押した時（＝タブ切替で入ってきた時）だけ先頭へ戻す。
+  // (tabs)/_layout.tsxのtabPress（Tabsナビゲーター側）からtriggerTabScrollResetで呼ばれる。
+  // 履歴タブは内部にStack（history/_layout.tsx）を持つが、ルート名ベースのこの仕組みなら
+  // Stackを意識せず登録できる。詳細/編集画面から戻る操作ではtabPressは発火しないため、
+  // スクロール位置の維持は壊れない。
+  const listRef = useRef<FlatList<HistoryRow>>(null);
+  useEffect(() => {
+    return registerTabScrollReset('history', () => {
+      listRef.current?.scrollToOffset({ offset: 0, animated: false });
+    });
+  }, []);
+
   const { history, totalCount, reload } = useHistory();
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const isPro = useSettingsStore((s) => s.isPro);
@@ -236,6 +249,7 @@ export default function HistoryScreen() {
     <View style={styles.screen}>
       <SafeAreaView style={styles.safe} edges={['top']}>
         <FlatList
+          ref={listRef}
           data={displayHistory}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderItem}

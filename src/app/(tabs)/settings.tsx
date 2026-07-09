@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -21,6 +21,7 @@ import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { color, radius, shadow } from '@/theme/tokens';
 import { formatJpy } from '@/utils/format';
+import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
 function formatDateRange(start: string | null, end: string | null): string | null {
@@ -35,6 +36,15 @@ function formatDateRange(start: string | null, end: string | null): string | nul
 }
 
 export default function SettingsScreen() {
+  // 下タブでこのタブ（設定）を押した時（＝タブ切替で入ってきた時）だけ先頭へ戻す。
+  // (tabs)/_layout.tsxのtabPressからtriggerTabScrollResetで呼ばれる。
+  const scrollRef = useRef<ScrollView>(null);
+  useEffect(() => {
+    return registerTabScrollReset('settings', () => {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+    });
+  }, []);
+
   const { selectedCurrency, isPro } = useSettingsStore();
   const { activeTrip, loadTrips, switchTrip } = useTrips();
   const { history, totalCount } = useHistory();
@@ -75,7 +85,7 @@ export default function SettingsScreen() {
   return (
     <View style={styles.screen}>
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <ThemedText style={styles.title}>設定</ThemedText>
 
           {/* 現在の旅行 */}
