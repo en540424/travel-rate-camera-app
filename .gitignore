@@ -50,6 +50,7 @@ ss_cam_*.png
 design/*.png
 design-handoff/**/*.png
 design-handoff-v1-before-sync/
+design-reference-v1-calendar/
 
 # AI skill assets — 正式採用分(common-safe-implementation/common-code-review/common-dev-log/kaizen/karpathy-guidelines)のみ追跡し、退役分とロールアウト記録は対象外にする
 .claude/skill-rollout-log.md
