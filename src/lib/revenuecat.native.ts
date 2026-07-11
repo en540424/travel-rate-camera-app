@@ -31,7 +31,9 @@ export function configureRevenueCat(): boolean {
   const apiKey = getRevenueCatIosApiKey();
   if (!apiKey) return false;
 
-  Purchases.setLogLevel(__DEV__ ? Purchases.LOG_LEVEL.WARN : Purchases.LOG_LEVEL.ERROR);
+  // WARN以下にすると、購入キャンセルのような正常操作までSDKがログとして出し、
+  // 開発ビルドのLogBoxにトースト状の警告表示として出てしまう。ERRORのみに絞る。
+  Purchases.setLogLevel(Purchases.LOG_LEVEL.ERROR);
   Purchases.configure({ apiKey });
   configured = true;
   return true;
@@ -64,11 +66,10 @@ export type RestoreOutcome =
   | { status: 'error' };
 
 function isUserCancelledError(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { userCancelled?: unknown }).userCancelled === true
-  );
+  if (typeof error !== 'object' || error === null) return false;
+  const e = error as { userCancelled?: unknown; code?: unknown };
+  // userCancelledに加えてcodeも見る（SDK/プラットフォームにより片方しか立たない場合の保険）
+  return e.userCancelled === true || e.code === 'PURCHASE_CANCELLED_ERROR';
 }
 
 /** Packageを購入する。キャンセルは 'cancelled'、それ以外の失敗は 'error' を返す（詳細は露出しない）。 */
