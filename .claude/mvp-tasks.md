@@ -101,6 +101,14 @@ OCR基盤・複数通貨OCR改善は一段落しており、USD / EUR / JPY / KR
    - Pro機能の説明と導線だけ整理 → 現在はPro5画面の文言・価格の現行化（月額¥400/年額¥3,000/買い切りなし）も対象に含まれる
    - 無料版制限の説明
    - 保存上限や詳細分析などの将来Pro候補を整理 → 高性能OCR・Pro Plusは初回公開に含めない（詳細：`旅レートカメラ_ProPlus・高性能OCR・クラウド機能_構想設計書_v1`）
+   - 【2026-07-11・RevenueCatバッチ0完了】課金基盤（購入・復元の本実装ではない）を導入。
+     - SDK導入済み：`react-native-purchases`（`package.json`）
+     - 設定値：`EXPO_PUBLIC_REVENUECAT_IOS_KEY`環境変数（`.env`はGit管理外・`.env.example`に雛形あり）。実値の保存場所は本ファイルに記載しない
+     - 初期化基盤：`src/lib/revenuecat.native.ts`（実装）／`src/lib/revenuecat.web.ts`（Webは無効化スタブ）／`src/hooks/use-purchases.ts`の`usePurchasesInit()`から`src/app/_layout.tsx`で1回呼び出し。iOS以外・Key未設定・通信失敗のいずれでも無料機能は継続利用可能
+     - Entitlement判定基盤：`src/config/revenuecat.ts`の`REVENUECAT_ENTITLEMENT_ID = 'pro'`（RevenueCat Dashboard側のEntitlement識別子は本バッチの人間確認により`pro`へ変更する方針。Dashboard側の実変更はユーザー側作業）／`src/stores/purchases-store.ts`の`isPro`
+     - Offering/Package取得基盤：`REVENUECAT_OFFERING_ID = 'default'`から`monthlyPackage`/`annualPackage`を取得（`purchases-store.ts`）
+     - 未実装のまま：購入処理・復元処理（ダミー実装なし）、`isPro`のFREE_LIMITS連動（既存`settings-store.ts`の`isPro`とは意図的に未接続）、`SHOW_PRO=false`維持
+     - 次のバッチ：購入/復元接続・`isPro`永続化・Pro5画面の文言/価格現行化・FREE_LIMITS実制御（優先順は「旅レートカメラ_RevenueCat・AppStoreConnect課金設定メモ」9節・「Fable追加レビュー1」10節を参照）
 
 ## MVP後でよいタスク
 

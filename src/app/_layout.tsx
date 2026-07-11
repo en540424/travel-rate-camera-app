@@ -4,9 +4,12 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { DbProvider } from '@/components/db-provider';
+import { usePurchasesInit } from '@/hooks/use-purchases';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  // RevenueCat初期化: 通信完了を待たず非同期で実行。失敗しても無料機能は継続利用可能。
+  usePurchasesInit();
   return (
     // GestureHandlerRootView: 価格OCRカメラのピンチズーム（react-native-gesture-handler）に必要。
     // 他画面では素通しのViewと同等で挙動に影響しない。
