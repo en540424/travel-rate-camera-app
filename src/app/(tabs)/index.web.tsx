@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraPreview } from '@/components/camera/CameraPreview';
 import { ThemedText } from '@/components/themed-text';
 import { CurrencyFlagImage } from '@/components/domain';
+import { SaveLimitSheet } from '@/components/domain/SaveLimitSheet';
 import type { ConversionDirection, CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES, FOREIGN_CURRENCY_CODES } from '@/constants/currencies';
 import {
@@ -13,7 +14,9 @@ import {
   FALLBACK_BUDGET_JPY,
   FALLBACK_TRIP_NAME,
 } from '@/constants/camera-screen';
+import { FREE_LIMITS } from '@/config/limits';
 import { useHistory } from '@/hooks/use-history';
+import { useIsPro } from '@/hooks/use-purchases';
 import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -26,11 +29,13 @@ export default function CameraScreen() {
   const [scanKey, setScanKey] = useState(0);
   const [inputMode, setInputMode] = useState<ConversionDirection>('TO_JPY');
   const [memo, setMemo] = useState('');
+  const [showSaveLimitSheet, setShowSaveLimitSheet] = useState(false);
 
   const { rates } = useRates();
   const { selectedCurrency, setSelectedCurrency } = useSettingsStore();
   const { history, totalCount, addEntry, reload } = useHistory();
   const { activeTrip } = useTrips();
+  const isPro = useIsPro();
 
   const tripName = activeTrip?.name ?? FALLBACK_TRIP_NAME;
   const tripBudgetJpy = activeTrip?.budget_jpy ?? FALLBACK_BUDGET_JPY;
@@ -91,8 +96,16 @@ export default function CameraScreen() {
 
   async function handleSaveCandidate() {
     if (!canSave) return;
+    if (!isPro && totalCount >= FREE_LIMITS.saves) {
+      setShowSaveLimitSheet(true);
+      return;
+    }
     const currencyToSave: CurrencyCode = isJpyMode ? 'JPY' : selectedCurrency;
-    await addEntry(currencyToSave, foreignAmount, jpyAmount, rate, memo.trim() || undefined);
+    const result = await addEntry(currencyToSave, foreignAmount, jpyAmount, rate, memo.trim() || undefined);
+    if (result.blocked) {
+      setShowSaveLimitSheet(true);
+      return;
+    }
     setNativeAmount('');
     setMemo('');
   }
@@ -309,6 +322,14 @@ export default function CameraScreen() {
           </View>
         </ScrollView>
       </SafeAreaView>
+
+      <SaveLimitSheet
+        visible={showSaveLimitSheet}
+        onClose={() => setShowSaveLimitSheet(false)}
+        onUpgrade={() => { setShowSaveLimitSheet(false); router.push('/pro'); }}
+        saved={totalCount}
+        limit={FREE_LIMITS.saves}
+      />
     </View>
   );
 }

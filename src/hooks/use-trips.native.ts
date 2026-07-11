@@ -1,6 +1,7 @@
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect } from 'react';
 
+import { FREE_LIMITS } from '@/config/limits';
 import type { CurrencyCode } from '@/constants/currencies';
 import {
   archiveTrip,
@@ -12,11 +13,13 @@ import {
   updateTrip,
 } from '@/db/queries/trips';
 import type { TripRow } from '@/db/queries/trips';
+import { useIsPro } from '@/hooks/use-purchases';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useTripStore } from '@/stores/trip-store';
 
 export function useTrips() {
   const db = useSQLiteContext();
+  const isPro = useIsPro();
   const { activeTrip, setActiveTrip } = useTripStore();
 
   const loadTrips = useCallback(async (): Promise<TripRow[]> => {
@@ -35,12 +38,17 @@ export function useTrips() {
     }).catch(console.error);
   }, [activeTrip, loadTrips, setActiveTrip]);
 
+  /** 無料版は非アーカイブの旅行数がFREE_LIMITS.trips以上ならブロックする（Proは無制限）。旅行新規作成の唯一の入口。 */
   async function createTrip(
     name: string,
     budgetJpy: number,
     currency: CurrencyCode,
     rate: number = 0,
-  ): Promise<TripRow> {
+  ): Promise<TripRow | null> {
+    if (!isPro) {
+      const active = await getActiveTrips(db);
+      if (active.length >= FREE_LIMITS.trips) return null;
+    }
     // 既存を全て非アクティブ化してから新規作成
     await db.runAsync("UPDATE trips SET is_active = 0, updated_at = datetime('now')");
     const id = await insertTrip(db, {

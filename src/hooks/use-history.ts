@@ -46,6 +46,7 @@ export function useHistory() {
     load().catch(console.error);
   }, [load]);
 
+  /** 無料版は保存件数がFREE_LIMITS.saves以上ならブロックする（Proは無制限）。保存処理の唯一の入口。 */
   async function addEntry(
     currency: CurrencyCode,
     foreignAmount: number,
@@ -54,8 +55,9 @@ export function useHistory() {
     memo?: string,
     imageUri?: string,
     isPurchased?: boolean,
-  ) {
-    if (!activeTrip) return;
+  ): Promise<{ blocked: boolean }> {
+    if (!activeTrip) return { blocked: false };
+    if (!isPro && totalCount >= FREE_HISTORY_LIMIT) return { blocked: true };
     await insertHistory(
       db,
       {
@@ -70,6 +72,7 @@ export function useHistory() {
       isPurchased,
     );
     await load();
+    return { blocked: false };
   }
 
   async function removeEntry(id: number) {

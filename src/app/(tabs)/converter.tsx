@@ -11,10 +11,13 @@ import { useRef, useState } from 'react';
 
 import { ThemedText } from '@/components/themed-text';
 import { CurrencyFlagImage } from '@/components/domain';
+import { SaveLimitSheet } from '@/components/domain/SaveLimitSheet';
 import { EmptyState, PrimaryButton } from '@/components/ui';
 import type { ConversionDirection, CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES } from '@/constants/currencies';
+import { FREE_LIMITS } from '@/config/limits';
 import { useHistory } from '@/hooks/use-history';
+import { useIsPro } from '@/hooks/use-purchases';
 import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -37,10 +40,12 @@ export default function ConverterScreen() {
   const [direction, setDirection] = useState<ConversionDirection>('TO_JPY');
   const [selectedImageUri, setSelectedImageUri] = useState<string | null>(null);
   const [saveAsPurchased, setSaveAsPurchased] = useState(false);
+  const [showSaveLimitSheet, setShowSaveLimitSheet] = useState(false);
   const { rates } = useRates();
   const { setPendingCameraAmount } = useSettingsStore();
-  const { addEntry } = useHistory();
+  const { totalCount, addEntry } = useHistory();
   const { activeTrip } = useTrips();
+  const isPro = useIsPro();
 
   // 以前は「1画面に収まる想定」でscrollEnabledをキーボード表示状態に紐付け、
   // キーボードを閉じると強制的にトップへ戻していたが、端末サイズによっては
@@ -81,6 +86,10 @@ export default function ConverterScreen() {
 
   async function handleSave() {
     if (!hasResult || isReverse || !tripCurrency) return;
+    if (!isPro && totalCount >= FREE_LIMITS.saves) {
+      setShowSaveLimitSheet(true);
+      return;
+    }
     let savedUri: string | undefined;
     if (selectedImageUri && Platform.OS !== 'web') {
       savedUri = await copySelectedImageToPhotos(selectedImageUri);
@@ -88,7 +97,11 @@ export default function ConverterScreen() {
     // 保存失敗時に何も表示されない箇所があったため try/catch + Alert を追加（P0-08）。
     // 保存ロジック本体（addEntry）は変更しない。
     try {
-      await addEntry(tripCurrency, amount, result, effectiveRate, undefined, savedUri, saveAsPurchased);
+      const saveOutcome = await addEntry(tripCurrency, amount, result, effectiveRate, undefined, savedUri, saveAsPurchased);
+      if (saveOutcome.blocked) {
+        setShowSaveLimitSheet(true);
+        return; // 入力値を保持したまま終了
+      }
     } catch (e) {
       console.warn('[converter save error]', e);
       Alert.alert(
@@ -345,6 +358,14 @@ export default function ConverterScreen() {
 
         </ScrollView>
       </SafeAreaView>
+
+      <SaveLimitSheet
+        visible={showSaveLimitSheet}
+        onClose={() => setShowSaveLimitSheet(false)}
+        onUpgrade={() => { setShowSaveLimitSheet(false); router.push('/pro'); }}
+        saved={totalCount}
+        limit={FREE_LIMITS.saves}
+      />
     </View>
   );
 }

@@ -4,6 +4,7 @@ import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleShee
 
 import { ThemedText } from '@/components/themed-text';
 import { CurrencyFlagImage } from '@/components/domain';
+import { TripLimitSheet } from '@/components/domain/TripLimitSheet';
 import type { CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES, CURRENCY_CODES } from '@/constants/currencies';
 import { useTrips } from '@/hooks/use-trips';
@@ -29,6 +30,7 @@ export default function TripCreateScreen() {
   const [budget, setBudget] = useState('');
   const [startDate, setStartDate] = useState(todayStr());
   const [endDate, setEndDate] = useState('');
+  const [showTripLimitSheet, setShowTripLimitSheet] = useState(false);
 
   const isJpy = currency === 'JPY';
   const rateNum = parseFloat(rate);
@@ -74,6 +76,10 @@ export default function TripCreateScreen() {
     // 保存ロジック本体（createTrip/editTrip）は変更しない。
     try {
       const trip = await createTrip(nm, bud, cur, r);
+      if (trip == null) {
+        setShowTripLimitSheet(true);
+        return;
+      }
 
       // 開始日 / 終了日 は既存 editTrip で設定（任意・スキーマ変更なし）
       if (dates.started_at != null || dates.ended_at != null) {
@@ -219,6 +225,12 @@ export default function TripCreateScreen() {
         {!canCreate && <ThemedText style={styles.footerHint}>未入力の項目があります</ThemedText>}
       </View>
       </KeyboardAvoidingView>
+
+      <TripLimitSheet
+        visible={showTripLimitSheet}
+        onClose={() => setShowTripLimitSheet(false)}
+        onUpgrade={() => { setShowTripLimitSheet(false); router.push('/pro'); }}
+      />
     </View>
   );
 }

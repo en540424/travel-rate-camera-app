@@ -12,6 +12,7 @@ import {
   CurrencyFlagImage,
   SaveLimitBanner,
 } from '@/components/domain';
+import { SaveLimitSheet } from '@/components/domain/SaveLimitSheet';
 import { ActionSheet, EmptyState, SectionCard, SecondaryButton, PrimaryButton, Toast } from '@/components/ui';
 import type { ConversionDirection, CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES, FOREIGN_CURRENCY_CODES } from '@/constants/currencies';
@@ -94,6 +95,7 @@ export default function CameraScreen() {
   const [captureMode, setCaptureMode] = useState<CaptureMode>('ocr');
   const [showManualInput, setShowManualInput] = useState(false);
   const [photoSheetVisible, setPhotoSheetVisible] = useState(false);
+  const [showSaveLimitSheet, setShowSaveLimitSheet] = useState(false);
   // カメラ表示の切替：true=大きいライブカメラ / false=撮影済みOCR写真プレビュー（表示専用）
   const [cameraLive, setCameraLive] = useState(true);
   // 撮影済みOCR写真を拡大表示するモーダル
@@ -567,6 +569,10 @@ export default function CameraScreen() {
 
   async function handleSaveCandidate() {
     if (!canSave || !activeTrip) return;
+    if (!isPro && totalCount >= FREE_LIMITS.saves) {
+      setShowSaveLimitSheet(true);
+      return;
+    }
     let savedPhotoUri: string | undefined;
     // 「写真なしで保存」が選ばれている時は、保存対象写真があってもコピーしない（既存の写真なし保存と同じ扱い）。
     if (pendingPhotoUri && !excludePhotoFromSave && Platform.OS !== 'web') {
@@ -588,7 +594,7 @@ export default function CameraScreen() {
     const rateToSave = currencyToSave === 'JPY' ? 1 : activeTrip.manual_rate;
     const foreignAmountToSave = currencyToSave === 'JPY' ? jpyAmount : foreignAmount;
     try {
-      await addEntry(
+      const result = await addEntry(
         currencyToSave,
         foreignAmountToSave,
         jpyAmount,
@@ -597,6 +603,10 @@ export default function CameraScreen() {
         savedPhotoUri,
         saveAsPurchased,
       );
+      if (result.blocked) {
+        setShowSaveLimitSheet(true);
+        return; // 入力値を保持したまま終了
+      }
     } catch (e) {
       console.warn('[save error]', e);
       Alert.alert(
@@ -1747,6 +1757,14 @@ export default function CameraScreen() {
         caption={toastMessage ? '履歴で確認できます' : undefined}
         onHide={hideToast}
         style={{ top: insets.top + 8 }}
+      />
+
+      <SaveLimitSheet
+        visible={showSaveLimitSheet}
+        onClose={() => setShowSaveLimitSheet(false)}
+        onUpgrade={() => { setShowSaveLimitSheet(false); router.push('/pro'); }}
+        saved={totalCount}
+        limit={FREE_LIMITS.saves}
       />
     </View>
   );
