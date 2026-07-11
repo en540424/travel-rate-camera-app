@@ -1,10 +1,10 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { Image } from 'expo-image';
 import { useCallback } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 
 import { PhotoModal } from '@/components/photo-modal';
+import { ResilientPhoto } from '@/components/resilient-photo';
 import { ThemedText } from '@/components/themed-text';
 import { CurrencyFlagImage } from '@/components/domain';
 import type { HistoryRow } from '@/db/queries/history';
@@ -103,7 +103,7 @@ export default function ItemDetailScreen() {
           disabled={!item.image_uri}
           style={styles.photo}>
           {item.image_uri ? (
-            <Image source={{ uri: item.image_uri }} style={styles.photoImage} contentFit="cover" />
+            <ResilientPhoto uri={item.image_uri} style={styles.photoImage} contentFit="cover" />
           ) : (
             <View style={styles.photoPlaceholder}>
               <ThemedText style={styles.photoPlaceholderText}>写真なし</ThemedText>

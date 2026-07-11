@@ -6,6 +6,7 @@ import { Alert, Platform, Pressable, ScrollView, StyleSheet, View, type ImageSty
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PhotoModal } from '@/components/photo-modal';
+import { ResilientPhoto } from '@/components/resilient-photo';
 import { ThemedText } from '@/components/themed-text';
 import { CurrencyFlagImage } from '@/components/domain';
 import type { CurrencyCode } from '@/constants/currencies';
@@ -481,8 +482,8 @@ export default function CalendarScreen() {
                                     <Pressable
                                       onPress={() => setPhotoModalUri(item.image_uri!)}
                                       style={styles.calThumbCol}>
-                                      <Image
-                                        source={{ uri: item.image_uri }}
+                                      <ResilientPhoto
+                                        uri={item.image_uri}
                                         style={styles.calThumb}
                                         contentFit="cover"
                                       />

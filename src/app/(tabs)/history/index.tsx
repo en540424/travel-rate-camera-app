@@ -1,4 +1,3 @@
-import { Image } from 'expo-image';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, TouchableOpacity, View } from 'react-native';
@@ -7,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { CurrencyFlagImage } from '@/components/domain';
 import { EmptyState } from '@/components/ui';
+import { ResilientPhoto } from '@/components/resilient-photo';
 import { FALLBACK_BUDGET_JPY } from '@/constants/camera-screen';
 import { SHOW_PRO } from '@/config/feature-flags';
 import { FREE_HISTORY_LIMIT } from '@/db/queries/history';
@@ -118,7 +118,7 @@ export default function HistoryScreen() {
         android_ripple={{ color: color.line2 }}>
         <View style={styles.thumb}>
           {item.image_uri ? (
-            <Image source={{ uri: item.image_uri }} style={styles.thumbImage} contentFit="cover" />
+            <ResilientPhoto uri={item.image_uri} style={styles.thumbImage} contentFit="cover" />
           ) : (
             <View style={styles.thumbPlaceholder}>
               <ThemedText style={styles.thumbPlaceholderText}>写真なし</ThemedText>

@@ -1,5 +1,6 @@
-import { Image } from 'expo-image';
 import { Dimensions, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
+import { ResilientPhoto } from '@/components/resilient-photo';
 
 interface Props {
   uri: string | null;
@@ -24,7 +25,7 @@ export function PhotoModal({ uri, onClose }: Props) {
           centerContent
           bouncesZoom
         >
-          <Image source={{ uri }} style={styles.image} contentFit="contain" />
+          <ResilientPhoto uri={uri} style={styles.image} contentFit="contain" />
         </ScrollView>
         <TouchableOpacity
           style={styles.closeBtn}
