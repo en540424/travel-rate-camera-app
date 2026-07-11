@@ -9,4 +9,6 @@ export const EXTERNAL_LINKS = {
   terms: 'https://travel-rate-camera-lp.vercel.app/terms',
   contact: 'https://travel-rate-camera-lp.vercel.app/contact',
   licenses: 'https://travel-rate-camera-lp.vercel.app/licenses',
+  /** iOSの正規サブスクリプション管理画面。CustomerInfo.managementURLが取得できない場合のフォールバック。 */
+  appleSubscriptionManagement: 'https://apps.apple.com/account/subscriptions',
 } as const;

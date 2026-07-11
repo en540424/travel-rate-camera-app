@@ -10,6 +10,10 @@ export const REVENUECAT_ENTITLEMENT_ID = 'pro';
 // RevenueCat Dashboard側のOffering識別子
 export const REVENUECAT_OFFERING_ID = 'default';
 
+// App Store Connect側のProduct ID（表示用の月額/年額判定にのみ使用。Dashboard設定自体はここでは変更しない）
+export const REVENUECAT_MONTHLY_PRODUCT_ID = 'com.estep.travelratecamera.pro.monthly';
+export const REVENUECAT_ANNUAL_PRODUCT_ID = 'com.estep.travelratecamera.pro.yearly';
+
 export function getRevenueCatIosApiKey(): string | undefined {
   return process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY;
 }

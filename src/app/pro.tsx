@@ -1,12 +1,28 @@
 import { Redirect, router } from 'expo-router';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Linking, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { GhostButton, PrimaryButton } from '@/components/ui';
+import { EXTERNAL_LINKS } from '@/config/external-links';
 import { SHOW_PRO } from '@/config/feature-flags';
 import { FREE_LIMITS } from '@/config/limits';
-import { usePurchases } from '@/hooks/use-purchases';
+import { usePurchases, useProPlanDetails } from '@/hooks/use-purchases';
 import { color, radius, shadow } from '@/theme/tokens';
+
+/** iOSの正規サブスクリプション管理画面を開く。CustomerInfo.managementURLが無ければApple既定URLへフォールバック。 */
+async function openSubscriptionManagement(managementURL: string | null) {
+  const target = managementURL ?? EXTERNAL_LINKS.appleSubscriptionManagement;
+  try {
+    const canOpen = await Linking.canOpenURL(target);
+    if (!canOpen) {
+      Alert.alert('開けませんでした', 'サブスクリプション管理画面を開けませんでした。時間をおいて再度お試しください。');
+      return;
+    }
+    await Linking.openURL(target);
+  } catch {
+    Alert.alert('開けませんでした', 'サブスクリプション管理画面を開けませんでした。時間をおいて再度お試しください。');
+  }
+}
 
 interface Feature {
   title: string;
@@ -20,7 +36,8 @@ const FEATURES: Feature[] = [
 
 export default function ProScreen() {
   // Hooksは早期returnより前に呼ぶ（SHOW_PRO=falseでも呼び出し順を変えない）
-  const { isInitialized, isLoading, monthlyPackage, annualPackage } = usePurchases();
+  const { isPro, isInitialized, isLoading, monthlyPackage, annualPackage } = usePurchases();
+  const { planPeriod, expirationDate, willRenew, managementURL } = useProPlanDetails();
 
   // 初回MVPはPro未実装。ルート直接アクセス（ディープリンク等）でも購入画面へ進めないようガードする（P0-02）
   if (!SHOW_PRO) {
@@ -38,6 +55,55 @@ export default function ProScreen() {
           .filter(Boolean)
           .join(' / ')
       : '価格情報を取得できませんでした。時間をおいて再度お試しください。';
+
+  // Pro有効時：購入を促す画面ではなく、契約状態の確認・管理画面として表示する
+  if (isPro) {
+    const planLabel = planPeriod === 'monthly' ? '月額' : planPeriod === 'annual' ? '年額' : null;
+    const expirationLabel = expirationDate ? expirationDate.split('T')[0] : null;
+
+    return (
+      <View style={styles.screen}>
+        <ScrollView contentContainerStyle={styles.scroll}>
+          <View style={styles.hero}>
+            <View style={styles.proTag}>
+              <ThemedText style={styles.proTagText}>PRO</ThemedText>
+            </View>
+            <ThemedText style={styles.heroTitle}>Proは有効です</ThemedText>
+            <ThemedText style={styles.heroBody}>
+              保存件数・旅行作成数の制限が解除されています。
+            </ThemedText>
+          </View>
+
+          {(planLabel != null || expirationLabel != null) && (
+            <View style={styles.priceNoteCard}>
+              <ThemedText style={styles.priceNoteTitle}>現在の契約</ThemedText>
+              {planLabel != null && (
+                <ThemedText style={styles.priceNoteBody}>プラン：{planLabel}</ThemedText>
+              )}
+              {expirationLabel != null && (
+                <ThemedText style={styles.priceNoteBody}>
+                  {willRenew === true
+                    ? `次回更新日：${expirationLabel}`
+                    : willRenew === false
+                      ? `有効期限：${expirationLabel}（自動更新オフ）`
+                      : `有効期限：${expirationLabel}`}
+                </ThemedText>
+              )}
+            </View>
+          )}
+
+          <View style={styles.actions}>
+            <PrimaryButton
+              title="サブスクリプションを管理"
+              onPress={() => openSubscriptionManagement(managementURL)}
+            />
+            <GhostButton title="購入を復元" onPress={() => router.push('/purchase-restore')} />
+            <GhostButton title="戻る" onPress={() => router.back()} />
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.screen}>

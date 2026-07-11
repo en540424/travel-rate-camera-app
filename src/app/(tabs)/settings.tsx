@@ -13,11 +13,11 @@ import { ThemedText } from '@/components/themed-text';
 import { SettingRow, SettingSection } from '@/components/ui';
 import { ActiveTripSwitchSheet } from '@/components/domain/ActiveTripSwitchSheet';
 import { CurrencyFlagImage } from '@/components/domain/CurrencyFlagImage';
+import { CurrentPlanCard } from '@/components/domain/CurrentPlanCard';
 import { FALLBACK_BUDGET_JPY } from '@/constants/camera-screen';
 import { SHOW_PRO } from '@/config/feature-flags';
 import type { TripRow } from '@/db/queries/trips';
 import { useHistory } from '@/hooks/use-history';
-import { useIsPro } from '@/hooks/use-purchases';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { color, radius, shadow } from '@/theme/tokens';
@@ -47,7 +47,6 @@ export default function SettingsScreen() {
   }, []);
 
   const { selectedCurrency } = useSettingsStore();
-  const isPro = useIsPro();
   const { activeTrip, loadTrips, switchTrip } = useTrips();
   const { history, totalCount } = useHistory();
 
@@ -218,16 +217,8 @@ export default function SettingsScreen() {
             <SettingRow label="アプリについて" onPress={() => router.push('/app-info')} />
           </SettingSection>
 
-          {/* Pro導線（控えめ）。初回MVPはPro未実装のためSHOW_PROで完全非表示（P0-01） */}
-          {SHOW_PRO && !isPro && (
-            <SettingSection title="Pro">
-              <SettingRow
-                label="旅レートカメラ Pro"
-                badge="Pro"
-                onPress={() => router.push('/pro')}
-              />
-            </SettingSection>
-          )}
+          {/* 現在のプラン（無料/Pro）。設定一覧の最下部＝従来のPro導線と同じ位置。無料/Proとも同じ場所・単一表示。 */}
+          {SHOW_PRO && <CurrentPlanCard />}
         </ScrollView>
       </SafeAreaView>
 

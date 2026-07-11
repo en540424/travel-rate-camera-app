@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import type { CustomerInfo, PurchasesPackage } from 'react-native-purchases';
 
+import { REVENUECAT_ANNUAL_PRODUCT_ID, REVENUECAT_ENTITLEMENT_ID, REVENUECAT_MONTHLY_PRODUCT_ID } from '@/config/revenuecat';
 import {
   addCustomerInfoListener,
   configureRevenueCat,
@@ -160,4 +161,36 @@ export function usePurchases() {
 /** Pro権利の有無だけを参照する軽量セレクタ。正本はRevenueCatのCustomerInfo。 */
 export function useIsPro(): boolean {
   return usePurchasesStore((s) => s.isPro);
+}
+
+export interface ProPlanDetails {
+  /** Product IDから確実に判定できた場合のみ 'monthly' / 'annual'。判定できなければnull（推測しない）。 */
+  planPeriod: 'monthly' | 'annual' | null;
+  /** pro Entitlementの有効期限（ISO8601）。買い切り等でnullの場合あり。 */
+  expirationDate: string | null;
+  /** 自動更新されるか。CustomerInfoから取得できない場合はnull。 */
+  willRenew: boolean | null;
+  /** iOSの正規サブスクリプション管理画面URL。RevenueCatが返せない場合はnull（呼び出し側でフォールバックURLを使う）。 */
+  managementURL: string | null;
+}
+
+/**
+ * 現在のPro契約の詳細（月額/年額・有効期限・自動更新・管理URL）をCustomerInfoからのみ導出するセレクタ。
+ * ローカルの推測や「最後に選んだプラン」は使わない。確実に判定できない項目はnullを返す。
+ */
+export function useProPlanDetails(): ProPlanDetails {
+  const customerInfo = usePurchasesStore((s) => s.customerInfo);
+  const entitlement = customerInfo?.entitlements.active[REVENUECAT_ENTITLEMENT_ID] ?? null;
+  const productIdentifier = entitlement?.productIdentifier ?? null;
+
+  let planPeriod: 'monthly' | 'annual' | null = null;
+  if (productIdentifier === REVENUECAT_MONTHLY_PRODUCT_ID) planPeriod = 'monthly';
+  else if (productIdentifier === REVENUECAT_ANNUAL_PRODUCT_ID) planPeriod = 'annual';
+
+  return {
+    planPeriod,
+    expirationDate: entitlement?.expirationDate ?? null,
+    willRenew: entitlement?.willRenew ?? null,
+    managementURL: customerInfo?.managementURL ?? null,
+  };
 }

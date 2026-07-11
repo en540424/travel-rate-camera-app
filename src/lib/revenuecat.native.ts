@@ -45,7 +45,10 @@ const revenueCatLogHandler: LogHandler = (logLevel, message) => {
       console.warn(`[RevenueCat] ${message}`);
       break;
     case Purchases.LOG_LEVEL.ERROR:
-      console.error(`[RevenueCat] ${message}`);
+      // SDK内部の診断ログ（StoreKit通信エラー等）はアプリ側の未処理例外ではないため、
+      // console.errorへ流してLogBoxを開かせない。実際の購入成否は購入呼び出し側で
+      // CustomerInfoのpro Entitlementを再確認して判定する（このログ出力はUI判定に使わない）。
+      console.warn(`[RevenueCat] ${message}`);
       break;
     default:
       console.log(`[RevenueCat] ${message}`);
@@ -105,13 +108,29 @@ function isUserCancelledError(error: unknown): boolean {
   return e.userCancelled === true || e.code === 'PURCHASE_CANCELLED_ERROR';
 }
 
-/** Packageを購入する。キャンセルは 'cancelled'、それ以外の失敗は 'error' を返す（詳細は露出しない）。 */
+/**
+ * Packageを購入する。キャンセルは 'cancelled'、それ以外の失敗は 'error' を返す（詳細は露出しない）。
+ *
+ * purchasePackageが例外を投げても、Apple側では購入・Entitlement付与が成立している場合がある
+ * （例: 購入完了直後のStoreKit.StoreKitError.unknown）。ユーザーキャンセル以外の例外時は、
+ * 最新のCustomerInfoを1回だけ再取得し、pro Entitlementが有効ならそれを正として成功扱いにする。
+ * 再取得自体が失敗、またはEntitlementが有効でなければ、本当の購入失敗として 'error' を返す。
+ * 同じpurchasePackageは再実行しない（呼び出しは常に1回のみ）。
+ */
 export async function purchasePackage(pkg: PurchasesPackage): Promise<PurchaseOutcome> {
   try {
     const result = await Purchases.purchasePackage(pkg);
     return { status: 'success', customerInfo: result.customerInfo };
   } catch (error) {
     if (isUserCancelledError(error)) return { status: 'cancelled' };
+    try {
+      const customerInfo = await Purchases.getCustomerInfo();
+      if (REVENUECAT_ENTITLEMENT_ID in customerInfo.entitlements.active) {
+        return { status: 'success', customerInfo };
+      }
+    } catch {
+      // CustomerInfo再取得自体が失敗した場合は、下の本当の失敗として扱う
+    }
     return { status: 'error' };
   }
 }

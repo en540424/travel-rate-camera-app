@@ -57,7 +57,14 @@ export default function PurchaseConfirmScreen() {
       return;
     }
     if (outcome.status === 'cancelled') return; // ユーザーキャンセルはエラー表示しない
-    Alert.alert('購入できませんでした', 'しばらくしてからもう一度お試しください。');
+    Alert.alert(
+      '購入を完了できませんでした',
+      'App Storeとの通信に問題が発生しました。しばらく待ってから、もう一度お試しください。購入済みの場合は「購入を復元」をお試しください。',
+      [
+        { text: '閉じる', style: 'cancel' },
+        { text: '購入を復元', onPress: () => router.push('/purchase-restore') },
+      ],
+    );
   }
 
   return (

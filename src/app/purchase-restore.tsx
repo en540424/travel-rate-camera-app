@@ -19,14 +19,17 @@ export default function PurchaseRestoreScreen() {
   async function handleRestore() {
     const outcome = await restore();
     if (outcome.status !== 'success') {
-      Alert.alert('復元できませんでした', 'しばらくしてからもう一度お試しください。');
+      Alert.alert(
+        '購入情報を確認できませんでした',
+        '時間をおいて再度お試しください。',
+      );
       return;
     }
     if (outcome.hasEntitlement) {
-      Alert.alert('復元しました', 'Proが有効になりました。', [{ text: 'OK', onPress: () => router.back() }]);
+      Alert.alert('購入を復元しました', 'Proが有効になりました。', [{ text: 'OK', onPress: () => router.back() }]);
     } else {
       Alert.alert(
-        '復元できる購入がありません',
+        '復元できる購入が見つかりませんでした',
         '購入時と同じ Apple ID でサインインしているかご確認ください。',
       );
     }
