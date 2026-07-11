@@ -4,28 +4,41 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { GhostButton, PrimaryButton } from '@/components/ui';
 import { SHOW_PRO } from '@/config/feature-flags';
-import { FREE_LIMITS, PRICE_PLACEHOLDER, PRO_OCR_QUOTA } from '@/config/limits';
+import { FREE_LIMITS } from '@/config/limits';
+import { usePurchases } from '@/hooks/use-purchases';
 import { color, radius, shadow } from '@/theme/tokens';
 
 interface Feature {
   title: string;
   sub: string;
-  tag?: string;
 }
 
 const FEATURES: Feature[] = [
   { title: '保存件数の上限を解除', sub: `無料版は${FREE_LIMITS.saves}件まで。Proなら無制限に保存できます。` },
   { title: '旅行をいくつでも作成', sub: `無料版は${FREE_LIMITS.trips}件まで。Proなら複数の旅行を管理できます。` },
-  { title: '高性能OCR', sub: `月${PRO_OCR_QUOTA.month}回までの高精度な読み取り。`, tag: '回数制' },
-  { title: '詳細な分析', sub: '月別比較・カテゴリ別など、より深い振り返り。' },
-  { title: 'CSV / PDF 出力', sub: '記録の書き出しに対応予定。', tag: '今後' },
 ];
 
 export default function ProScreen() {
+  // Hooksは早期returnより前に呼ぶ（SHOW_PRO=falseでも呼び出し順を変えない）
+  const { isInitialized, isLoading, monthlyPackage, annualPackage } = usePurchases();
+
   // 初回MVPはPro未実装。ルート直接アクセス（ディープリンク等）でも購入画面へ進めないようガードする（P0-02）
   if (!SHOW_PRO) {
     return <Redirect href="/(tabs)/settings" />;
   }
+
+  const priceLoading = !isInitialized || isLoading;
+  const priceText = priceLoading
+    ? '価格を読み込み中…'
+    : monthlyPackage || annualPackage
+      ? [
+          monthlyPackage ? `月額 ${monthlyPackage.product.priceString}` : null,
+          annualPackage ? `年額 ${annualPackage.product.priceString}` : null,
+        ]
+          .filter(Boolean)
+          .join(' / ')
+      : '価格情報を取得できませんでした。時間をおいて再度お試しください。';
+
   return (
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -36,7 +49,7 @@ export default function ProScreen() {
           </View>
           <ThemedText style={styles.heroTitle}>旅の記録を、もっと自由に。</ThemedText>
           <ThemedText style={styles.heroBody}>
-            無料版の使い心地はそのままに、上限や分析を解放します。
+            無料版の使い心地はそのままに、保存・旅行数の上限を解放します。
           </ThemedText>
         </View>
 
@@ -50,14 +63,7 @@ export default function ProScreen() {
                   <ThemedText style={styles.checkMark}>✓</ThemedText>
                 </View>
                 <View style={styles.featureTextWrap}>
-                  <View style={styles.featureTitleRow}>
-                    <ThemedText style={styles.featureTitle}>{f.title}</ThemedText>
-                    {f.tag != null && (
-                      <View style={styles.featureTag}>
-                        <ThemedText style={styles.featureTagText}>{f.tag}</ThemedText>
-                      </View>
-                    )}
-                  </View>
+                  <ThemedText style={styles.featureTitle}>{f.title}</ThemedText>
                   <ThemedText style={styles.featureSub}>{f.sub}</ThemedText>
                 </View>
               </View>
@@ -65,13 +71,14 @@ export default function ProScreen() {
           ))}
         </View>
 
-        {/* 価格（仮） */}
+        <ThemedText style={styles.scopeNote}>
+          高性能OCRなどのクラウド機能は、今回のProには含まれません。
+        </ThemedText>
+
+        {/* 価格 */}
         <View style={styles.priceNoteCard}>
-          <ThemedText style={styles.priceNoteTitle}>料金プラン（仮）</ThemedText>
-          <ThemedText style={styles.priceNoteBody}>
-            月額 {PRICE_PLACEHOLDER.month} / 年額 {PRICE_PLACEHOLDER.year} / 買い切り {PRICE_PLACEHOLDER.oneTime}
-            {'\n'}価格・購入は準備中です。正式な金額はストアでの公開時に確定します。
-          </ThemedText>
+          <ThemedText style={styles.priceNoteTitle}>料金プラン</ThemedText>
+          <ThemedText style={styles.priceNoteBody}>{priceText}</ThemedText>
         </View>
 
         <View style={styles.actions}>
@@ -158,21 +165,14 @@ const styles = StyleSheet.create({
     color: color.primary,
   },
   featureTextWrap: { flex: 1, gap: 2 },
-  featureTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  featureTitle: { fontSize: 15, fontWeight: '700', color: color.text, flexShrink: 1 },
-  featureTag: {
-    backgroundColor: color.proSoft,
-    borderRadius: radius.pill,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-  },
-  featureTagText: { fontSize: 10.5, fontWeight: '700', color: color.pro },
+  featureTitle: { fontSize: 15, fontWeight: '700', color: color.text },
   featureSub: { fontSize: 12.5, fontWeight: '500', color: color.muted, lineHeight: 18 },
   sep: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: color.line2,
     marginLeft: 52,
   },
+  scopeNote: { fontSize: 12, fontWeight: '500', color: color.muted, paddingHorizontal: 4 },
   priceNoteCard: {
     backgroundColor: color.proSoft,
     borderRadius: radius.card,

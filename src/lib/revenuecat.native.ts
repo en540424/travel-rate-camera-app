@@ -1,8 +1,13 @@
 import { Platform } from 'react-native';
 import Purchases from 'react-native-purchases';
-import type { CustomerInfo, CustomerInfoUpdateListener, PurchasesOffering } from 'react-native-purchases';
+import type {
+  CustomerInfo,
+  CustomerInfoUpdateListener,
+  PurchasesOffering,
+  PurchasesPackage,
+} from 'react-native-purchases';
 
-import { getRevenueCatIosApiKey, REVENUECAT_OFFERING_ID } from '@/config/revenuecat';
+import { getRevenueCatIosApiKey, REVENUECAT_ENTITLEMENT_ID, REVENUECAT_OFFERING_ID } from '@/config/revenuecat';
 
 let configured = false;
 
@@ -49,4 +54,44 @@ export function removeCustomerInfoListener(listener: CustomerInfoUpdateListener)
   Purchases.removeCustomerInfoUpdateListener(listener);
 }
 
-// 購入処理・復元処理（purchasePackage / restorePurchases）は後続バッチでこのファイルへ追加する。
+export type PurchaseOutcome =
+  | { status: 'success'; customerInfo: CustomerInfo }
+  | { status: 'cancelled' }
+  | { status: 'error' };
+
+export type RestoreOutcome =
+  | { status: 'success'; customerInfo: CustomerInfo; hasEntitlement: boolean }
+  | { status: 'error' };
+
+function isUserCancelledError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { userCancelled?: unknown }).userCancelled === true
+  );
+}
+
+/** Packageを購入する。キャンセルは 'cancelled'、それ以外の失敗は 'error' を返す（詳細は露出しない）。 */
+export async function purchasePackage(pkg: PurchasesPackage): Promise<PurchaseOutcome> {
+  try {
+    const result = await Purchases.purchasePackage(pkg);
+    return { status: 'success', customerInfo: result.customerInfo };
+  } catch (error) {
+    if (isUserCancelledError(error)) return { status: 'cancelled' };
+    return { status: 'error' };
+  }
+}
+
+/** 購入履歴を復元する。 */
+export async function restorePurchases(): Promise<RestoreOutcome> {
+  try {
+    const customerInfo = await Purchases.restorePurchases();
+    return {
+      status: 'success',
+      customerInfo,
+      hasEntitlement: REVENUECAT_ENTITLEMENT_ID in customerInfo.entitlements.active,
+    };
+  } catch {
+    return { status: 'error' };
+  }
+}

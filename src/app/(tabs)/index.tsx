@@ -23,6 +23,7 @@ import { DT } from '@/constants/designTokens';
 import { FREE_LIMITS } from '@/config/limits';
 import { SHOW_PRO } from '@/config/feature-flags';
 import { useHistory } from '@/hooks/use-history';
+import { useIsPro } from '@/hooks/use-purchases';
 import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -126,7 +127,8 @@ export default function CameraScreen() {
   const lastScannedPhotoUriRef = useRef<string | null>(null);
 
   const { rates } = useRates();
-  const { selectedCurrency, setSelectedCurrency, isPro } = useSettingsStore();
+  const { selectedCurrency, setSelectedCurrency } = useSettingsStore();
+  const isPro = useIsPro();
   const { history, totalCount, addEntry, reload } = useHistory();
   const { activeTrip } = useTrips();
 

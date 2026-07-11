@@ -1,22 +1,35 @@
-import { Redirect } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { PrimaryButton } from '@/components/ui';
 import { SHOW_PRO } from '@/config/feature-flags';
+import { usePurchases } from '@/hooks/use-purchases';
 import { color, radius, shadow } from '@/theme/tokens';
 
 export default function PurchaseRestoreScreen() {
+  // Hooksは早期returnより前に呼ぶ（SHOW_PRO=falseでも呼び出し順を変えない）
+  const { isRestoring, restore } = usePurchases();
+
   // 初回MVPはPro未実装。ルート直接アクセスでも購入復元画面へ進めないようガードする（P0-02）
   if (!SHOW_PRO) {
     return <Redirect href="/(tabs)/settings" />;
   }
 
-  function handleRestore() {
-    Alert.alert(
-      '購入の復元は準備中です',
-      'アプリ内課金（RevenueCat / StoreKit）はストア公開時に有効化されます。',
-    );
+  async function handleRestore() {
+    const outcome = await restore();
+    if (outcome.status !== 'success') {
+      Alert.alert('復元できませんでした', 'しばらくしてからもう一度お試しください。');
+      return;
+    }
+    if (outcome.hasEntitlement) {
+      Alert.alert('復元しました', 'Proが有効になりました。', [{ text: 'OK', onPress: () => router.back() }]);
+    } else {
+      Alert.alert(
+        '復元できる購入がありません',
+        '購入時と同じ Apple ID でサインインしているかご確認ください。',
+      );
+    }
   }
 
   return (
@@ -32,7 +45,12 @@ export default function PurchaseRestoreScreen() {
           </ThemedText>
         </View>
 
-        <PrimaryButton title="購入を復元する" onPress={handleRestore} />
+        <PrimaryButton
+          title="購入を復元する"
+          onPress={handleRestore}
+          loading={isRestoring}
+          disabled={isRestoring}
+        />
 
         <View style={styles.note}>
           <ThemedText style={styles.noteTitle}>ⓘ 復元できない場合</ThemedText>

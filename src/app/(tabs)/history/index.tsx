@@ -12,8 +12,8 @@ import { SHOW_PRO } from '@/config/feature-flags';
 import { FREE_HISTORY_LIMIT } from '@/db/queries/history';
 import type { HistoryRow } from '@/db/queries/history';
 import { useHistory } from '@/hooks/use-history';
+import { useIsPro } from '@/hooks/use-purchases';
 import { useTrips } from '@/hooks/use-trips';
-import { useSettingsStore } from '@/stores/settings-store';
 import { color, radius, shadow, statusColor } from '@/theme/tokens';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
 import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
@@ -66,7 +66,7 @@ export default function HistoryScreen() {
 
   const { history, totalCount, reload } = useHistory();
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
-  const isPro = useSettingsStore((s) => s.isPro);
+  const isPro = useIsPro();
   const isLimited = !isPro && totalCount >= FREE_HISTORY_LIMIT;
   const { activeTrip } = useTrips();
 

@@ -17,6 +17,7 @@ import { FALLBACK_BUDGET_JPY } from '@/constants/camera-screen';
 import { SHOW_PRO } from '@/config/feature-flags';
 import type { TripRow } from '@/db/queries/trips';
 import { useHistory } from '@/hooks/use-history';
+import { useIsPro } from '@/hooks/use-purchases';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { color, radius, shadow } from '@/theme/tokens';
@@ -45,7 +46,8 @@ export default function SettingsScreen() {
     });
   }, []);
 
-  const { selectedCurrency, isPro } = useSettingsStore();
+  const { selectedCurrency } = useSettingsStore();
+  const isPro = useIsPro();
   const { activeTrip, loadTrips, switchTrip } = useTrips();
   const { history, totalCount } = useHistory();
 

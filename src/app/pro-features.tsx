@@ -4,7 +4,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { GhostButton, PrimaryButton } from '@/components/ui';
 import { SHOW_PRO } from '@/config/feature-flags';
-import { FREE_LIMITS, PRO_OCR_QUOTA } from '@/config/limits';
+import { FREE_LIMITS } from '@/config/limits';
 import { color, radius, shadow } from '@/theme/tokens';
 
 interface CompareRow {
@@ -16,11 +16,6 @@ interface CompareRow {
 const ROWS: CompareRow[] = [
   { label: '保存件数', free: `${FREE_LIMITS.saves}件`, pro: '無制限' },
   { label: '旅行作成', free: `${FREE_LIMITS.trips}件`, pro: '無制限' },
-  { label: '基本OCR・手入力', free: '✓', pro: '✓' },
-  { label: '高性能OCR', free: `お試し${FREE_LIMITS.hiOcrTrial}回`, pro: `月${PRO_OCR_QUOTA.month}回〜` },
-  { label: '詳細分析', free: '—', pro: '✓' },
-  { label: 'CSV / PDF出力', free: '—', pro: '対応予定' },
-  { label: '広告', free: '表示', pro: 'なし' },
 ];
 
 export default function ProFeaturesScreen() {
@@ -49,14 +44,9 @@ export default function ProFeaturesScreen() {
           ))}
         </View>
 
-        {/* 高性能OCR説明カード */}
-        <View style={styles.ocrCard}>
-          <ThemedText style={styles.ocrTitle}>高性能OCRについて</ThemedText>
-          <ThemedText style={styles.ocrBody}>
-            読み取りにくい値札やメニューを、より正確に読み取ります。月{PRO_OCR_QUOTA.month}回までで、
-            使い切っても翌月にリセット。基本OCRと手入力は無料のまま使い続けられます。
-          </ThemedText>
-        </View>
+        <ThemedText style={styles.scopeNote}>
+          高性能OCR・詳細分析・CSV/PDF出力などのクラウド機能は、今回のProには含まれません。
+        </ThemedText>
 
         <View style={styles.actions}>
           <PrimaryButton title="プランを見る" onPress={() => router.push('/purchase-confirm')} />
@@ -109,15 +99,6 @@ const styles = StyleSheet.create({
   colFree: { flex: 1 },
   colPro: { flex: 1 },
   valuePro: { color: color.primaryDark, fontWeight: '700' },
-  ocrCard: {
-    backgroundColor: color.primarySoft2,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: color.primaryBorder,
-    padding: 14,
-    gap: 4,
-  },
-  ocrTitle: { fontSize: 14, fontWeight: '700', color: color.primaryDark },
-  ocrBody: { fontSize: 12.5, fontWeight: '500', color: color.body, lineHeight: 20 },
+  scopeNote: { fontSize: 12, fontWeight: '500', color: color.muted, paddingHorizontal: 4, lineHeight: 18 },
   actions: { gap: 10, marginTop: 2 },
 });

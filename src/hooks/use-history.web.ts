@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { CurrencyCode } from '@/constants/currencies';
 import { FREE_HISTORY_LIMIT } from '@/db/queries/history';
 import type { HistoryRow } from '@/db/queries/history';
-import { useSettingsStore } from '@/stores/settings-store';
+import { useIsPro } from '@/hooks/use-purchases';
 import { useTripStore } from '@/stores/trip-store';
 
 const STORAGE_KEY = 'travelrate:history';
@@ -45,7 +45,7 @@ function persistAll(rows: HistoryRow[]) {
 }
 
 export function useHistory() {
-  const isPro = useSettingsStore((s) => s.isPro);
+  const isPro = useIsPro();
   const activeTrip = useTripStore((s) => s.activeTrip);
   const [history, setHistoryState] = useState<HistoryRow[]>([]);
   const [totalCount, setTotalCount] = useState(0);

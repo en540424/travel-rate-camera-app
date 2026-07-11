@@ -1,4 +1,9 @@
-import type { CustomerInfo, CustomerInfoUpdateListener, PurchasesOffering } from 'react-native-purchases';
+import type {
+  CustomerInfo,
+  CustomerInfoUpdateListener,
+  PurchasesOffering,
+  PurchasesPackage,
+} from 'react-native-purchases';
 
 /**
  * Web版のスタブ。react-native-purchasesはネイティブ専用SDKのため、
@@ -29,3 +34,20 @@ export async function fetchDefaultOffering(): Promise<PurchasesOffering | null> 
 export function addCustomerInfoListener(_listener: CustomerInfoUpdateListener): void {}
 
 export function removeCustomerInfoListener(_listener: CustomerInfoUpdateListener): void {}
+
+export type PurchaseOutcome =
+  | { status: 'success'; customerInfo: CustomerInfo }
+  | { status: 'cancelled' }
+  | { status: 'error' };
+
+export type RestoreOutcome =
+  | { status: 'success'; customerInfo: CustomerInfo; hasEntitlement: boolean }
+  | { status: 'error' };
+
+export async function purchasePackage(_pkg: PurchasesPackage): Promise<PurchaseOutcome> {
+  return { status: 'error' };
+}
+
+export async function restorePurchases(): Promise<RestoreOutcome> {
+  return { status: 'error' };
+}

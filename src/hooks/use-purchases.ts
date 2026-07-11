@@ -1,13 +1,18 @@
-import { useCallback, useEffect } from 'react';
-import type { CustomerInfo } from 'react-native-purchases';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
+import type { CustomerInfo, PurchasesPackage } from 'react-native-purchases';
 
 import {
   addCustomerInfoListener,
   configureRevenueCat,
   fetchCustomerInfo,
   fetchDefaultOffering,
+  isRevenueCatConfigured,
+  purchasePackage as purchasePackageOnDevice,
   removeCustomerInfoListener,
+  restorePurchases as restorePurchasesOnDevice,
 } from '@/lib/revenuecat';
+import type { PurchaseOutcome, RestoreOutcome } from '@/lib/revenuecat';
 import { usePurchasesStore } from '@/stores/purchases-store';
 
 /**
@@ -61,11 +66,35 @@ export function usePurchasesInit(): void {
       removeCustomerInfoListener(listener);
     };
   }, []);
+
+  // アプリがバックグラウンドから復帰した時にCustomerInfoを再取得する。
+  // 他端末での購入・解約・期限切れなどをできるだけ早く反映するため。
+  // オフライン時はSDK側の端末内キャッシュがそのまま返る（ここでは独自キャッシュを持たない）。
+  useEffect(() => {
+    const appState = { current: AppState.currentState };
+    const subscription = AppState.addEventListener('change', (next: AppStateStatus) => {
+      const cameToForeground = appState.current.match(/inactive|background/) && next === 'active';
+      appState.current = next;
+      if (!cameToForeground) return;
+      if (!isRevenueCatConfigured()) return;
+      fetchCustomerInfo()
+        .then((info) => usePurchasesStore.getState().setCustomerInfo(info))
+        .catch(() => {
+          /* オフライン等は無視。無料機能は継続利用可能なまま */
+        });
+    });
+    return () => subscription.remove();
+  }, []);
 }
 
-/** Pro状態・Offering情報を画面から参照するためのhook。 */
+/** Pro状態・Offering情報・購入/復元処理を画面から参照するためのhook。 */
 export function usePurchases() {
   const state = usePurchasesStore();
+  const [isPurchasing, setIsPurchasing] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  // 二重タップ防止用。setStateの非同期反映を待たず即座に判定するためrefでも保持する。
+  const purchasingRef = useRef(false);
+  const restoringRef = useRef(false);
 
   const refreshCustomerInfo = useCallback(async () => {
     if (!usePurchasesStore.getState().isConfigured) return;
@@ -89,5 +118,46 @@ export function usePurchases() {
     }
   }, []);
 
-  return { ...state, refreshCustomerInfo, refreshOfferings };
+  const purchase = useCallback(async (pkg: PurchasesPackage): Promise<PurchaseOutcome> => {
+    if (purchasingRef.current) return { status: 'error' };
+    if (!usePurchasesStore.getState().isConfigured) return { status: 'error' };
+    purchasingRef.current = true;
+    setIsPurchasing(true);
+    try {
+      const outcome = await purchasePackageOnDevice(pkg);
+      if (outcome.status === 'success') {
+        usePurchasesStore.getState().setCustomerInfo(outcome.customerInfo);
+        usePurchasesStore.getState().setError(null);
+      }
+      return outcome;
+    } finally {
+      purchasingRef.current = false;
+      setIsPurchasing(false);
+    }
+  }, []);
+
+  const restore = useCallback(async (): Promise<RestoreOutcome> => {
+    if (restoringRef.current) return { status: 'error' };
+    if (!usePurchasesStore.getState().isConfigured) return { status: 'error' };
+    restoringRef.current = true;
+    setIsRestoring(true);
+    try {
+      const outcome = await restorePurchasesOnDevice();
+      if (outcome.status === 'success') {
+        usePurchasesStore.getState().setCustomerInfo(outcome.customerInfo);
+        usePurchasesStore.getState().setError(null);
+      }
+      return outcome;
+    } finally {
+      restoringRef.current = false;
+      setIsRestoring(false);
+    }
+  }, []);
+
+  return { ...state, isPurchasing, isRestoring, refreshCustomerInfo, refreshOfferings, purchase, restore };
+}
+
+/** Pro権利の有無だけを参照する軽量セレクタ。正本はRevenueCatのCustomerInfo。 */
+export function useIsPro(): boolean {
+  return usePurchasesStore((s) => s.isPro);
 }

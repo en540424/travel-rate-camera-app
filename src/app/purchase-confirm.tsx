@@ -1,11 +1,15 @@
 import { Redirect, router } from 'expo-router';
-import { Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import type { PurchasesPackage } from 'react-native-purchases';
 
 import { ThemedText } from '@/components/themed-text';
-import { GhostButton, PrimaryButton } from '@/components/ui';
+import { ErrorMessage, GhostButton, PrimaryButton } from '@/components/ui';
 import { SHOW_PRO } from '@/config/feature-flags';
-import { PRICE_PLACEHOLDER, PRO_OCR_QUOTA } from '@/config/limits';
+import { usePurchases } from '@/hooks/use-purchases';
 import { color, radius, shadow } from '@/theme/tokens';
+
+type PlanKey = 'monthly' | 'annual';
 
 interface IncludedFeature {
   label: string;
@@ -15,35 +19,100 @@ interface IncludedFeature {
 const INCLUDED: IncludedFeature[] = [
   { label: '保存件数', value: '無制限' },
   { label: '旅行作成数', value: '無制限' },
-  { label: '高性能OCR', value: `月${PRO_OCR_QUOTA.year}回相当` },
-  { label: '詳細分析', value: '利用可' },
-  { label: 'CSV / PDF出力', value: '対応予定' },
 ];
 
 export default function PurchaseConfirmScreen() {
+  // Hooksは早期returnより前に呼ぶ（SHOW_PRO=falseでも呼び出し順を変えない）
+  const { isInitialized, isLoading, monthlyPackage, annualPackage, isPurchasing, purchase } = usePurchases();
+  const [selectedPlan, setSelectedPlan] = useState<PlanKey>('annual');
+
   // 初回MVPはPro未実装。ルート直接アクセスでも購入画面へ進めないようガードする（P0-02）
   if (!SHOW_PRO) {
     return <Redirect href="/(tabs)/settings" />;
   }
+
+  const packagesByPlan: Record<PlanKey, PurchasesPackage | null> = {
+    monthly: monthlyPackage,
+    annual: annualPackage,
+  };
+  // 選択中プランのPackageが無ければ、取得できている方へ自動的に寄せる
+  const effectivePlan: PlanKey =
+    packagesByPlan[selectedPlan] != null
+      ? selectedPlan
+      : packagesByPlan.annual != null
+        ? 'annual'
+        : packagesByPlan.monthly != null
+          ? 'monthly'
+          : selectedPlan;
+  const selectedPackage = packagesByPlan[effectivePlan];
+
+  const priceLoading = !isInitialized || isLoading;
+  const noPackagesAvailable = isInitialized && !isLoading && !monthlyPackage && !annualPackage;
+
+  async function handlePurchase() {
+    if (!selectedPackage) return;
+    const outcome = await purchase(selectedPackage);
+    if (outcome.status === 'success') {
+      router.replace('/purchase-complete');
+      return;
+    }
+    if (outcome.status === 'cancelled') return; // ユーザーキャンセルはエラー表示しない
+    Alert.alert('購入できませんでした', 'しばらくしてからもう一度お試しください。');
+  }
+
   return (
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.scroll}>
+        {/* プラン選択 */}
+        <View style={styles.planToggle}>
+          <PlanChip
+            label="年額"
+            sub={annualPackage ? annualPackage.product.priceString : '—'}
+            selected={effectivePlan === 'annual'}
+            disabled={!annualPackage}
+            onPress={() => setSelectedPlan('annual')}
+          />
+          <PlanChip
+            label="月額"
+            sub={monthlyPackage ? monthlyPackage.product.priceString : '—'}
+            selected={effectivePlan === 'monthly'}
+            disabled={!monthlyPackage}
+            onPress={() => setSelectedPlan('monthly')}
+          />
+        </View>
+
         {/* 選択プラン（黒ヒーロー） */}
         <View style={styles.planCard}>
           <View style={styles.planTopRow}>
             <View style={styles.planTag}>
-              <ThemedText style={styles.planTagText}>PRO・年額</ThemedText>
+              <ThemedText style={styles.planTagText}>
+                {effectivePlan === 'annual' ? 'PRO・年額' : 'PRO・月額'}
+              </ThemedText>
             </View>
-            <View style={styles.recommendTag}>
-              <ThemedText style={styles.recommendText}>おすすめ</ThemedText>
-            </View>
+            {effectivePlan === 'annual' && (
+              <View style={styles.recommendTag}>
+                <ThemedText style={styles.recommendText}>おすすめ</ThemedText>
+              </View>
+            )}
           </View>
-          <ThemedText style={styles.planName}>年額Pro</ThemedText>
+          <ThemedText style={styles.planName}>
+            {effectivePlan === 'annual' ? '年額Pro' : '月額Pro'}
+          </ThemedText>
           <View style={styles.planPriceRow}>
-            <ThemedText style={styles.planSub}>月あたり約¥317・2か月分お得</ThemedText>
+            {effectivePlan === 'annual' && annualPackage?.product.pricePerMonthString ? (
+              <ThemedText style={styles.planSub}>
+                月あたり{annualPackage.product.pricePerMonthString}相当
+              </ThemedText>
+            ) : (
+              <View />
+            )}
             <ThemedText style={styles.planPrice}>
-              {PRICE_PLACEHOLDER.year}
-              <ThemedText style={styles.planPriceUnit}>/年</ThemedText>
+              {priceLoading
+                ? '読み込み中…'
+                : (selectedPackage?.product.priceString ?? '取得できません')}
+              <ThemedText style={styles.planPriceUnit}>
+                {effectivePlan === 'annual' ? '/年' : '/月'}
+              </ThemedText>
             </ThemedText>
           </View>
         </View>
@@ -62,6 +131,9 @@ export default function PurchaseConfirmScreen() {
             </View>
           ))}
         </View>
+        <ThemedText style={styles.scopeNote}>
+          高性能OCRなどのクラウド機能は、今回のProには含まれません。
+        </ThemedText>
 
         {/* 自動更新の明記 */}
         <View style={styles.noteCard}>
@@ -70,23 +142,51 @@ export default function PurchaseConfirmScreen() {
           </ThemedText>
         </View>
 
+        {noPackagesAvailable && (
+          <ErrorMessage message="価格情報を取得できませんでした。しばらくしてからもう一度お試しください。" />
+        )}
+
         <View style={styles.actions}>
           <PrimaryButton
-            title={`${PRICE_PLACEHOLDER.year}/年 で購入する`}
-            onPress={() =>
-              Alert.alert(
-                '購入は準備中です',
-                'アプリ内課金（RevenueCat / StoreKit）はストア公開時に有効化されます。',
-              )
+            title={
+              priceLoading
+                ? '読み込み中…'
+                : selectedPackage
+                  ? `${selectedPackage.product.priceString}${effectivePlan === 'annual' ? '/年' : '/月'} で購入する`
+                  : '購入できません'
             }
+            onPress={handlePurchase}
+            loading={isPurchasing}
+            disabled={priceLoading || !selectedPackage}
           />
-          <ThemedText style={styles.disclaimer}>
-            ※ 価格は仮表示です。正式な金額はストアでの公開時に確定します。
-          </ThemedText>
-          <GhostButton title="プランを変更" onPress={() => router.back()} />
+          <GhostButton title="あとで" onPress={() => router.back()} />
         </View>
       </ScrollView>
     </View>
+  );
+}
+
+function PlanChip({
+  label,
+  sub,
+  selected,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  sub: string;
+  selected: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={[styles.planChip, selected && styles.planChipSelected, disabled && styles.planChipDisabled]}>
+      <ThemedText style={[styles.planChipLabel, selected && styles.planChipLabelSelected]}>{label}</ThemedText>
+      <ThemedText style={[styles.planChipSub, selected && styles.planChipSubSelected]}>{sub}</ThemedText>
+    </Pressable>
   );
 }
 
@@ -101,6 +201,23 @@ const styles = StyleSheet.create({
     width: '100%',
     alignSelf: 'center',
   },
+  planToggle: { flexDirection: 'row', gap: 10 },
+  planChip: {
+    flex: 1,
+    borderRadius: radius.card,
+    borderWidth: 1.5,
+    borderColor: color.line,
+    backgroundColor: color.card,
+    paddingVertical: 12,
+    alignItems: 'center',
+    gap: 2,
+  },
+  planChipSelected: { borderColor: color.primary, backgroundColor: color.primarySoft },
+  planChipDisabled: { opacity: 0.45 },
+  planChipLabel: { fontSize: 14, fontWeight: '700', color: color.text },
+  planChipLabelSelected: { color: color.primaryDark },
+  planChipSub: { fontSize: 12, fontWeight: '600', color: color.muted, fontVariant: ['tabular-nums'] },
+  planChipSubSelected: { color: color.primaryDark },
   planCard: {
     backgroundColor: color.dark,
     borderRadius: radius.cardLg,
@@ -170,6 +287,7 @@ const styles = StyleSheet.create({
   featureLabel: { flex: 1, fontSize: 15, fontWeight: '600', color: color.text },
   featureValue: { fontSize: 13, fontWeight: '700', color: color.primaryDark },
   sep: { height: StyleSheet.hairlineWidth, backgroundColor: color.line2, marginLeft: 16 },
+  scopeNote: { fontSize: 12, fontWeight: '500', color: color.muted, paddingHorizontal: 4 },
   noteCard: {
     backgroundColor: color.bg,
     borderRadius: radius.card,
@@ -177,5 +295,4 @@ const styles = StyleSheet.create({
   },
   noteText: { fontSize: 12.5, fontWeight: '500', color: color.body, lineHeight: 19 },
   actions: { gap: 10, marginTop: 4 },
-  disclaimer: { fontSize: 11.5, fontWeight: '500', color: color.muted, textAlign: 'center' },
 });

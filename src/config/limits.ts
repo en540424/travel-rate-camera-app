@@ -1,8 +1,7 @@
 /**
  * 旅レートカメラ_実装引き継ぎ資料.md §4 / §7 / §8 対応。
  * 価格・上限・回数などの「数値」はデザイントークンではなく差し替え前提のconfigに分離する。
- * 価格は最終的に RevenueCat の offering（localizedPriceString）を正とする。
- * 下記 PRICE_PLACEHOLDER はUI仮表示のみ。
+ * 価格はRevenueCatのPackage（product.priceString等）を正とする。固定値は持たない。
  */
 
 // 無料版の上限（§7）
@@ -12,16 +11,9 @@ export const FREE_LIMITS = {
   hiOcrTrial: 3,
 } as const;
 
-// Proの高性能OCR月間/年間/買い切り回数（§8）
+// Proの高性能OCR月間/年間/買い切り回数（§8）。初回Pro（保存/旅行数上限解除）には未接続。将来のクラウド機能バッチ用に定義のみ残す。
 export const PRO_OCR_QUOTA = {
   month: 50,
   year: 100,
   oneTime: 10,
-} as const;
-
-// UI仮表示用の価格（実値はRevenueCatのlocalizedPriceStringを使用）
-export const PRICE_PLACEHOLDER = {
-  month: '¥480',
-  year: '¥3,800',
-  oneTime: '¥5,800',
 } as const;

@@ -19,12 +19,12 @@ import {
   updateMemo as updateMemoQuery,
 } from '@/db/queries/history';
 import type { HistoryRow } from '@/db/queries/history';
-import { useSettingsStore } from '@/stores/settings-store';
+import { useIsPro } from '@/hooks/use-purchases';
 import { useTripStore } from '@/stores/trip-store';
 
 export function useHistory() {
   const db = useSQLiteContext();
-  const isPro = useSettingsStore((s) => s.isPro);
+  const isPro = useIsPro();
   const activeTrip = useTripStore((s) => s.activeTrip);
 
   const [history, setHistory] = useState<HistoryRow[]>([]);

@@ -4,13 +4,11 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { GhostButton, PrimaryButton, SecondaryButton } from '@/components/ui';
 import { SHOW_PRO } from '@/config/feature-flags';
-import { PRO_OCR_QUOTA } from '@/config/limits';
 import { color, radius, shadow } from '@/theme/tokens';
 
 const UNLOCKED: { label: string; value: string }[] = [
   { label: '保存件数', value: '無制限' },
   { label: '旅行作成数', value: '無制限' },
-  { label: '高性能OCR', value: `月${PRO_OCR_QUOTA.year}回` },
 ];
 
 export default function PurchaseCompleteScreen() {
@@ -32,7 +30,7 @@ export default function PurchaseCompleteScreen() {
 
         <ThemedText style={styles.title}>Proが有効になりました</ThemedText>
         <ThemedText style={styles.body}>
-          保存数・旅行数の制限が解除され、高性能OCRが使えるようになりました。
+          保存数・旅行数の制限が解除されました。
         </ThemedText>
 
         <View style={styles.list}>
@@ -50,10 +48,7 @@ export default function PurchaseCompleteScreen() {
 
         <View style={styles.actions}>
           <PrimaryButton title="メイン画面へ" onPress={toMain} />
-          <View style={styles.actionRow}>
-            <SecondaryButton title="高性能OCRを試す" onPress={toMain} style={styles.flex} />
-            <SecondaryButton title="設定を見る" onPress={toSettings} style={styles.flex} />
-          </View>
+          <SecondaryButton title="設定を見る" onPress={toSettings} />
           <GhostButton title="閉じる" onPress={() => router.dismissAll()} />
         </View>
       </ScrollView>
@@ -78,6 +73,4 @@ const styles = StyleSheet.create({
   rowValue: { fontSize: 14, fontWeight: '700', color: color.primaryDark },
   sep: { height: StyleSheet.hairlineWidth, backgroundColor: color.line2, marginLeft: 16 },
   actions: { width: '100%', gap: 10, marginTop: 16 },
-  actionRow: { flexDirection: 'row', gap: 10 },
-  flex: { flex: 1 },
 });
