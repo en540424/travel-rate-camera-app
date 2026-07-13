@@ -115,7 +115,7 @@ OCR基盤・複数通貨OCR改善は一段落しており、USD / EUR / JPY / KR
 - OCRエンジン変更
 - recognitionLanguages対応
 - 外部APIによる自動為替取得
-- RevenueCat本実装
+- ~~RevenueCat本実装~~（2026-07-09方針変更により公開前必須タスクへ変更済み。現状は項目7を正とする。本行は旧記述として取り消し線のみ残す）
 - CSV/PDF出力
 - クラウド同期
 - バックアップ
