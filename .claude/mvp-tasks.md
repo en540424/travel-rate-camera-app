@@ -107,8 +107,9 @@ OCR基盤・複数通貨OCR改善は一段落しており、USD / EUR / JPY / KR
      - 初期化基盤：`src/lib/revenuecat.native.ts`（実装）／`src/lib/revenuecat.web.ts`（Webは無効化スタブ）／`src/hooks/use-purchases.ts`の`usePurchasesInit()`から`src/app/_layout.tsx`で1回呼び出し。iOS以外・Key未設定・通信失敗のいずれでも無料機能は継続利用可能
      - Entitlement判定基盤：`src/config/revenuecat.ts`の`REVENUECAT_ENTITLEMENT_ID = 'pro'`（RevenueCat Dashboard側のEntitlement識別子は本バッチの人間確認により`pro`へ変更する方針。Dashboard側の実変更はユーザー側作業）／`src/stores/purchases-store.ts`の`isPro`
      - Offering/Package取得基盤：`REVENUECAT_OFFERING_ID = 'default'`から`monthlyPackage`/`annualPackage`を取得（`purchases-store.ts`）
-     - 未実装のまま：購入処理・復元処理（ダミー実装なし）、`isPro`のFREE_LIMITS連動（既存`settings-store.ts`の`isPro`とは意図的に未接続）、`SHOW_PRO=false`維持
-     - 次のバッチ：購入/復元接続・`isPro`永続化・Pro5画面の文言/価格現行化・FREE_LIMITS実制御（優先順は「旅レートカメラ_RevenueCat・AppStoreConnect課金設定メモ」9節・「Fable追加レビュー1」10節を参照）
+     - 【バッチ0時点】未実装のまま：購入処理・復元処理（ダミー実装なし）、`isPro`のFREE_LIMITS連動（既存`settings-store.ts`の`isPro`とは意図的に未接続）、`SHOW_PRO=false`維持
+     - 【バッチ0時点】次のバッチ：購入/復元接続・`isPro`永続化・Pro5画面の文言/価格現行化・FREE_LIMITS実制御（優先順は「旅レートカメラ_RevenueCat・AppStoreConnect課金設定メモ」9節・「Fable追加レビュー1」10節を参照）
+     - 【2026-07-13現行化】上記「次のバッチ」はcommit `a8824ff`（feat: complete RevenueCat pro plan management）で完了済みと確認。`purchase-confirm.tsx`が`purchase(pkg)`を、`purchase-restore.tsx`が`restore()`を実際に呼び出し済み。`use-history.ts`の`addEntry`が`!isPro && totalCount >= FREE_HISTORY_LIMIT`でブロックし、`converter.tsx`が`blocked`時に`SaveLimitSheet`を表示。`trip-create.tsx`も`TripLimitSheet`を表示。`SHOW_PRO`は`true`。設定画面の現在プラン表示は`CurrentPlanCard`で実装済み。残るのは実機Sandboxでの動作検証と、`CurrentPlanCard`のPROバッジが無料/Pro状態を問わず常時表示される点の要判断（意図的な一体感重視のデザインか、要件7「無料ユーザーにPROバッジを出さない」との不整合か、ユーザー判断待ち）
 
 ## MVP後でよいタスク
 
