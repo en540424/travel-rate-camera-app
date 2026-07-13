@@ -109,7 +109,8 @@ OCR基盤・複数通貨OCR改善は一段落しており、USD / EUR / JPY / KR
      - Offering/Package取得基盤：`REVENUECAT_OFFERING_ID = 'default'`から`monthlyPackage`/`annualPackage`を取得（`purchases-store.ts`）
      - 【バッチ0時点】未実装のまま：購入処理・復元処理（ダミー実装なし）、`isPro`のFREE_LIMITS連動（既存`settings-store.ts`の`isPro`とは意図的に未接続）、`SHOW_PRO=false`維持
      - 【バッチ0時点】次のバッチ：購入/復元接続・`isPro`永続化・Pro5画面の文言/価格現行化・FREE_LIMITS実制御（優先順は「旅レートカメラ_RevenueCat・AppStoreConnect課金設定メモ」9節・「Fable追加レビュー1」10節を参照）
-     - 【2026-07-13現行化】上記「次のバッチ」はcommit `a8824ff`（feat: complete RevenueCat pro plan management）で完了済みと確認。`purchase-confirm.tsx`が`purchase(pkg)`を、`purchase-restore.tsx`が`restore()`を実際に呼び出し済み。`use-history.ts`の`addEntry`が`!isPro && totalCount >= FREE_HISTORY_LIMIT`でブロックし、`converter.tsx`が`blocked`時に`SaveLimitSheet`を表示。`trip-create.tsx`も`TripLimitSheet`を表示。`SHOW_PRO`は`true`。設定画面の現在プラン表示は`CurrentPlanCard`で実装済み。残るのは実機Sandboxでの動作検証と、`CurrentPlanCard`のPROバッジが無料/Pro状態を問わず常時表示される点の要判断（意図的な一体感重視のデザインか、要件7「無料ユーザーにPROバッジを出さない」との不整合か、ユーザー判断待ち）
+     - 【2026-07-13現行化】上記「次のバッチ」はcommit `a8824ff`（feat: complete RevenueCat pro plan management）で完了済みと確認。`purchase-confirm.tsx`が`purchase(pkg)`を、`purchase-restore.tsx`が`restore()`を実際に呼び出し済み。`use-history.ts`の`addEntry`が`!isPro && totalCount >= FREE_HISTORY_LIMIT`でブロックし、`converter.tsx`が`blocked`時に`SaveLimitSheet`を表示。`trip-create.tsx`も`TripLimitSheet`を表示。`SHOW_PRO`は`true`。設定画面の現在プラン表示は`CurrentPlanCard`で実装済み。残るのは実機Sandboxでの動作検証
+     - 【2026-07-13・PROバッジ修正完了】`CurrentPlanCard`のPROバッジが無料/Pro状態を問わず常時表示されていた点はユーザー確定方針により修正済み。`isPro === true`の時だけゴールドPROバッジを表示し、無料時は非表示。無料時の見出しを「無料プランをご利用中」へ変更し、無料であることを誤解なく示す。カードのpadding/gapを縮小（18→16 / 8→6）、アクションボタンのmarginTopを微調整（4→8）。Pro表示・購入・復元・RevenueCat処理・DB・保存処理・FREE_LIMITS数値は無変更
 
 ## MVP後でよいタスク
 

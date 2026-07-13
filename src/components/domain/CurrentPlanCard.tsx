@@ -42,8 +42,8 @@ export function CurrentPlanCard() {
           : '保存件数・旅行作成数 無制限';
     actionText = '契約内容を確認';
   } else {
-    statusTitle = '保存や旅行を無制限に';
-    statusBody = `現在は保存${FREE_LIMITS.saves}件・旅行${FREE_LIMITS.trips}件まで`;
+    statusTitle = '無料プランをご利用中';
+    statusBody = `保存${FREE_LIMITS.saves}件・旅行${FREE_LIMITS.trips}件まで無料。Proで無制限に。`;
     actionText = 'Proを見る';
   }
 
@@ -63,9 +63,11 @@ export function CurrentPlanCard() {
         style={({ pressed }) => [styles.card, pressed && canNavigate && styles.cardPressed]}>
         <View style={styles.titleRow}>
           <ThemedText style={styles.appName}>旅レートカメラ</ThemedText>
-          <View style={styles.proTag}>
-            <ThemedText style={styles.proTagText}>PRO</ThemedText>
-          </View>
+          {isPro && (
+            <View style={styles.proTag}>
+              <ThemedText style={styles.proTagText}>PRO</ThemedText>
+            </View>
+          )}
         </View>
 
         <ThemedText style={[styles.statusTitle, isPro && !checking && !failed && styles.statusTitlePro]}>
@@ -109,8 +111,8 @@ const styles = StyleSheet.create({
     // 無料/Pro/確認中/取得失敗のいずれも同じ黒カード（既存の黒ヒーローカードと同じトークン）。状態は中身だけで表す。
     backgroundColor: color.dark,
     borderRadius: radius.cardLg,
-    padding: 18,
-    gap: 8,
+    padding: 16,
+    gap: 6,
     ...shadow.raised,
   },
   cardPressed: {
@@ -165,7 +167,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.button,
     paddingHorizontal: 14,
     paddingVertical: 9,
-    marginTop: 4,
+    marginTop: 8,
   },
   actionBtnText: {
     fontSize: 13,
