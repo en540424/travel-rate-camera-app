@@ -48,6 +48,9 @@ example
 ss_*.png
 ss_cam_*.png
 
+# Claude Code local settings
+.claude/settings.local.json
+
 # design assets — Markdown/spec/HTML/RNコード参考実装は追跡し、画像と凍結スナップショットは対象外にする
 design/*.png
 design-handoff/**/*.png
