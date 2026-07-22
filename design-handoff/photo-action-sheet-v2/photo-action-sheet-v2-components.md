@@ -14,8 +14,9 @@
 |---|---|
 | `PhotoChangeSheet` | **これを更新する**（新規作成ではない）。撮る/ライブラリ/削除/キャンセルの行スタイルを踏襲。 |
 
-> `PhotoChangeSheet` / `OcrQuotaSheet` / `SaveLimitSheet` / `ActiveTripSwitchSheet` は domain/index.ts に**未export**で、
+> `PhotoChangeSheet` / `SaveLimitSheet` / `ActiveTripSwitchSheet` は domain/index.ts に**未export**で、
 > 個別 import されている。**import経路を確認してから**手を入れる。勝手に export 構造を変えない（v2方針）。
+> （`OcrQuotaSheet`は2026-07-22にコードから削除済みのため一覧から除外）
 
 ## 新規作成が必要そうな小コンポーネント
 

@@ -105,9 +105,7 @@ RNは iOS と Android で別指定。CSSの `box-shadow` → RN変換の目安�
 価格・プランはトークンではなく **差し替え前提の config** に分離。
 
 ```ts
-// src/config/limits.ts
-export const FREE_LIMITS  = { trips: 1, saves: 30, hiOcrTrial: 3 };
-export const PRO_OCR_QUOTA = { month: 50, year: 100, oneTime: 10 };
-export const PRICE_PLACEHOLDER = { month: '¥480', year: '¥3,800', oneTime: '¥5,800' };
-// 価格は RevenueCat の localizedPriceString を正にする。上記はUI仮表示のみ。
+// src/config/limits.ts（2026-07-22時点の実コードに合わせて更新。hiOcrTrial・PRO_OCR_QUOTAは削除済み）
+export const FREE_LIMITS  = { trips: 1, saves: 30 };
+// 価格は RevenueCat の localizedPriceString を正にする。固定値は持たない。
 ```

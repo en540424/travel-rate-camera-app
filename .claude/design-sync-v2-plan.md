@@ -85,12 +85,13 @@ v2では、既存のドメインUIを前提にする。
 - `ProFeatureBadge`
 - `ActiveTripSwitchSheet`
 - `PhotoChangeSheet`
-- `OcrQuotaSheet`
 - `SaveLimitSheet`
+
+（`OcrQuotaSheet`は2026-07-22にコードから削除済みのため一覧から除外）
 
 注意：
 
-- 未export のシート類（`ActiveTripSwitchSheet` / `PhotoChangeSheet` / `OcrQuotaSheet` / `SaveLimitSheet`）は、**既存の import 経路を確認してから扱う**。
+- 未export のシート類（`ActiveTripSwitchSheet` / `PhotoChangeSheet` / `SaveLimitSheet`）は、**既存の import 経路を確認してから扱う**。
 - **勝手に import 構造を変えない**。
 
 ---
