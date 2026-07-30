@@ -20,6 +20,8 @@
 | 実機QA | `TEST_CHECKLIST.md` |
 | 現行デザイントークン（実コード） | `src/theme/tokens.ts` |
 | 無料版上限・Pro回数（実コード） | `src/config/limits.ts`（`FREE_LIMITS.saves = 30` を含む） |
+| Pro購入・復元・課金設定（実コード） | `src/config/revenuecat.ts`・`src/config/feature-flags.ts`（実装済み・`SHOW_PRO = true`。外部ダッシュボード設定はVault `旅レートカメラ_RevenueCat・AppStoreConnect課金設定メモ.md`） |
+| 多言語OCR・翻訳・テキスト入力（中核構想） | Vault `AI-Workflow-System/07_project-kits/tabirate-camera/旅レートカメラ_多言語OCR・翻訳・テキスト入力_中核構想設計書_v1.md`（2026-07-22決定済み構想・実装未着手。オンデバイス方式が第一候補、無料/Pro境界は未決定） |
 
 ## 旧資料として扱うもの（現行の正ではない）
 
@@ -38,8 +40,8 @@
 - 写真の保存処理・保存先
 - 旅行切り替えロジック
 - 固定の下タブ構成（`(tabs)` 単一構成）
-- `FREE_LIMITS.saves = 30`（`src/config/limits.ts`）
-- RevenueCat 未接続という前提（Pro購入処理は未実装）
+- `FREE_LIMITS`（`trips = 1` / `saves = 30`、`src/config/limits.ts`）の数値そのもの
+- RevenueCat購入・復元・Entitlement判定（`SHOW_PRO = true`、`src/config/feature-flags.ts`）は実装済み。Entitlement ID／Offering ID／Product ID（`src/config/revenuecat.ts`）・購入/復元フローを動作確認なしに変更しない
 - `design-handoff-v1-before-sync/` の内容（削除・上書き禁止、比較材料として保持）
 
 （一覧の根拠・詳細は `.claude/design-sync-v2-plan.md` §6、`.claude/agents/db-guardian.md`、`.claude/agents/release-reviewer.md`、`design/旅レートカメラ_実装引き継ぎ資料.md` §10/§12 を参照）
