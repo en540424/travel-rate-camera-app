@@ -16,6 +16,11 @@ Pod::Spec.new do |s|
 
   s.dependency 'ExpoModulesCore'
 
+  # Translationはfrom iOS 18.0(フレームワーク自体はiOS 17.4+)。
+  # deployment targetは16.4のままのため、iOS 16.4〜17.xでdyldがロードに失敗しないようweak linkする。
+  # 使用箇所はすべて#available(iOS 18.0, *)でガード済み（TabirateTranslationModule.swift等）。
+  s.weak_frameworks = 'Translation'
+
   # Swift/Objective-C compatibility
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
