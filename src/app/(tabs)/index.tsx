@@ -13,6 +13,7 @@ import {
   SaveLimitBanner,
 } from '@/components/domain';
 import { SaveLimitSheet } from '@/components/domain/SaveLimitSheet';
+import { DevMemoTranslationPanel, DevTranslationHost } from '@/components/translation-dev-panel';
 import { ActionSheet, EmptyState, SectionCard, SecondaryButton, PrimaryButton, Toast } from '@/components/ui';
 import type { ConversionDirection, CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES, FOREIGN_CURRENCY_CODES } from '@/constants/currencies';
@@ -23,6 +24,9 @@ import {
 import { DT } from '@/constants/designTokens';
 import { FREE_LIMITS, canSaveEntry } from '@/config/limits';
 import { SHOW_PRO } from '@/config/feature-flags';
+import { getTranslationSourceLanguage } from '@/config/translation-languages';
+import { cancelTranslation, createPendingCandidates, translateMemoLines } from '@/lib/translation-service';
+import type { MemoCandidate } from '@/lib/translation-types';
 import { useHistory } from '@/hooks/use-history';
 import { useIsPro } from '@/hooks/use-purchases';
 import { useRates } from '@/hooks/use-rates';
@@ -121,6 +125,10 @@ export default function CameraScreen() {
     languages: string[];
     errorMessage?: string;
   } | null>(null);
+  // [検証] Phase 2：翻訳候補（__DEV__限定）。本番のmemoLines表示・保存には使わない。
+  const [memoCandidates, setMemoCandidates] = useState<MemoCandidate[] | null>(null);
+  // [検証] Phase 2：ホストViewはこの画面にフォーカスがある間だけマウントする。
+  const [isScreenFocused, setIsScreenFocused] = useState(false);
 
   const scrollViewRef = useRef<ScrollView>(null);
   // 下タブでこのタブ（カメラ）を押した時（＝タブ切替で入ってきた時）だけ先頭へ戻す。
@@ -144,6 +152,9 @@ export default function CameraScreen() {
   const ocrPhotoPreviewScrollRef = useRef<ScrollView>(null);
   // 再読み取りで撮影した直後の写真URI。OCR処理が終わりhandleOcrResultが呼ばれるまでocrPhotoUriへは反映しない
   const lastScannedPhotoUriRef = useRef<string | null>(null);
+  // [検証] Phase 2：OCR結果の世代。翻訳結果が古い世代のものなら破棄する。
+  // scanKeyはCameraPreviewの再マウント専用のkeyであり、非同期リクエストの世代管理には流用しない。
+  const translationGenerationRef = useRef(0);
 
   const { rates } = useRates();
   const { selectedCurrency, setSelectedCurrency } = useSettingsStore();
@@ -164,6 +175,22 @@ export default function CameraScreen() {
         setInputMode('TO_JPY');
       }
     }, [reload]),
+  );
+
+  // [検証] Phase 2：翻訳ホストViewの寿命管理（__DEV__限定）。
+  // フォーカス中だけホストViewをマウントし、離脱時はアンマウント＋世代を進めて結果を破棄する。
+  // 世代を進めるため、離脱中に返ってきた翻訳結果はstateへ反映されない
+  // （＝画面へ戻ると候補は「翻訳中…」のまま残る。次のOCR結果確定で正常に翻訳し直される）。
+  useFocusEffect(
+    useCallback(() => {
+      if (!__DEV__) return;
+      setIsScreenFocused(true);
+      return () => {
+        setIsScreenFocused(false);
+        translationGenerationRef.current += 1;
+        void cancelTranslation();
+      };
+    }, []),
   );
 
   const isJpyMode = activeTrip?.base_currency === 'JPY';
@@ -392,6 +419,36 @@ export default function CameraScreen() {
     );
   }
 
+  // [検証] Phase 2：OCR結果が確定した瞬間に世代を進める。
+  // 進行中だった翻訳の結果は、返ってきても世代不一致で破棄される（stale result対策の本体）。
+  // __DEV__以外・Web・翻訳非対象通貨では世代を進めるだけで何も起こさない。
+  function startDevMemoTranslation(memoLines: string[]) {
+    const generation = translationGenerationRef.current + 1;
+    translationGenerationRef.current = generation;
+    if (!__DEV__ || isWeb) return;
+
+    const sourceLanguage = getTranslationSourceLanguage(currencyForDisplay);
+    if (sourceLanguage == null || memoLines.length === 0) {
+      setMemoCandidates(null);
+      return;
+    }
+
+    // 翻訳を待たずに原文候補を即表示する（OCR完了が翻訳待ちにならないようにする）
+    setMemoCandidates(createPendingCandidates(memoLines, sourceLanguage));
+
+    void (async () => {
+      // 前の世代の未処理リクエストを先に破棄する。await してから投げないと、
+      // 新しいtranslateBatchが先に積まれてcancelAllに巻き込まれる可能性がある。
+      await cancelTranslation();
+      if (generation !== translationGenerationRef.current) return;
+
+      const result = await translateMemoLines({ lines: memoLines, sourceLanguage, generation });
+      // 古い世代の結果はstateへ反映しない
+      if (result.generation !== translationGenerationRef.current) return;
+      setMemoCandidates(result.candidates);
+    })();
+  }
+
   function handleOcrResult(raw: string) {
     if (isWeb) return;
     // [診断ログ] 開発ビルドのみ出力。本番では実行されない（P0-06）
@@ -420,6 +477,7 @@ export default function CameraScreen() {
     // 初回スキャン：比較対象がまだ無いため即反映する
     if (newPhotoUri != null) setOcrPhotoUri(newPhotoUri);
     setOcrResult(newResult);
+    startDevMemoTranslation(newResult.memoLines);
     setSelectedPrice(null);
     setAddedMemoLines(new Set());
     setMemoExpanded(false);
@@ -462,6 +520,7 @@ export default function CameraScreen() {
       setNewPhotoCandidate({ uri: photoUri, source: 'ocr' });
     }
     setOcrResult(newResult);
+    startDevMemoTranslation(newResult.memoLines);
     setSelectedPrice(null);
     setAddedMemoLines(new Set());
     setMemoExpanded(false);
@@ -662,6 +721,7 @@ export default function CameraScreen() {
     setNativeAmount('');
     setMemo('');
     setOcrResult(null);
+    startDevMemoTranslation([]); // [検証] OCR結果を消したので世代を進め、遅れて届く翻訳結果を破棄する
     setCameraLive(true); // 保存後は撮影前のライブカメラ表示に戻す
     setOcrRawExpanded(false);
     setPendingPhotoUri(null);
@@ -696,6 +756,9 @@ export default function CameraScreen() {
 
   return (
     <View style={styles.screen}>
+      {/* [検証] Phase 2：翻訳ホストView（__DEV__限定・透明・絶対配置・タッチ透過）。
+          これがマウントされている間だけtranslateBatchが成功する。本番ビルドでは描画されない。 */}
+      <DevTranslationHost active={isScreenFocused} />
       <SafeAreaView style={styles.safe} edges={['top']}>
         <ScrollView
           ref={scrollViewRef}
@@ -1132,6 +1195,14 @@ export default function CameraScreen() {
                           )}
                         </View>
                       </View>
+                    )}
+                    {/* [検証] Phase 2：翻訳結果の確認用（__DEV__限定）。
+                        上のメモ候補チップ・handleToggleMemoLine・保存処理には影響しない。 */}
+                    {__DEV__ && memoSectionOpen && (
+                      <DevMemoTranslationPanel
+                        candidates={memoCandidates}
+                        sourceLanguage={getTranslationSourceLanguage(currencyForDisplay)}
+                      />
                     )}
                     {memoSectionOpen && (
                       <View style={styles.ocrMemoChipRow}>
