@@ -217,6 +217,14 @@ export default function SettingsScreen() {
             <SettingRow label="アプリについて" onPress={() => router.push('/app-info')} />
           </SettingSection>
 
+          {/* [検証] 開発用。本番ユーザーには一切表示しない（__DEV__ビルドのみ）。
+              Apple Translation Frameworkの実機PoC画面への入口。本番のOCR・保存処理とは無関係。 */}
+          {__DEV__ && (
+            <SettingSection title="開発用">
+              <SettingRow label="翻訳PoC（開発用）" onPress={() => router.push('/translation-poc')} />
+            </SettingSection>
+          )}
+
           {/* 現在のプラン（無料/Pro）。設定一覧の最下部＝従来のPro導線と同じ位置。無料/Proとも同じ場所・単一表示。 */}
           {SHOW_PRO && <CurrentPlanCard />}
         </ScrollView>
