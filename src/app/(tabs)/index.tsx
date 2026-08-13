@@ -36,6 +36,7 @@ import { color, radius, shadow, spacing, statusColor, typography } from '@/theme
 import { convert } from '@/utils/currency';
 import { extractMemoLines, extractPriceCandidates } from '@/utils/extract-prices';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
+import { appendMemoText, removeMemoText } from '@/utils/memo-text';
 import {
   DEFAULT_BENCHMARK_ARMS,
   EXTRA_BENCHMARK_ARMS,
@@ -95,7 +96,12 @@ export default function CameraScreen() {
   } | null>(null);
   const [saveAsPurchased, setSaveAsPurchased] = useState(false);
   const [selectedPrice, setSelectedPrice] = useState<string | null>(null);
-  const [addedMemoLines, setAddedMemoLines] = useState<Set<string>>(new Set());
+  // 追加済みメモ候補。key = 候補のoriginalText（選択状態のidentity）、
+  // value = **実際にメモ本文へ挿入した文字列**。
+  // Phase 3Aではvalue === originalTextだが、Phase 3Cで訳文を挿入するようになると両者が分かれる。
+  // 削除時に「訳文 or 原文」を再計算するとpending中にタップされた候補で食い違うため、
+  // 挿入した文字列そのものをここへ記録しておく必要がある。
+  const [addedMemoEntries, setAddedMemoEntries] = useState<Map<string, string>>(new Map());
   const [memoExpanded, setMemoExpanded] = useState(false);
   const [pricesExpanded, setPricesExpanded] = useState(false);
   // 候補一覧セクション自体の開閉（タップでは閉じない・手動操作のみ）。OCR成功直後は開いている。
@@ -236,7 +242,7 @@ export default function CameraScreen() {
     nativeAmount ||
     memo ||
     selectedPrice ||
-    addedMemoLines.size > 0
+    addedMemoEntries.size > 0
   );
 
   const stats = useMemo(
@@ -513,7 +519,7 @@ export default function CameraScreen() {
     setOcrResult(newResult);
     startDevMemoTranslation(newResult.memoLines);
     setSelectedPrice(null);
-    setAddedMemoLines(new Set());
+    setAddedMemoEntries(new Map());
     setMemoExpanded(false);
     setPricesExpanded(false); // 価格候補も初期は4件まで
     setPricesSectionOpen(true); // 新しいOCR結果では候補セクションを開いた状態に戻す
@@ -556,7 +562,7 @@ export default function CameraScreen() {
     setOcrResult(newResult);
     startDevMemoTranslation(newResult.memoLines);
     setSelectedPrice(null);
-    setAddedMemoLines(new Set());
+    setAddedMemoEntries(new Map());
     setMemoExpanded(false);
     setPricesExpanded(false);
     setPricesSectionOpen(true);
@@ -617,33 +623,25 @@ export default function CameraScreen() {
   }
 
   // メモ候補のトグル：未追加→追加してチェック、追加済み→メモから取り除いてチェック解除。
-  // 同じ候補の重複追加を防ぐため、addedMemoLinesの有無で分岐する。
+  // 同じ候補の重複追加を防ぐため、addedMemoEntriesの有無で分岐する。
   function handleToggleMemoLine(line: string) {
     const trimmed = line.trim();
     if (!trimmed) return;
-    if (addedMemoLines.has(line)) {
-      setMemo((prev) => {
-        if (prev === trimmed) return '';
-        if (prev.startsWith(`${trimmed} `)) return prev.slice(trimmed.length + 1);
-        if (prev.endsWith(` ${trimmed}`)) return prev.slice(0, prev.length - trimmed.length - 1);
-        const middle = ` ${trimmed} `;
-        const idx = prev.indexOf(middle);
-        // 手入力でメモ文面が変わり一致箇所が見つからない場合は本文を変えずチェックだけ外す
-        if (idx === -1) return prev;
-        return prev.slice(0, idx) + ' ' + prev.slice(idx + middle.length);
-      });
-      setAddedMemoLines((prev) => {
-        const next = new Set(prev);
+
+    const insertedText = addedMemoEntries.get(line);
+    if (insertedText !== undefined) {
+      // 追加時に実際に挿入した文字列だけを取り除く（原文・訳文から計算し直さない）
+      setMemo((prev) => removeMemoText(prev, insertedText));
+      setAddedMemoEntries((prev) => {
+        const next = new Map(prev);
         next.delete(line);
         return next;
       });
     } else {
-      setMemo((prev) => {
-        const current = prev.trim();
-        if (!current) return trimmed.slice(0, 100);
-        return `${current} ${trimmed}`.slice(0, 100);
-      });
-      setAddedMemoLines((prev) => new Set(prev).add(line));
+      // Phase 3Aでは挿入する文字列は原文のまま。
+      // Phase 3Cでここを `translatedText ?? originalText` へ差し替える。
+      setMemo((prev) => appendMemoText(prev, trimmed));
+      setAddedMemoEntries((prev) => new Map(prev).set(line, trimmed));
       scrollToInputCard();
     }
   }
@@ -654,7 +652,7 @@ export default function CameraScreen() {
     setNativeAmount('');
     setSelectedPrice(null);
     setMemo('');
-    setAddedMemoLines(new Set());
+    setAddedMemoEntries(new Map());
     setSaveAsPurchased(false);
     setCameraLive(true); // 入力リセット後は撮影前のライブカメラ表示に戻す
   }
@@ -754,6 +752,9 @@ export default function CameraScreen() {
     // 保存成功時のみリセット
     setNativeAmount('');
     setMemo('');
+    // メモ本文を空にするので追加済み候補も必ず一緒に消す
+    // （残すと「メモは空なのに追加済み扱い」の不整合が残る）
+    setAddedMemoEntries(new Map());
     setOcrResult(null);
     startDevMemoTranslation([]); // [検証] OCR結果を消したので世代を進め、遅れて届く翻訳結果を破棄する
     setCameraLive(true); // 保存後は撮影前のライブカメラ表示に戻す
@@ -1209,22 +1210,23 @@ export default function CameraScreen() {
                       </View>
                     </View>
                     {/* 閉じている時は追加済みメモの中身をチップで見せる（「追加済みN件」だけで終わらせない） */}
-                    {!memoSectionOpen && addedMemoLines.size > 0 && (
+                    {!memoSectionOpen && addedMemoEntries.size > 0 && (
                       <View style={styles.addedMemoBox}>
                         <ThemedText style={styles.addedMemoBoxLabel}>追加済みメモ</ThemedText>
                         <View style={styles.addedMemoChipRow}>
-                          {Array.from(addedMemoLines)
+                          {/* keyは原文（identity）、表示はメモ本文へ実際に入れた文字列 */}
+                          {Array.from(addedMemoEntries.entries())
                             .slice(0, MEMO_PREVIEW_COUNT)
-                            .map((line) => (
-                              <View key={line} style={styles.addedMemoChip}>
+                            .map(([originalText, insertedText]) => (
+                              <View key={originalText} style={styles.addedMemoChip}>
                                 <ThemedText style={styles.addedMemoChipText} numberOfLines={1}>
-                                  {line}
+                                  {insertedText}
                                 </ThemedText>
                               </View>
                             ))}
-                          {addedMemoLines.size > MEMO_PREVIEW_COUNT && (
+                          {addedMemoEntries.size > MEMO_PREVIEW_COUNT && (
                             <ThemedText style={styles.addedMemoMore}>
-                              +{addedMemoLines.size - MEMO_PREVIEW_COUNT}
+                              +{addedMemoEntries.size - MEMO_PREVIEW_COUNT}
                             </ThemedText>
                           )}
                         </View>
@@ -1244,7 +1246,7 @@ export default function CameraScreen() {
                           ? ocrResult.memoLines
                           : ocrResult.memoLines.slice(0, MEMO_PREVIEW_COUNT)
                         ).map((line) => {
-                          const added = addedMemoLines.has(line);
+                          const added = addedMemoEntries.has(line);
                           return (
                             <TouchableOpacity
                               key={line}
