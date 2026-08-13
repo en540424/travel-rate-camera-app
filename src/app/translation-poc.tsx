@@ -48,6 +48,38 @@ function errorText(e: unknown): string {
   return String(e);
 }
 
+/**
+ * [PoC安全弁] availability取得が解決も拒否もしないまま止まる事象が実機で一度だけ発生した
+ * （再実行では再現せず、恒常的なnative hangは確認されていない。根本原因は未確定）。
+ *
+ * 無言で止まると`runWithBusy`のfinallyが走らず`busy`がtrueのまま固定され、
+ * 画面上の全ボタンが`disabled`のままReloadするまで操作不能になる。
+ * PoC画面では「必ず結果が確定する」ことを優先し、個別タイムアウトで打ち切る。
+ *
+ * この8秒はPoC診断用の値であり、本番のUX確定値ではない。
+ * 本番のTranslationServiceへそのまま流用しないこと。
+ * `prepare`/`translateBatch`はモデルDLで正当に長時間かかるため、意図的に対象外にしている。
+ */
+const AVAILABILITY_TIMEOUT_MS = 8000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`TIMEOUT: ${label} did not settle within ${ms}ms`));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 export default function TranslationPocScreen() {
   const [states, setStates] = useState<Record<string, CaseState>>({});
   const [supportedLanguages, setSupportedLanguages] = useState<string[] | null>(null);
@@ -95,7 +127,11 @@ export default function TranslationPocScreen() {
   async function handleAvailability(id: string, language: string) {
     await runWithBusy(async () => {
       try {
-        const result = await getAvailability(language, TARGET_LANGUAGE);
+        const result = await withTimeout(
+          getAvailability(language, TARGET_LANGUAGE),
+          AVAILABILITY_TIMEOUT_MS,
+          `getAvailability(${id})`,
+        );
         update(id, {
           availability: `${result.status}  (${result.sourceLanguage} → ${result.targetLanguage})`,
           error: undefined,
@@ -143,7 +179,11 @@ export default function TranslationPocScreen() {
     await runWithBusy(async () => {
       for (const testCase of TEST_CASES) {
         try {
-          const result = await getAvailability(testCase.language, TARGET_LANGUAGE);
+          const result = await withTimeout(
+            getAvailability(testCase.language, TARGET_LANGUAGE),
+            AVAILABILITY_TIMEOUT_MS,
+            `getAvailability(${testCase.id})`,
+          );
           update(testCase.id, {
             availability: `${result.status}  (${result.sourceLanguage} → ${result.targetLanguage})`,
             error: undefined,
