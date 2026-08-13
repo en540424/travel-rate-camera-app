@@ -15,7 +15,7 @@ import { SaveLimitSheet } from '@/components/domain/SaveLimitSheet';
 import { EmptyState, PrimaryButton } from '@/components/ui';
 import type { ConversionDirection, CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES } from '@/constants/currencies';
-import { FREE_LIMITS } from '@/config/limits';
+import { FREE_LIMITS, canSaveEntry } from '@/config/limits';
 import { useHistory } from '@/hooks/use-history';
 import { useIsPro } from '@/hooks/use-purchases';
 import { useRates } from '@/hooks/use-rates';
@@ -86,7 +86,7 @@ export default function ConverterScreen() {
 
   async function handleSave() {
     if (!hasResult || isReverse || !tripCurrency) return;
-    if (!isPro && totalCount >= FREE_LIMITS.saves) {
+    if (!canSaveEntry(isPro, totalCount)) {
       setShowSaveLimitSheet(true);
       return;
     }

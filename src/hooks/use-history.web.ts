@@ -3,8 +3,8 @@
 // use-history.ts（expo-sqlite 使用）は iOS/Android のみで使われる。
 import { useCallback, useEffect, useState } from 'react';
 
+import { canSaveEntry } from '@/config/limits';
 import type { CurrencyCode } from '@/constants/currencies';
-import { FREE_HISTORY_LIMIT } from '@/db/queries/history';
 import type { HistoryRow } from '@/db/queries/history';
 import { useIsPro } from '@/hooks/use-purchases';
 import { useTripStore } from '@/stores/trip-store';
@@ -76,7 +76,7 @@ export function useHistory() {
     isPurchased?: boolean,
   ): Promise<{ blocked: boolean }> {
     if (!activeTrip) return { blocked: false };
-    if (!isPro && totalCount >= FREE_HISTORY_LIMIT) return { blocked: true };
+    if (!canSaveEntry(isPro, totalCount)) return { blocked: true };
     const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
     const entry: HistoryRow = {
       id: idCounter++,
@@ -172,7 +172,7 @@ export function useHistory() {
     load();
   }
 
-  const isAtFreeLimit = !isPro && totalCount >= FREE_HISTORY_LIMIT;
+  const isAtFreeLimit = !canSaveEntry(isPro, totalCount);
 
   return {
     history,

@@ -7,6 +7,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 import { ThemedText } from '@/components/themed-text';
 import type { CurrencyCode } from '@/constants/currencies';
+import { getOcrLanguagesForCurrency } from '@/config/ocr-languages';
 import { color } from '@/theme/tokens';
 
 export interface CameraPreviewProps {
@@ -46,7 +47,37 @@ function zoomLabel(z: number): string {
   return presetIndex >= 0 ? ZOOM_PRESET_LABELS[presetIndex] : zoomToDisplayX(z);
 }
 
-export function CameraPreview({ onOcrResult, onPhotoCapture }: CameraPreviewProps) {
+/** expo-text-extractorの戻り値（string[] | string | 不明形）をfullTextへ正規化する。 */
+function normalizeLegacyOcrResult(result: unknown): string {
+  if (Array.isArray(result)) return result.join('\n');
+  if (typeof result === 'string') return result;
+  return JSON.stringify(result, null, 2);
+}
+
+/**
+ * 通常のOCR経路。iOSは新Vision OCR（modules/vision-ocr）を通貨に応じた言語指定で実行し、
+ * ネイティブモジュール未ロード・非対応言語・request失敗・画像デコード失敗・結果なし等で失敗した場合のみ、
+ * 旧expo-text-extractorへフォールバックする。Android・iOS以外は従来どおり旧OCRのみを使う
+ * （Vision OCRはApple専用実装のため）。__DEV__比較パネル（runBenchmarkArm経由）はこの関数を使わず、
+ * 新旧を独立して両方実行できる状態を維持する。
+ */
+async function recognizeText(uri: string, currency: CurrencyCode): Promise<string> {
+  if (Platform.OS === 'ios') {
+    try {
+      const { recognizeText: recognizeWithVisionOcr } = await import('../../../modules/vision-ocr');
+      const result = await recognizeWithVisionOcr(uri, { languages: getOcrLanguagesForCurrency(currency) });
+      return result.fullText;
+    } catch (e) {
+      if (__DEV__) {
+        console.warn('[VisionOcr] 通常経路でエラー、旧OCRへフォールバック:', e);
+      }
+    }
+  }
+  const { extractTextFromImage } = await import('expo-text-extractor');
+  return normalizeLegacyOcrResult(await extractTextFromImage(uri));
+}
+
+export function CameraPreview({ currency, onOcrResult, onPhotoCapture }: CameraPreviewProps) {
   const [permission, requestPermission] = useCameraPermissions();
   // 撮影前（高倍率時のみ）の手ブレ対策の安定待ち。OCR処理中とは別stateで管理し、
   // 1x〜2.4xではこのstateが一切trueにならないようにする。
@@ -127,17 +158,7 @@ export function CameraPreview({ onOcrResult, onPhotoCapture }: CameraPreviewProp
       }
       onPhotoCapture?.(photo.uri);
 
-      const { extractTextFromImage } = await import('expo-text-extractor');
-      const result = await extractTextFromImage(photo.uri);
-
-      let raw = '';
-      if (Array.isArray(result)) {
-        raw = result.join('\n');
-      } else if (typeof result === 'string') {
-        raw = result;
-      } else {
-        raw = JSON.stringify(result, null, 2);
-      }
+      const raw = await recognizeText(photo.uri, currency);
 
       onOcrResult?.(raw || 'テキストなし');
     } catch (e) {

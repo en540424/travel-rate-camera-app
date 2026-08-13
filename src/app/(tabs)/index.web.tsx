@@ -14,7 +14,7 @@ import {
   FALLBACK_BUDGET_JPY,
   FALLBACK_TRIP_NAME,
 } from '@/constants/camera-screen';
-import { FREE_LIMITS } from '@/config/limits';
+import { FREE_LIMITS, canSaveEntry } from '@/config/limits';
 import { useHistory } from '@/hooks/use-history';
 import { useIsPro } from '@/hooks/use-purchases';
 import { useRates } from '@/hooks/use-rates';
@@ -96,7 +96,7 @@ export default function CameraScreen() {
 
   async function handleSaveCandidate() {
     if (!canSave) return;
-    if (!isPro && totalCount >= FREE_LIMITS.saves) {
+    if (!canSaveEntry(isPro, totalCount)) {
       setShowSaveLimitSheet(true);
       return;
     }

@@ -1,9 +1,9 @@
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useState } from 'react';
 
+import { canSaveEntry } from '@/config/limits';
 import type { CurrencyCode } from '@/constants/currencies';
 import {
-  FREE_HISTORY_LIMIT,
   clearHistory,
   clearHistoryForTrip,
   deleteHistory,
@@ -57,7 +57,7 @@ export function useHistory() {
     isPurchased?: boolean,
   ): Promise<{ blocked: boolean }> {
     if (!activeTrip) return { blocked: false };
-    if (!isPro && totalCount >= FREE_HISTORY_LIMIT) return { blocked: true };
+    if (!canSaveEntry(isPro, totalCount)) return { blocked: true };
     await insertHistory(
       db,
       {
@@ -114,7 +114,7 @@ export function useHistory() {
     await load();
   }
 
-  const isAtFreeLimit = !isPro && totalCount >= FREE_HISTORY_LIMIT;
+  const isAtFreeLimit = !canSaveEntry(isPro, totalCount);
 
   return {
     history,

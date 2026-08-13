@@ -8,3 +8,12 @@
  * 保存上限バナーがこのフラグで一括制御される。
  */
 export const SHOW_PRO = true;
+
+/**
+ * DEV_BYPASS_FREE_LIMITS: development build／__DEV__時のみ、無料版の旅行数・保存数上限と
+ * それに伴うPro案内シート表示を無視する（実機検証専用）。
+ * __DEV__はMetro接続のdevelopment client（distribution: internal, developmentClient: true）でのみtrueになり、
+ * preview/production/TestFlightビルドはJSがrelease modeでバンドルされるため常にfalse。
+ * RevenueCat Entitlement・isPro・Pro画面表示・FREE_LIMITSの数値そのものには一切影響しない。
+ */
+export const DEV_BYPASS_FREE_LIMITS = __DEV__;

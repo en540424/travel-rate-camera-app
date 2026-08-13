@@ -21,7 +21,7 @@ import {
   FALLBACK_TRIP_NAME,
 } from '@/constants/camera-screen';
 import { DT } from '@/constants/designTokens';
-import { FREE_LIMITS } from '@/config/limits';
+import { FREE_LIMITS, canSaveEntry } from '@/config/limits';
 import { SHOW_PRO } from '@/config/feature-flags';
 import { useHistory } from '@/hooks/use-history';
 import { useIsPro } from '@/hooks/use-purchases';
@@ -32,6 +32,13 @@ import { color, radius, shadow, spacing, statusColor, typography } from '@/theme
 import { convert } from '@/utils/currency';
 import { extractMemoLines, extractPriceCandidates } from '@/utils/extract-prices';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
+import {
+  DEFAULT_BENCHMARK_ARMS,
+  EXTRA_BENCHMARK_ARMS,
+  fetchSupportedLanguages,
+  runBenchmarkArm,
+} from '@/utils/ocr-benchmark';
+import type { VisionOcrBenchmarkArmDefinition, VisionOcrBenchmarkArmId, VisionOcrBenchmarkResult } from '@/utils/ocr-benchmark';
 import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
@@ -104,6 +111,16 @@ export default function CameraScreen() {
   const [ocrImgAspect, setOcrImgAspect] = useState(0.75);
   // [診断] OCRデバッグパネル開閉 — リリース前に削除
   const [showOcrDebug, setShowOcrDebug] = useState(false);
+  // [検証] Apple Vision OCR比較パネル開閉・結果。本番ビルドには一切含めない開発用検証基盤（AGENTS.md参照）。
+  const [showVisionBenchmark, setShowVisionBenchmark] = useState(false);
+  const [benchmarkResults, setBenchmarkResults] = useState<
+    Partial<Record<VisionOcrBenchmarkArmId, VisionOcrBenchmarkResult>>
+  >({});
+  const [isRunningAllBenchmarks, setIsRunningAllBenchmarks] = useState(false);
+  const [supportedLanguagesInfo, setSupportedLanguagesInfo] = useState<{
+    languages: string[];
+    errorMessage?: string;
+  } | null>(null);
 
   const scrollViewRef = useRef<ScrollView>(null);
   // 下タブでこのタブ（カメラ）を押した時（＝タブ切替で入ってきた時）だけ先頭へ戻す。
@@ -412,6 +429,29 @@ export default function CameraScreen() {
     setManualAdjustExpanded(false); // 成功時は手入力を畳む
   }
 
+  // [検証] Vision OCR比較の1アーム実行。旧OCRと同じ撮影画像(ocrPreviewUri)に対して実行し、
+  // 既存extractPriceCandidates/extractMemoLinesへ通した結果を比較パネル用stateへ格納する。
+  async function runOneBenchmarkArm(arm: VisionOcrBenchmarkArmDefinition) {
+    if (!ocrPreviewUri) return;
+    setBenchmarkResults((prev) => ({ ...prev, [arm.id]: { status: 'running' } }));
+    const result = await runBenchmarkArm(arm, ocrPreviewUri, currencyForDisplay);
+    setBenchmarkResults((prev) => ({ ...prev, [arm.id]: result }));
+  }
+
+  // [検証] デフォルト比較アーム（旧方式＋新方式8件）を順番に実行する。並列実行はせず、実機の処理時間・発熱を抑える。
+  async function runDefaultBenchmarkArms() {
+    if (!ocrPreviewUri || isRunningAllBenchmarks) return;
+    setIsRunningAllBenchmarks(true);
+    try {
+      setSupportedLanguagesInfo(await fetchSupportedLanguages('accurate'));
+      for (const arm of DEFAULT_BENCHMARK_ARMS) {
+        await runOneBenchmarkArm(arm);
+      }
+    } finally {
+      setIsRunningAllBenchmarks(false);
+    }
+  }
+
   // 「新しい読み取りを使う」：候補だった結果を実際に反映する（保存対象写真pendingPhotoUriは別途、保存欄で選ぶ）
   function handleUseOcrResultCandidate() {
     if (!ocrResultCandidate) return;
@@ -569,7 +609,7 @@ export default function CameraScreen() {
 
   async function handleSaveCandidate() {
     if (!canSave || !activeTrip) return;
-    if (!isPro && totalCount >= FREE_LIMITS.saves) {
+    if (!canSaveEntry(isPro, totalCount)) {
       setShowSaveLimitSheet(true);
       return;
     }
@@ -1191,6 +1231,88 @@ export default function CameraScreen() {
                   </ScrollView>
                 );
               })()}
+              {/* ===== [検証] Apple Vision OCR比較パネル =====
+                  現行expo-text-extractorとの比較検証用。本番ユーザーには一切表示しない。__DEV__ビルドでのみ表示・操作可能。
+                  新OCR結果はここでのみ保持し、本番のonOcrResult・保存フローへは一切接続しない。 */}
+              {__DEV__ && (
+              <TouchableOpacity
+                onPress={() => setShowVisionBenchmark((v) => !v)}
+                style={{ padding: 8, marginTop: 6, backgroundColor: '#1a2e1a', borderRadius: 6 }}
+                activeOpacity={0.8}>
+                <ThemedText style={{ fontSize: 11, color: '#7ee6a8', textAlign: 'center' }}>
+                  {showVisionBenchmark ? '▲ Vision OCR比較 閉じる' : '▼ Vision OCR比較 表示（開発検証用）'}
+                </ThemedText>
+              </TouchableOpacity>
+              )}
+              {__DEV__ && showVisionBenchmark && (() => {
+                const monoFont = Platform.OS === 'ios' ? 'Courier New' : 'monospace';
+                return (
+                  <View style={{ marginTop: 4, backgroundColor: '#0d1117', borderRadius: 6, padding: 8 }}>
+                    <ThemedText
+                      selectable
+                      style={{ fontSize: 10, color: '#e6edf3', fontFamily: monoFont, marginBottom: 6 }}>
+                      {'[対象画像] ' + (ocrPreviewUri ?? '(なし・先に値札を撮影してください)')}
+                    </ThemedText>
+
+                    <TouchableOpacity
+                      disabled={!ocrPreviewUri || isRunningAllBenchmarks}
+                      onPress={runDefaultBenchmarkArms}
+                      style={{
+                        backgroundColor: !ocrPreviewUri || isRunningAllBenchmarks ? '#333' : '#0e9488',
+                        borderRadius: 6,
+                        paddingVertical: 8,
+                        marginBottom: 8,
+                        alignItems: 'center',
+                      }}
+                      activeOpacity={0.8}>
+                      <ThemedText style={{ fontSize: 12, color: '#fff', fontWeight: '700' }}>
+                        {isRunningAllBenchmarks
+                          ? '実行中…（順次実行のため数十秒かかります）'
+                          : 'デフォルト比較アームをまとめて実行（旧OCR + Vision8件・順次）'}
+                      </ThemedText>
+                    </TouchableOpacity>
+
+                    {supportedLanguagesInfo && (
+                      <ThemedText
+                        selectable
+                        style={{ fontSize: 10, color: '#e6edf3', fontFamily: monoFont, marginBottom: 8 }}>
+                        {'[実機 supportedLanguages / accurate]\n' +
+                          (supportedLanguagesInfo.errorMessage
+                            ? 'エラー: ' + supportedLanguagesInfo.errorMessage
+                            : JSON.stringify(supportedLanguagesInfo.languages))}
+                      </ThemedText>
+                    )}
+
+                    <ThemedText style={{ fontSize: 10, color: '#8b949e', marginBottom: 4 }}>
+                      デフォルト比較アーム（基準＝旧OCR + Vision新方式8件）
+                    </ThemedText>
+                    {DEFAULT_BENCHMARK_ARMS.map((arm) => (
+                      <VisionBenchmarkArmRow
+                        key={arm.id}
+                        arm={arm}
+                        result={benchmarkResults[arm.id]}
+                        disabled={!ocrPreviewUri}
+                        monoFont={monoFont}
+                        onRun={() => runOneBenchmarkArm(arm)}
+                      />
+                    ))}
+
+                    <ThemedText style={{ fontSize: 10, color: '#8b949e', marginTop: 10, marginBottom: 4 }}>
+                      追加検証アーム（手動実行のみ・まとめて実行には含めない）
+                    </ThemedText>
+                    {EXTRA_BENCHMARK_ARMS.map((arm) => (
+                      <VisionBenchmarkArmRow
+                        key={arm.id}
+                        arm={arm}
+                        result={benchmarkResults[arm.id]}
+                        disabled={!ocrPreviewUri}
+                        monoFont={monoFont}
+                        onRun={() => runOneBenchmarkArm(arm)}
+                      />
+                    ))}
+                  </View>
+                );
+              })()}
               </View>
               )}
 
@@ -1766,6 +1888,95 @@ export default function CameraScreen() {
         saved={totalCount}
         limit={FREE_LIMITS.saves}
       />
+    </View>
+  );
+}
+
+// [検証] Vision OCR比較パネルの1アーム行。__DEV__限定。本番ビルドのUI・保存フローとは無関係。
+function VisionBenchmarkArmRow({
+  arm,
+  result,
+  disabled,
+  monoFont,
+  onRun,
+}: {
+  arm: VisionOcrBenchmarkArmDefinition;
+  result: VisionOcrBenchmarkResult | undefined;
+  disabled: boolean;
+  monoFont: string;
+  onRun: () => void;
+}) {
+  const status = result?.status ?? 'idle';
+  const statusLabel =
+    status === 'idle' ? '未実行'
+    : status === 'running' ? '実行中…'
+    : status === 'success' ? '成功'
+    : '失敗';
+  const statusColor =
+    status === 'idle' ? '#8b949e'
+    : status === 'running' ? '#e6c15c'
+    : status === 'success' ? '#7ee6a8'
+    : '#f28b82';
+
+  const detailText = (() => {
+    if (status === 'error') {
+      return '[Error] ' + (result?.errorCode ? result.errorCode + ': ' : '') + (result?.errorMessage ?? '');
+    }
+    if (status !== 'success') return '';
+    const lineConfLines =
+      result?.lineConfidences && result.lineConfidences.length > 0
+        ? '[LineConfidence]\n' +
+          result.lineConfidences.map((l) => `${l.confidence.toFixed(2)}  ${l.text}`).join('\n')
+        : '';
+    return [
+      '[Settings] level=' + (result?.recognitionLevel ?? '-') +
+        ' correction=' + String(result?.usesLanguageCorrection) +
+        ' autoDetect=' + String(result?.automaticallyDetectsLanguage) +
+        ' minHeight=' + String(result?.minimumTextHeight),
+      '[Languages] requested=' + JSON.stringify(result?.requestedLanguages ?? []),
+      '[elapsedMs] js=' + result?.elapsedMs +
+        (result?.nativeElapsedMs != null ? ' native=' + result.nativeElapsedMs.toFixed(1) : ''),
+      '[FullText]\n' + (result?.fullText || '(空)'),
+      '[PriceCandidates] ' + JSON.stringify(result?.priceCandidates ?? []),
+      '[MemoLines] ' + JSON.stringify(result?.memoLines ?? []),
+      lineConfLines,
+    ].filter(Boolean).join('\n\n');
+  })();
+
+  return (
+    <View style={{ marginBottom: 8, borderTopWidth: 1, borderTopColor: '#21262d', paddingTop: 6 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <ThemedText style={{ fontSize: 11, color: '#e6edf3', flex: 1 }} numberOfLines={1}>
+          {arm.label}
+        </ThemedText>
+        <ThemedText style={{ fontSize: 10, color: statusColor, marginRight: 8 }}>{statusLabel}</ThemedText>
+        <TouchableOpacity
+          disabled={disabled || status === 'running'}
+          onPress={onRun}
+          style={{
+            backgroundColor: disabled || status === 'running' ? '#333' : '#30363d',
+            borderRadius: 4,
+            paddingHorizontal: 8,
+            paddingVertical: 4,
+          }}
+          activeOpacity={0.75}>
+          <ThemedText style={{ fontSize: 10, color: '#fff' }}>実行</ThemedText>
+        </TouchableOpacity>
+      </View>
+      {arm.note && (
+        <ThemedText style={{ fontSize: 9, color: '#8b949e', marginTop: 2 }}>{arm.note}</ThemedText>
+      )}
+      {detailText.length > 0 && (
+        <ScrollView
+          nestedScrollEnabled
+          style={{ maxHeight: 160, marginTop: 4, backgroundColor: '#0a0c10', borderRadius: 4 }}>
+          <ThemedText
+            selectable
+            style={{ fontSize: 9, color: '#e6edf3', fontFamily: monoFont, padding: 6, lineHeight: 13 }}>
+            {detailText}
+          </ThemedText>
+        </ScrollView>
+      )}
     </View>
   );
 }

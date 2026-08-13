@@ -3,7 +3,7 @@
 // use-trips.native.ts（expo-sqlite 使用）はネイティブのみで使われる。
 import { useCallback, useEffect } from 'react';
 
-import { FREE_LIMITS } from '@/config/limits';
+import { canCreateTrip } from '@/config/limits';
 import type { CurrencyCode } from '@/constants/currencies';
 import type { TripRow } from '@/db/queries/trips';
 import { useIsPro } from '@/hooks/use-purchases';
@@ -65,17 +65,15 @@ export function useTrips() {
     });
   }, [activeTrip, loadTrips, setActiveTrip]);
 
-  /** 無料版は非アーカイブの旅行数がFREE_LIMITS.trips以上ならブロックする（Proは無制限）。旅行新規作成の唯一の入口。 */
+  /** 無料版は非アーカイブの旅行数がFREE_LIMITS.trips以上ならブロックする（Proは無制限。development／__DEV__時はDEV_BYPASS_FREE_LIMITSで無視）。旅行新規作成の唯一の入口。 */
   async function createTrip(
     name: string,
     budgetJpy: number,
     currency: CurrencyCode,
     rate: number = 0,
   ): Promise<TripRow | null> {
-    if (!isPro) {
-      const activeCount = loadAll().filter((t) => t.archived_at === null).length;
-      if (activeCount >= FREE_LIMITS.trips) return null;
-    }
+    const activeCount = loadAll().filter((t) => t.archived_at === null).length;
+    if (!canCreateTrip(isPro, activeCount)) return null;
     const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
     // 既存を全て非アクティブ化
     const all = loadAll().map((t) => ({ ...t, is_active: 0 as 0 | 1, updated_at: now }));
