@@ -443,6 +443,16 @@ export default function CameraScreen() {
       if (generation !== translationGenerationRef.current) return;
 
       const result = await translateMemoLines({ lines: memoLines, sourceLanguage, generation });
+      // [診断ログ] 破棄する結果もここまでは見えるようにする。
+      // 世代不一致で捨てた結果・キャンセル・ホストView消失は、この行が無いとstateへ届かないため
+      // 実機で一切観測できない（race・cancelの実機確認に必要）。
+      console.log(
+        '[TranslationDev]',
+        `gen=${result.generation} current=${translationGenerationRef.current}`,
+        result.candidates
+          .map((c) => c.translationStatus + (c.errorCode ? `:${c.errorCode}` : ''))
+          .join(','),
+      );
       // 古い世代の結果はstateへ反映しない
       if (result.generation !== translationGenerationRef.current) return;
       setMemoCandidates(result.candidates);
