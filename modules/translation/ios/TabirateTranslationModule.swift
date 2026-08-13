@@ -31,7 +31,7 @@ public class TabirateTranslationModule: Module {
         return
       }
       Task { @MainActor in
-        let languages = LanguageAvailability().supportedLanguages
+        let languages = await LanguageAvailability().supportedLanguages
         promise.resolve(languages.map { $0.minimalIdentifier })
       }
     }
