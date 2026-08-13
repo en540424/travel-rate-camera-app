@@ -185,8 +185,13 @@ export function planTranslationBatch(
  *
  * `clientIdentifier`はnative側で「送信順indexの文字列」だが、Swiftの`response.clientIdentifier ?? ""`
  * により空文字になりうる（その場合`Number('')`は0になり先頭行へ誤爆する）。
- * そのため「有効な範囲内の整数のときだけ採用し、そうでなければ並び順」で解決したうえで、
- * `sourceText`が一致しない場合は`sourceText`の完全一致で引き直す。
+ * そのため「空文字でない・整数・送信配列の範囲内」のときだけindexとして採用する。
+ *
+ * `clientIdentifier`が有効ならそれを正とし、`sourceText`が食い違っても捨てない。
+ * Apple側が`sourceText`を正規化して返す可能性（NFC/NFD・前後空白・全角半角）があり、
+ * 完全一致を必須にすると**受け取った訳文を取りこぼしてfailedにしてしまう**ため。
+ * `clientIdentifier`が使えず並び順に頼った場合のみ、`sourceText`の完全一致で引き直す
+ * （重複排除済みなので一意に決まる）。
  *
  * indexの空間は呼び出し側の`lines`ではなく、**重複排除後に送信した`requestedTexts`**である点に注意。
  */
@@ -198,19 +203,17 @@ export function resolveTranslationsByOriginalText(
 
   results.forEach((result, position) => {
     const identifier = Number(result.clientIdentifier);
-    const byIdentifier =
+    const hasValidIdentifier =
       result.clientIdentifier !== '' &&
       Number.isInteger(identifier) &&
       identifier >= 0 &&
-      identifier < requestedTexts.length
-        ? identifier
-        : position;
+      identifier < requestedTexts.length;
+    const index = hasValidIdentifier ? identifier : position;
 
     let originalText: string | undefined =
-      byIdentifier < requestedTexts.length ? requestedTexts[byIdentifier] : undefined;
+      index < requestedTexts.length ? requestedTexts[index] : undefined;
 
-    // 対応がずれている場合は原文そのもので引き直す（重複排除済みなので一意に決まる）
-    if (originalText !== result.sourceText) {
+    if (!hasValidIdentifier && originalText !== result.sourceText) {
       originalText = requestedTexts.find((text) => text === result.sourceText);
     }
     if (originalText === undefined) return;
