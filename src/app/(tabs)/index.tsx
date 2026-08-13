@@ -25,7 +25,7 @@ import { DT } from '@/constants/designTokens';
 import { FREE_LIMITS, canSaveEntry } from '@/config/limits';
 import { SHOW_PRO } from '@/config/feature-flags';
 import { getTranslationSourceLanguage } from '@/config/translation-languages';
-import { cancelTranslation, createPendingCandidates, translateMemoLines } from '@/lib/translation-service';
+import { createPendingCandidates, translateMemoLines } from '@/lib/translation-service';
 import type { MemoCandidate } from '@/lib/translation-types';
 import { useHistory } from '@/hooks/use-history';
 import { useIsPro } from '@/hooks/use-purchases';
@@ -179,6 +179,14 @@ export default function CameraScreen() {
 
   // [検証] Phase 2：翻訳ホストViewの寿命管理（__DEV__限定）。
   // フォーカス中だけホストViewをマウントし、離脱時はアンマウント＋世代を進めて結果を破棄する。
+  //
+  // ここで cancelTranslation()（= native cancelAll()）は呼ばない。
+  // ホストViewのアンマウントで走る`hostDidDisappear()`が、isHostAlive=false・configuration=nil・
+  // 未処理jobのfailAll(HOST_UNMOUNTED)をすべて行うため上位互換であり、
+  // 一方でcancelAllはReactのアンマウントより先に走りうる。その場合coordinatorが生きたまま
+  // `configuration == nil`で残り、次のsubmitがinvalidate()経由の再トリガを使えなくなる
+  // （＝pending固定の再発）。キャンセルはアンマウントに一本化する。
+  //
   // 世代を進めるため、離脱中に返ってきた翻訳結果はstateへ反映されない
   // （＝画面へ戻ると候補は「翻訳中…」のまま残る。次のOCR結果確定で正常に翻訳し直される）。
   useFocusEffect(
@@ -188,7 +196,6 @@ export default function CameraScreen() {
       return () => {
         setIsScreenFocused(false);
         translationGenerationRef.current += 1;
-        void cancelTranslation();
       };
     }, []),
   );
@@ -435,27 +442,44 @@ export default function CameraScreen() {
 
     // 翻訳を待たずに原文候補を即表示する（OCR完了が翻訳待ちにならないようにする）
     setMemoCandidates(createPendingCandidates(memoLines, sourceLanguage));
+    console.log('[TranslationDev] start', `gen=${generation} lines=${memoLines.length} src=${sourceLanguage}`);
 
     void (async () => {
-      // 前の世代の未処理リクエストを先に破棄する。await してから投げないと、
-      // 新しいtranslateBatchが先に積まれてcancelAllに巻き込まれる可能性がある。
-      await cancelTranslation();
-      if (generation !== translationGenerationRef.current) return;
-
-      const result = await translateMemoLines({ lines: memoLines, sourceLanguage, generation });
-      // [診断ログ] 破棄する結果もここまでは見えるようにする。
-      // 世代不一致で捨てた結果・キャンセル・ホストView消失は、この行が無いとstateへ届かないため
-      // 実機で一切観測できない（race・cancelの実機確認に必要）。
-      console.log(
-        '[TranslationDev]',
-        `gen=${result.generation} current=${translationGenerationRef.current}`,
-        result.candidates
-          .map((c) => c.translationStatus + (c.errorCode ? `:${c.errorCode}` : ''))
-          .join(','),
-      );
-      // 古い世代の結果はstateへ反映しない
-      if (result.generation !== translationGenerationRef.current) return;
-      setMemoCandidates(result.candidates);
+      try {
+        // ここで cancelTranslation()（= native cancelAll()）を呼んではいけない。
+        // cancelAllはcoordinatorの`configuration`をnilにするが、`applyConfiguration`の
+        // 「同じ言語ペアならinvalidate()で再実行」という再トリガ経路は
+        // `if var current = configuration`に守られており、nilのときは到達できない。
+        // その結果、直後のsubmitはinvalidate()を経ずに等価なConfigurationを作るだけになり、
+        // jobがnative側のpendingに積まれたままdrainされず、Promiseが永久にsettleしない
+        // （＝候補が「翻訳中…」で固定される）。
+        // 古い結果は世代不一致で捨てれば足りるため、新翻訳の前段でのcancelは行わない。
+        const result = await translateMemoLines({ lines: memoLines, sourceLanguage, generation });
+        const isStale = result.generation !== translationGenerationRef.current;
+        // [診断ログ] 破棄する結果もここまでは見えるようにする（race・cancelの実機確認に必要）。
+        console.log(
+          '[TranslationDev] result',
+          `gen=${result.generation} current=${translationGenerationRef.current}${isStale ? ' stale-discard' : ''}`,
+          result.candidates
+            .map((c) => c.translationStatus + (c.errorCode ? `:${c.errorCode}` : ''))
+            .join(','),
+        );
+        if (isStale) return; // 古い世代の結果はstateへ反映しない
+        setMemoCandidates(result.candidates);
+      } catch (error) {
+        // TranslationServiceはrejectしない設計だが、想定外の例外でも現世代の候補を
+        // 「翻訳中…」のまま放置しない。stateではなくmemoLinesから組み直すため、
+        // 新しい世代の候補を上書きすることはない。
+        console.warn('[TranslationDev] error', error);
+        if (generation !== translationGenerationRef.current) return;
+        setMemoCandidates(
+          createPendingCandidates(memoLines, sourceLanguage).map((candidate) =>
+            candidate.translationStatus === 'pending'
+              ? { ...candidate, translationStatus: 'failed' as const, errorCode: 'translation_failed' as const }
+              : candidate,
+          ),
+        );
+      }
     })();
   }
 
