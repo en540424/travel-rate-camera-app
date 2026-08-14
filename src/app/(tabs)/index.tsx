@@ -652,8 +652,8 @@ export default function CameraScreen() {
       // Phase 3Cでここを `translatedText ?? originalText` へ差し替える。
       setMemo((prev) => appendMemoText(prev, trimmed));
       setAddedMemoEntries((prev) => new Map(prev).set(line, trimmed));
-      // 追加先はメモ欄なので、価格欄(inputCardYRef)ではなくメモ欄(memoRowYRef)へスクロールする
-      scrollToMemoInput();
+      // 自動スクロールしない：チェック表示・選択色の変化で追加を確認できるため、
+      // 複数候補を連続タップできることを優先する（実機確認で正式採用）。
     }
   }
 
