@@ -36,6 +36,7 @@ import { color, radius, shadow, spacing, statusColor, typography } from '@/theme
 import { convert } from '@/utils/currency';
 import { extractMemoLines, extractPriceCandidates } from '@/utils/extract-prices';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
+import { mergeMemoCandidates, resolveMemoCandidateDisplay } from '@/utils/memo-candidate-display';
 import { appendMemoText, removeMemoText } from '@/utils/memo-text';
 import {
   DEFAULT_BENCHMARK_ARMS,
@@ -131,7 +132,9 @@ export default function CameraScreen() {
     languages: string[];
     errorMessage?: string;
   } | null>(null);
-  // [検証] Phase 2：翻訳候補（__DEV__限定）。本番のmemoLines表示・保存には使わない。
+  // 翻訳候補。Phase 3Bからメモ候補チップの**表示**もこれを見る（訳文＝主表示／原文＝補助表示）。
+  // 生成は__DEV__・iOS・翻訳対象通貨のときだけで、それ以外はnullのまま
+  // （＝チップは従来どおり原文1段）。メモ本文へ挿入する文字列にはPhase 3Bでは影響しない。
   const [memoCandidates, setMemoCandidates] = useState<MemoCandidate[] | null>(null);
   // [検証] Phase 2：ホストViewはこの画面にフォーカスがある間だけマウントする。
   const [isScreenFocused, setIsScreenFocused] = useState(false);
@@ -235,6 +238,13 @@ export default function CameraScreen() {
     selectedPrice != null && !pricePreviewBase.includes(selectedPrice)
       ? [...pricePreviewBase.slice(0, PRICE_PREVIEW_COUNT - 1), selectedPrice]
       : pricePreviewBase;
+
+  // メモ候補チップの描画元。並び・件数はocrResult.memoLinesのままで、翻訳結果は原文をキーに
+  // 引き当てるだけ（翻訳の有無でMEMO_PREVIEW_COUNTの折りたたみ条件・選択状態が変わらないようにする）
+  const memoChipCandidates = useMemo(
+    () => mergeMemoCandidates(ocrResult?.memoLines ?? [], memoCandidates),
+    [ocrResult?.memoLines, memoCandidates],
+  );
 
   // 「入力をリセット」は入力欄だけを消す操作なので、入力系の有無だけで判定する
   // （OCR結果・保存写真だけが残っている状態ではボタンを出さない）
@@ -1243,10 +1253,13 @@ export default function CameraScreen() {
                     {memoSectionOpen && (
                       <View style={styles.ocrMemoChipRow}>
                         {(memoExpanded
-                          ? ocrResult.memoLines
-                          : ocrResult.memoLines.slice(0, MEMO_PREVIEW_COUNT)
-                        ).map((line) => {
+                          ? memoChipCandidates
+                          : memoChipCandidates.slice(0, MEMO_PREVIEW_COUNT)
+                        ).map((candidate) => {
+                          // 選択状態・タップ対象は常に原文（identity）。表示だけが訳文になる
+                          const line = candidate.originalText;
                           const added = addedMemoEntries.has(line);
+                          const { primaryText, secondaryText } = resolveMemoCandidateDisplay(candidate);
                           return (
                             <TouchableOpacity
                               key={line}
@@ -1256,8 +1269,16 @@ export default function CameraScreen() {
                               <ThemedText
                                 style={[styles.memoChipText, added && styles.memoChipTextAdded]}
                                 numberOfLines={1}>
-                                {added ? '✓ ' : '+ '}{line}
+                                {added ? '✓ ' : '+ '}{primaryText}
                               </ThemedText>
+                              {/* 補助表示の原文。訳文が主表示のときだけ2段になる（最大2行に収める） */}
+                              {secondaryText != null && (
+                                <ThemedText
+                                  style={[styles.memoChipSubText, added && styles.memoChipSubTextAdded]}
+                                  numberOfLines={1}>
+                                  {secondaryText}
+                                </ThemedText>
+                              )}
                             </TouchableOpacity>
                           );
                         })}
@@ -2588,9 +2609,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   // メモ候補（横並びチップ）。未選択＝淡teal地に＋、選択済み＝濃teal地に白文字✓。価格候補カードと同系統の見せ方
+  // alignItems: 'flex-start' … 訳文付き（2段）と原文のみ（1段）のチップが同じ行に並んでも、
+  // 1段側が2段側の高さへ引き伸ばされないようにする
   ocrMemoChipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    alignItems: 'flex-start',
     gap: 8,
   },
   memoChip: {
@@ -2613,6 +2637,16 @@ const styles = StyleSheet.create({
   },
   memoChipTextAdded: {
     color: '#fff',
+  },
+  // 訳文を主表示にしたときの補助行（OCR原文）。主表示より一段小さく・弱くして高さを増やしすぎない
+  memoChipSubText: {
+    fontSize: 11,
+    fontWeight: '500',
+    lineHeight: 15,
+    color: color.muted,
+  },
+  memoChipSubTextAdded: {
+    color: color.primaryAccent,
   },
   // メモ候補を閉じている時の「追加済みメモ」ボックス（「追加済みN件」だけで終わらせず中身を見せる）
   addedMemoBox: {
