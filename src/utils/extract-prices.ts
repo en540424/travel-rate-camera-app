@@ -261,9 +261,17 @@ function extractThbPriceCandidates(text: string): string[] {
   const LONG_DIGITS    = /\d{7,}/;
   const DATE_PATTERN   = /\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}|\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/;
   const PHONE_PATTERN  = /\d{2,4}-\d{2,4}-\d{4}/;
-  const HAS_UNIT       = /\b\d+\s*(?:g|kg|ml|liter|litre|grams?)\b/i;
+  const HAS_UNIT       = /\b\d+(?:\.\d+)?\s*(?:cal|kcal|g|kg|ml|liter|litre|grams?|oz|lb)\b/i;
   const HAS_PCT        = /%/;
   const HAS_DECIMAL    = /\d+\.\d/;
+  // P7専用: KRW/JPYの文脈なしフォールバックは最小値100で時刻断片(10:35等)を自然に除外できるが、
+  // THB/TWDは少額の裸価格（10バーツ等）まで拾う必要があるため最小値を下げられない。
+  // そのため時刻パターンだけは明示的に行ごと除外する。
+  const TIME_PATTERN   = /\b\d{1,2}:\d{2}\b/;
+  // KRW/JPYの文脈なしフォールバックと同じガード。英字を含む行（250 kcal, SKU 123456等）は
+  // 裸数字フォールバックの対象から外す（正式なマーカー付き価格はP1-P5で先に処理済みのため、
+  // ここに到達する時点でこのガードの影響を受けない）。
+  const HAS_ALPHA      = /[A-Za-z]/;
 
   // P6: カンマ区切り整数フォールバック（行単位でノイズ除外）— ฿/THB/Baht/บาท なし
   const P6_THB_MARKER = /[฿]|\bTHB\b|\bBaht\b|บาท/i;
@@ -280,6 +288,9 @@ function extractThbPriceCandidates(text: string): string[] {
   }
 
   // P7: 文脈なし整数フォールバック（THBモード限定）
+  // マーカー行チェック（THB_MARKER_LINE等）がHAS_ALPHAより先にあるため、
+  // 「THB 120」のように英字を含む正式なマーカー付き価格行はここへ到達する前に除外される
+  // （＝HAS_ALPHA追加で壊れない）。
   const THB_MARKER_LINE = /[฿]|\bTHB\b|\bBaht\b|บาท|\d{1,3},\d{3}/i;
   for (const raw of text.split('\n')) {
     const line = raw.trim();
@@ -292,6 +303,8 @@ function extractThbPriceCandidates(text: string): string[] {
     if (HAS_UNIT.test(line))         continue;
     if (HAS_PCT.test(line))          continue;
     if (HAS_DECIMAL.test(line))      continue;
+    if (TIME_PATTERN.test(line))     continue;
+    if (HAS_ALPHA.test(line))        continue;
 
     const plainRe = /\b(\d{1,6})\b/g;
     while ((m = plainRe.exec(line)) !== null) {
@@ -369,9 +382,17 @@ function extractTwdPriceCandidates(text: string): string[] {
   const LONG_DIGITS    = /\d{7,}/;
   const DATE_PATTERN   = /\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}|\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/;
   const PHONE_PATTERN  = /\d{2,4}-\d{2,4}-\d{4}/;
-  const HAS_UNIT       = /\b\d+\s*(?:g|kg|ml|liter|litre|grams?)\b/i;
+  const HAS_UNIT       = /\b\d+(?:\.\d+)?\s*(?:cal|kcal|g|kg|ml|liter|litre|grams?|oz|lb)\b/i;
   const HAS_PCT        = /%/;
   const HAS_DECIMAL    = /\d+\.\d/;
+  // P7専用: KRW/JPYの文脈なしフォールバックは最小値100で時刻断片(10:35等)を自然に除外できるが、
+  // TWDは少額の裸価格（10元等）まで拾う必要があるため最小値を下げられない。
+  // そのため時刻パターンだけは明示的に行ごと除外する。
+  const TIME_PATTERN   = /\b\d{1,2}:\d{2}\b/;
+  // KRW/JPYの文脈なしフォールバックと同じガード。英字を含む行（250 kcal, SKU 123456等）は
+  // 裸数字フォールバックの対象から外す（正式なマーカー付き価格はP1-P5で先に処理済みのため、
+  // ここに到達する時点でこのガードの影響を受けない）。
+  const HAS_ALPHA      = /[A-Za-z]/;
 
   // P6: カンマ区切り整数フォールバック（行単位でノイズ除外）— NT$/TWD/NTD/$/元 なし
   const P6_TWD_MARKER = /NT\$|\bTWD\b|\bNTD\b|\$|元/i;
@@ -388,6 +409,9 @@ function extractTwdPriceCandidates(text: string): string[] {
   }
 
   // P7: 文脈なし整数フォールバック（TWDモード限定）
+  // マーカー行チェック（TWD_MARKER_LINE等）がHAS_ALPHAより先にあるため、
+  // 「TWD 120」のように英字を含む正式なマーカー付き価格行はここへ到達する前に除外される
+  // （＝HAS_ALPHA追加で壊れない）。
   const TWD_MARKER_LINE = /NT\$|\bTWD\b|\bNTD\b|\$|元|\d{1,3},\d{3}/i;
   for (const raw of text.split('\n')) {
     const line = raw.trim();
@@ -400,6 +424,8 @@ function extractTwdPriceCandidates(text: string): string[] {
     if (HAS_UNIT.test(line))         continue;
     if (HAS_PCT.test(line))          continue;
     if (HAS_DECIMAL.test(line))      continue;
+    if (TIME_PATTERN.test(line))     continue;
+    if (HAS_ALPHA.test(line))        continue;
 
     const plainRe = /\b(\d{1,6})\b/g;
     while ((m = plainRe.exec(line)) !== null) {
