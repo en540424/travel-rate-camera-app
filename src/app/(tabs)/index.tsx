@@ -13,7 +13,7 @@ import {
   SaveLimitBanner,
 } from '@/components/domain';
 import { SaveLimitSheet } from '@/components/domain/SaveLimitSheet';
-import { DevMemoTranslationPanel, DevTranslationHost } from '@/components/translation-dev-panel';
+import { DevTranslationHost } from '@/components/translation-dev-panel';
 import { ActionSheet, EmptyState, SectionCard, SecondaryButton, PrimaryButton, Toast } from '@/components/ui';
 import type { ConversionDirection, CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES, FOREIGN_CURRENCY_CODES } from '@/constants/currencies';
@@ -1311,16 +1311,6 @@ export default function CameraScreen() {
                           );
                         })}
                       </View>
-                    )}
-                    {/* [検証] Phase 2：翻訳結果の確認用（__DEV__限定）。
-                        メモ候補チップ・handleToggleMemoLine・保存処理には影響しない。
-                        メモ候補グループ（見出し〜チップ〜さらに○件/閉じる）の下に配置する
-                        （実機確認：グループの途中に割り込むと操作対象が分かりにくいため）。 */}
-                    {__DEV__ && memoSectionOpen && (
-                      <DevMemoTranslationPanel
-                        candidates={memoCandidates}
-                        sourceLanguage={getTranslationSourceLanguage(currencyForDisplay)}
-                      />
                     )}
                   </View>
                 )}
