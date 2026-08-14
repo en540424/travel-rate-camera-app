@@ -981,7 +981,8 @@ export function extractMemoLines(text: string): string[] {
     if (PURE_DIGITS.test(line)) continue;
     if (CONTAINS_PRICE.test(line)) continue;
     if (CURRENCY_PRICE_LINE.test(line)) continue;
-    if (HAS_PERCENT.test(line)) continue;
+    // 商品情報（栄養成分等）は%併記が一般的なため、isProductInfoに該当する行は%があっても除外しない
+    if (HAS_PERCENT.test(line) && !isProductInfo(line)) continue;
     if (FILE_EXT_LINE.test(line)) continue;
     if (URL_LIKE.test(line) || DOMAIN_LIKE.test(line)) continue;
     // 賞味期限行だけは、日付の区切り文字（EXP 2026/08/30の「/」・BEST BEFORE 2026-08-30の「-」）が
@@ -1015,5 +1016,5 @@ export function extractMemoLines(text: string): string[] {
 
   // ティア昇順（同ティアは出現順を維持）
   candidates.sort((a, b) => a.tier - b.tier);
-  return candidates.slice(0, 8).map((c) => c.line);
+  return candidates.slice(0, 12).map((c) => c.line);
 }
