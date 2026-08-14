@@ -877,8 +877,10 @@ function extractJpyPriceCandidates(text: string): string[] {
 /**
  * OCRテキストから商品名メモ候補行を抽出する
  *
- * 除外: 価格行・純粋数字・パーセント・重量単位・拡張子・URL・ファイル名・販促語・電話番号・短すぎ・長すぎ
- * ソート: 英字比率または東アジア文字比率が高い行（商品名らしい）を上位に
+ * 除外: 価格行・純粋数字・パーセント・拡張子・URL・ファイル名・販促語・電話番号・
+ *       商品コード（SKU/ITEM NO等）・単独時刻・短すぎ・長すぎ
+ * ティア: 0=商品名, 1=商品情報（カロリー・容量・重量・栄養・賞味期限）, 2=文字数字混在, 3=数字多め
+ *       （商品情報はノイズではないため除外せず、商品名より下・その他行より上へ安定ソートする）
  */
 export function extractMemoLines(text: string): string[] {
   // 行単体が価格パターン（$7.99 / 7.99 など）
@@ -891,8 +893,6 @@ export function extractMemoLines(text: string): string[] {
   const CURRENCY_PRICE_LINE = /^[¥₩฿€£]\s*[\d,]+$|^[\d,]+\s*[¥₩฿€£원円元]\s*$/;
   // パーセント含む行（割引率・成分表示など）
   const HAS_PERCENT    = /%/;
-  // 重量・容量単位を含む行（150g, 500ml など）
-  const UNIT_MEASURE   = /\b\d+(?:\.\d+)?\s*(?:g|kg|ml|liter|litre|oz|lb|gram)\b/i;
   // 画像・動画拡張子キーワード（jpeg/png/jpg など）
   const FILE_EXT_LINE  = /\b(?:jpe?g|png|gif|webp|bmp|tiff?|heic|heif|mov|mp4|avi)\b/i;
   // URL（http/www）またはドメイン名（ene.com など）
@@ -901,17 +901,37 @@ export function extractMemoLines(text: string): string[] {
   // カメラアプリのファイル名パターン（IMG_1234, DSC_0001 など）またはパス区切り
   const FILENAME_LIKE  = /\b(?:IMG|DSC|DCIM|DSCF|Screenshot)[_\-]\d+\b/i;
   const PATH_CHARS     = /[\/\\]/;
+  // 賞味期限・消費期限の行は、日付の「/」がPATH_CHARSに誤反応して消えないよう先に救済する
+  // （EXP 2026/08/30 等）。日付parserは追加しない・キーワードの有無だけで判定する。
+  const EXPIRY_KEYWORD = /\b(?:EXP|EXPIRY|BEST\s*BEFORE)\b|賞味期限|消費期限/i;
   // 欧州系販促ワード（KORTING=割引, HALVE PRIJS=半額 など）
   const PROMO_WORD     = /\b(?:bonus|korting|aanbieding|halve|prijs|prijis|sale|discount)\b/i;
   // 電話番号パターン
   const PHONE_LIKE     = /\d{2,4}[-\s]\d{2,4}[-\s]\d{2,4}/;
   // 既知のOCRアーティファクト（ファイル管理アプリ名など）
   const SYSTEM_NAME    = /^(?:Dropbox|iCloud|OneDrive)$/i;
+  // 商品コード・管理番号のラベル＋数字（SKU 123456, ITEM NO. 583920 等）。
+  // 「6桁だから商品コード」という数字だけの判定はしない。英字ラベルの有無で判断する。
+  const CODE_LABEL     = /\b(?:SKU|ITEM\s*NO\.?|ITEM\s*NUMBER|PRODUCT\s*CODE|BARCODE)\b.{0,12}\d/i;
+  // 単独の時刻（10:35等）。日付・賞味期限の大規模parserは追加しない。
+  const STANDALONE_TIME = /^\d{1,2}:\d{2}$/;
   // 東アジア文字（日本語・韓国語・タイ語）→ 最小文字数を2に緩和・スコアも商品名扱い
   const HAS_EAST_ASIAN = /[぀-鿿가-힯฀-๿]/;
 
+  // 商品情報（ティア1）判定。ノイズとして除外せず、商品名より下へ分類するためのパターン。
+  // 巨大な辞書にはせず、現実的な主要パターンに限定する。
+  // - 単位＋数字が直接つながっている（500g, 250 ml, 1.5 L, 12 oz, 250 kcal, 580 - 850 cal.）
+  const UNIT_WITH_NUMBER = /\b\d+(?:\.\d+)?\s*(?:g|kg|mg|ml|l|liter|litre|oz|lb|gram|cal|kcal)\b/i;
+  // - 栄養キーワードの近く（10文字以内）に数字がある（Protein 20g, Sodium 200mg, 内容量 500g）。
+  //   数字が近くにない「HIGH PROTEIN BAR」等の商品名（マーケティング表記）と区別するため、
+  //   キーワード単独ではなく数字との近接を必須にする。
+  const NUTRITION_NEAR_NUMBER =
+    /\b(?:protein|sugar|fat|carbs?|carbohydrates?|sodium|serving\s*size)\b.{0,10}\d|(?:内容量|容量|重量|カロリー|たんぱく質|タンパク質|糖質|脂質|炭水化物|食塩|ナトリウム).{0,10}\d/i;
+  const isProductInfo = (line: string): boolean =>
+    UNIT_WITH_NUMBER.test(line) || NUTRITION_NEAR_NUMBER.test(line) || EXPIRY_KEYWORD.test(line);
+
   const seen = new Set<string>();
-  const candidates: { line: string; score: number }[] = [];
+  const candidates: { line: string; tier: number }[] = [];
 
   for (const raw of text.split('\n')) {
     const line = raw.trim();
@@ -922,30 +942,38 @@ export function extractMemoLines(text: string): string[] {
     if (CONTAINS_PRICE.test(line)) continue;
     if (CURRENCY_PRICE_LINE.test(line)) continue;
     if (HAS_PERCENT.test(line)) continue;
-    if (UNIT_MEASURE.test(line)) continue;
     if (FILE_EXT_LINE.test(line)) continue;
     if (URL_LIKE.test(line) || DOMAIN_LIKE.test(line)) continue;
-    if (FILENAME_LIKE.test(line) || PATH_CHARS.test(line)) continue;
+    // 賞味期限行だけは、日付の区切り文字（EXP 2026/08/30の「/」・BEST BEFORE 2026-08-30の「-」）が
+    // PATH_CHARS/PHONE_LIKEに誤反応して消えないよう例外にする
+    if ((FILENAME_LIKE.test(line) || PATH_CHARS.test(line)) && !EXPIRY_KEYWORD.test(line)) continue;
     if (PROMO_WORD.test(line)) continue;
-    if (PHONE_LIKE.test(line)) continue;
+    if (PHONE_LIKE.test(line) && !EXPIRY_KEYWORD.test(line)) continue;
     if (SYSTEM_NAME.test(line)) continue;
+    if (CODE_LABEL.test(line)) continue;
+    if (STANDALONE_TIME.test(line)) continue;
 
     const key = line.toUpperCase();
     if (seen.has(key)) continue;
     seen.add(key);
 
-    const letters  = (line.match(/[A-Za-z]/g) || []).length;
-    const cjkCount = (line.match(/[぀-鿿가-힯฀-๿]/g) || []).length;
-    const alphaRatio = letters / line.length;
-    const cjkRatio   = cjkCount / line.length;
-    // 英字比率または東アジア文字比率でスコア: 0=商品名らしい, 1=混在, 2=数字多め
-    const score =
-      alphaRatio > 0.7 || cjkRatio > 0.7 ? 0 :
-      alphaRatio > 0.3 || cjkRatio > 0.3 ? 1 : 2;
-    candidates.push({ line, score });
+    let tier: number;
+    if (isProductInfo(line)) {
+      tier = 1;
+    } else {
+      const letters  = (line.match(/[A-Za-z]/g) || []).length;
+      const cjkCount = (line.match(/[぀-鿿가-힯฀-๿]/g) || []).length;
+      const alphaRatio = letters / line.length;
+      const cjkRatio   = cjkCount / line.length;
+      // 英字比率または東アジア文字比率でティア判定: 0=商品名らしい, 2=混在, 3=数字多め
+      tier =
+        alphaRatio > 0.7 || cjkRatio > 0.7 ? 0 :
+        alphaRatio > 0.3 || cjkRatio > 0.3 ? 2 : 3;
+    }
+    candidates.push({ line, tier });
   }
 
-  // スコア昇順（同スコアは出現順を維持）
-  candidates.sort((a, b) => a.score - b.score);
+  // ティア昇順（同ティアは出現順を維持）
+  candidates.sort((a, b) => a.tier - b.tier);
   return candidates.slice(0, 8).map((c) => c.line);
 }
