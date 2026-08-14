@@ -37,7 +37,8 @@ import { convert } from '@/utils/currency';
 import { extractMemoLines, extractPriceCandidates } from '@/utils/extract-prices';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
 import { mergeMemoCandidates, resolveMemoCandidateDisplay } from '@/utils/memo-candidate-display';
-import { appendMemoText, removeMemoText } from '@/utils/memo-text';
+import { resolveMemoInsertText } from '@/utils/memo-candidate-insert';
+import { appendMemoText, MEMO_MAX_LENGTH, removeMemoText } from '@/utils/memo-text';
 import {
   DEFAULT_BENCHMARK_ARMS,
   EXTRA_BENCHMARK_ARMS,
@@ -66,7 +67,14 @@ export default function CameraScreen() {
   // hideToastはuseCallbackで参照を固定し、他state変化での再renderでToast内部のuseEffectが
   // 毎回再始動してフェードが終わらなくなる事態を防ぐ。
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const hideToast = useCallback(() => setToastMessage(null), []);
+  // 補足行はトーストごとに変わる（保存＝「履歴で確認できます」／メモ上限＝案内文）。
+  // 文言を出し分けるためmessageと対で持ち、必ず同じ場所で両方セットする。
+  const [toastCaption, setToastCaption] = useState<string | null>(null);
+  // depsは空のまま（toastCaptionを足すと参照が変わりフェードが終わらなくなる。上のコメント参照）
+  const hideToast = useCallback(() => {
+    setToastMessage(null);
+    setToastCaption(null);
+  }, []);
   const [nativeAmount, setNativeAmount] = useState('');
   const [scanKey, setScanKey] = useState(0);
   const [inputMode, setInputMode] = useState<ConversionDirection>('TO_JPY');
@@ -633,28 +641,47 @@ export default function CameraScreen() {
   }
 
   // メモ候補のトグル：未追加→追加してチェック、追加済み→メモから取り除いてチェック解除。
-  // 同じ候補の重複追加を防ぐため、addedMemoEntriesの有無で分岐する。
-  function handleToggleMemoLine(line: string) {
-    const trimmed = line.trim();
-    if (!trimmed) return;
+  // 選択状態のidentityは常にcandidate.originalText（訳文をキーにしない：
+  // 會員價／会员价のように別の原文が同じ訳文になることがあるため）。
+  function handleToggleMemoLine(candidate: MemoCandidate) {
+    const originalText = candidate.originalText;
+    if (!originalText.trim()) return;
 
-    const insertedText = addedMemoEntries.get(line);
+    const insertedText = addedMemoEntries.get(originalText);
     if (insertedText !== undefined) {
-      // 追加時に実際に挿入した文字列だけを取り除く（原文・訳文から計算し直さない）
+      // 削除：**タップ時に実際に挿入した文字列**だけを取り除く。
+      // 現在のcandidate.translatedTextから計算し直してはいけない
+      //（pending中に原文で追加→後から訳文が届いた場合、消す対象がずれる）。
       setMemo((prev) => removeMemoText(prev, insertedText));
       setAddedMemoEntries((prev) => {
         const next = new Map(prev);
-        next.delete(line);
+        next.delete(originalText);
         return next;
       });
-    } else {
-      // Phase 3Aでは挿入する文字列は原文のまま。
-      // Phase 3Cでここを `translatedText ?? originalText` へ差し替える。
-      setMemo((prev) => appendMemoText(prev, trimmed));
-      setAddedMemoEntries((prev) => new Map(prev).set(line, trimmed));
-      // 自動スクロールしない：チェック表示・選択色の変化で追加を確認できるため、
-      // 複数候補を連続タップできることを優先する（実機確認で正式採用）。
+      return;
     }
+
+    // 追加：挿入文字列は**このタップ時点の候補**で確定する（訳文があれば訳文、無ければ原文）。
+    // 後から翻訳が届いても、既にメモへ入れた文字列は書き換えない。
+    const textToInsert = resolveMemoInsertText(candidate);
+    // 上限判定はappendMemoText側の責務。ここでlength判定やsliceを再実装しない。
+    // 関数型更新ではなく現在のmemoを直接読むのは、追加できたときだけMap更新・
+    // できなかったときだけトーストという分岐が必要なため（更新関数内で副作用を起こさない）。
+    const result = appendMemoText(memo, textToInsert);
+    if (!result.ok) {
+      // 上限超過は「押したのに何も起きない」に見えるため、既存の軽量トーストで案内する。
+      // 途中で切って入れることはしない（Phase 3C正式仕様）。
+      if (result.reason === 'too_long') {
+        setToastMessage(`メモは${MEMO_MAX_LENGTH}文字までです`);
+        setToastCaption('この候補は追加できません');
+      }
+      return;
+    }
+    setMemo(result.memo);
+    // valueはメモ本文に実際に入った文字列そのもの（削除時はこれだけを消す）
+    setAddedMemoEntries((prev) => new Map(prev).set(originalText, textToInsert));
+    // 自動スクロールしない：チェック表示・選択色の変化で追加を確認できるため、
+    // 複数候補を連続タップできることを優先する（実機確認で正式採用）。
   }
 
   // 入力をリセット（軽量）：入力欄だけを消す。
@@ -760,6 +787,7 @@ export default function CameraScreen() {
     }
     // 保存成功トースト（候補/購入済みの文言はリセット前のsaveAsPurchasedで決める）
     setToastMessage(saveAsPurchased ? '購入済みに保存しました' : '候補に保存しました');
+    setToastCaption('履歴で確認できます');
     // 保存成功時のみリセット
     setNativeAmount('');
     setMemo('');
@@ -1257,7 +1285,7 @@ export default function CameraScreen() {
                             <TouchableOpacity
                               key={line}
                               style={[styles.memoChip, added && styles.memoChipAdded]}
-                              onPress={() => handleToggleMemoLine(line)}
+                              onPress={() => handleToggleMemoLine(candidate)}
                               activeOpacity={0.75}>
                               <ThemedText
                                 style={[styles.memoChipText, added && styles.memoChipTextAdded]}
@@ -2007,7 +2035,7 @@ export default function CameraScreen() {
           画面のリセット・スクロールとは無関係に最前面へ固定表示する。 */}
       <Toast
         message={toastMessage}
-        caption={toastMessage ? '履歴で確認できます' : undefined}
+        caption={toastCaption ?? undefined}
         onHide={hideToast}
         style={{ top: insets.top + 8 }}
       />

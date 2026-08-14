@@ -15,25 +15,38 @@ const MEMO_SEPARATOR = ' ';
 export const MEMO_MAX_LENGTH = 100;
 
 /**
+ * `appendMemoText`の結果。
+ *
+ * 追加できなかった場合に**理由を返す**のは、呼び出し側が
+ * 「上限で追加しなかった」ときだけユーザーへ案内を出すため。
+ * `ok: false`のときは呼び出し側は**メモ本文も追加済みMapも更新してはいけない**。
+ */
+export type AppendMemoTextResult =
+  | { ok: true; memo: string }
+  | { ok: false; reason: 'empty' | 'too_long' };
+
+/**
  * メモ本文へ候補テキストを追加した結果を返す。
  *
- * 現行挙動をそのまま維持している点（Phase 3Cで見直す予定）:
- * - 上限を超える分は**文字列の途中で切り捨てる**。そのため実際に入った文字列が
- *   `insertText`と一致しないことがあり、その場合は`removeMemoText`で消せなくなる。
- *   Phase 3Cで「入りきらないなら追加しない」へ変更し、この不一致を構造的に無くす。
+ * **Phase 3C正式仕様：上限を超えるなら追加しない（途中で切らない）。**
+ * 以前は`slice(maxLength)`で文字列の途中を切り捨てていたため、実際にメモへ入った文字列が
+ * `insertText`と一致せず`removeMemoText`で消せなくなることがあった。
+ * 「入るなら丸ごと入れる／入らないなら何もしない」に統一し、この不一致を構造的に無くしている
+ * （＝`ok: true`のとき、返したメモには必ず`insertText.trim()`がそのまま含まれる）。
  */
 export function appendMemoText(
   memo: string,
   insertText: string,
   maxLength: number = MEMO_MAX_LENGTH,
-): string {
+): AppendMemoTextResult {
   const trimmed = insertText.trim();
-  if (!trimmed) return memo;
+  if (!trimmed) return { ok: false, reason: 'empty' };
 
   // 既存本文側もtrimする（末尾スペースをそのまま残さない現行挙動）
   const current = memo.trim();
-  if (!current) return trimmed.slice(0, maxLength);
-  return `${current}${MEMO_SEPARATOR}${trimmed}`.slice(0, maxLength);
+  const next = current ? `${current}${MEMO_SEPARATOR}${trimmed}` : trimmed;
+  if (next.length > maxLength) return { ok: false, reason: 'too_long' };
+  return { ok: true, memo: next };
 }
 
 /**
