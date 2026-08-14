@@ -50,6 +50,39 @@ export function appendMemoText(
 }
 
 /**
+ * `replaceMemoText`の結果。
+ *
+ * `appendMemoText`の`'empty'`理由はここには無い。空文字への置き換え（＝メモを空にする）は
+ * 「全文をメモにコピー」の正当な結果であり、拒否理由ではないため
+ * （OCR全文が空/空白のみのときにコピーすると、従来どおりメモは空になる）。
+ */
+export type ReplaceMemoTextResult =
+  | { ok: true; memo: string }
+  | { ok: false; reason: 'too_long' };
+
+/**
+ * 長い文字列（OCR全文など）でメモ本文を**丸ごと置き換えられるか**を判定する。
+ *
+ * `appendMemoText`（既存メモへの追記）とは別の関数にしている。こちらは追記ではなく置換で、
+ * 「全文をメモにコピー」はメモ本文を丸ごと差し替える操作のため。
+ * 100文字の扱いはappendMemoTextと同じ仕様（入るなら丸ごと・入らないなら何もしない、
+ * 途中で切らない）に統一する。`ok: false`のとき戻り値に`memo`は含まれない
+ * （呼び出し側が誤って部分文字列を使えないようにするため）。
+ *
+ * 空白の折りたたみ（改行等を半角スペース1つへ）を関数内で行うのは、
+ * 呼び出し側が別の文字列を渡して文字数判定がずれる事態を防ぐため
+ * （実際にメモへ入る文字列と、上限判定に使う文字列を必ず同じにする）。
+ */
+export function replaceMemoText(
+  text: string,
+  maxLength: number = MEMO_MAX_LENGTH,
+): ReplaceMemoTextResult {
+  const cleaned = text.replace(/\s+/g, ' ').trim();
+  if (cleaned.length > maxLength) return { ok: false, reason: 'too_long' };
+  return { ok: true, memo: cleaned };
+}
+
+/**
  * メモ本文から、追加時に実際に挿入した文字列だけを取り除いた結果を返す。
  *
  * 探すのは「呼び出し側が記録しておいた挿入文字列」であり、候補の原文でも訳文でもない。

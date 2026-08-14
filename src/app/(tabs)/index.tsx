@@ -38,7 +38,7 @@ import { extractMemoLines, extractPriceCandidates } from '@/utils/extract-prices
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
 import { mergeMemoCandidates, resolveMemoCandidateDisplay } from '@/utils/memo-candidate-display';
 import { resolveMemoInsertText } from '@/utils/memo-candidate-insert';
-import { appendMemoText, MEMO_MAX_LENGTH, removeMemoText } from '@/utils/memo-text';
+import { appendMemoText, MEMO_MAX_LENGTH, removeMemoText, replaceMemoText } from '@/utils/memo-text';
 import {
   DEFAULT_BENCHMARK_ARMS,
   EXTRA_BENCHMARK_ARMS,
@@ -703,8 +703,15 @@ export default function CameraScreen() {
 
   function handleCopyRawToMemo() {
     if (!ocrResult) return;
-    const cleaned = ocrResult.raw.replace(/\s+/g, ' ').trim().slice(0, 100);
-    setMemo(cleaned);
+    // memo候補と同じ100文字仕様（入るなら丸ごと・入らないなら何もしない、途中で切らない）。
+    // OCR全文は実質常に100文字を超えるため、この経路では超過案内が出るのが通常の結果になる。
+    const result = replaceMemoText(ocrResult.raw);
+    if (!result.ok) {
+      setToastMessage(`メモは${MEMO_MAX_LENGTH}文字までです`);
+      setToastCaption('100文字を超えるため追加できません');
+      return;
+    }
+    setMemo(result.memo);
   }
 
   // 保存用メモの削除：確認Alertで確定した時だけメモ本文を空にする（候補抽出・追加処理には触らない）。
