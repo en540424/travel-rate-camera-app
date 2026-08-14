@@ -147,17 +147,7 @@ function extractKrwPriceCandidates(text: string): string[] {
   const krwRe = /\bKRW\s*(\d{1,3}(?:,\d{3})+|\d{1,7}(?!\d))/gi;
   while ((m = krwRe.exec(text)) !== null) addKrw(m[1], m.index);
 
-  // Priority 4.5: カンマ区切り整数（₩/원なし文脈でも拾う。例: 12,900 / 100,000）
-  const commaIntRe = /\b(\d{1,3}(?:,\d{3})+)\b/g;
-  while ((m = commaIntRe.exec(text)) !== null) {
-    const n = parseInt(m[1].replace(/,/g, ''), 10);
-    if (n > 999_999) continue; // "1,223,803 results" 等の検索件数ノイズを除外
-    addKrw(m[1], m.index);
-  }
-
-  // Priority 5: 文脈なし整数フォールバック（行単位でノイズ除外）
-  // KRW記号またはカンマ整数がある行は P1–4.5 で処理済みのためスキップ
-  const KRW_MARKER_LINE = /[₩원]|\bW\b|\bKRW\b|\d{1,3},\d{3}/i;
+  // P4.5・P5共通ガード（カンマ整数フォールバックと裸整数フォールバックの両方で使用）
   const LONG_DIGITS     = /\d{7,}/;
   const DATE_PATTERN    = /\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}|\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/;
   const PHONE_PATTERN   = /\d{2,4}-\d{2,4}-\d{4}/;
@@ -167,8 +157,38 @@ function extractKrwPriceCandidates(text: string): string[] {
   const IMAGE_SIZE      = /\d+\s*[xX×]\s*\d+/;
   const FILENAME_LINE   = /\b(?:IMG|DSC|DCIM|DSCF|Screenshot|photo)[_\-]\d+\b|\.\b(?:png|jpe?g|gif|webp|heic|bmp)\b/i;
   const HAS_PERCENT     = /%/;
-  const UNIT_MEASURE    = /\b\d+(?:\.\d+)?\s*(?:g|kg|ml|l|oz|lb)\b/i;
+  const UNIT_MEASURE    = /\b\d+(?:\.\d+)?\s*(?:cal|kcal|g|kg|ml|l|oz|lb)\b/i;
   const HAS_ALPHA       = /[A-Za-z]/;
+
+  // Priority 4.5: カンマ区切り整数（₩/원なし文脈でも拾う。例: 12,900 / 100,000）
+  // 行単位でP5と同じガードを適用（kcal・栄養成分・日付・電話番号等の非価格数字を除外）
+  // KRW_MARKER_LINEは適用しない（\d{1,3},\d{3}自体を含むため、この段の対象行を自己除外してしまう）
+  const commaIntRe = /\b(\d{1,3}(?:,\d{3})+)\b/g;
+  for (const raw45 of text.split('\n')) {
+    const line45 = raw45.trim();
+    if (!line45) continue;
+    if (LONG_DIGITS.test(line45))   continue;
+    if (DATE_PATTERN.test(line45))  continue;
+    if (PHONE_PATTERN.test(line45)) continue;
+    if (HAS_DECIMAL.test(line45))   continue;
+    if (URL_LINE.test(line45))      continue;
+    if (DOMAIN_LINE.test(line45))   continue;
+    if (IMAGE_SIZE.test(line45))    continue;
+    if (FILENAME_LINE.test(line45)) continue;
+    if (HAS_PERCENT.test(line45))   continue;
+    if (UNIT_MEASURE.test(line45))  continue;
+    if (HAS_ALPHA.test(line45))     continue;
+
+    while ((m = commaIntRe.exec(line45)) !== null) {
+      const n = parseInt(m[1].replace(/,/g, ''), 10);
+      if (n > 999_999) continue; // "1,223,803 results" 等の検索件数ノイズを除外
+      addKrw(m[1], m.index);
+    }
+  }
+
+  // Priority 5: 文脈なし整数フォールバック（行単位でノイズ除外）
+  // KRW記号またはカンマ整数がある行は P1–4.5 で処理済みのためスキップ
+  const KRW_MARKER_LINE = /[₩원]|\bW\b|\bKRW\b|\d{1,3},\d{3}/i;
   const STANDALONE_YEAR = /^(19|20)\d{2}$/;
 
   for (const raw of text.split('\n')) {
@@ -821,17 +841,7 @@ function extractJpyPriceCandidates(text: string): string[] {
   const taxRe = /(?:税込|税抜|税別|価格|値段)[ \t]*[¥￥]?[ \t]*(\d{1,3}(?:,\d{3})*|\d{1,7})/g;
   while ((m = taxRe.exec(text)) !== null) addJpy(m[1], m.index);
 
-  // Priority 5.5: カンマ区切り整数（¥/円なし文脈でも拾う）
-  const commaIntRe = /\b(\d{1,3}(?:,\d{3})+)\b/g;
-  while ((m = commaIntRe.exec(text)) !== null) {
-    const n = parseInt(m[1].replace(/,/g, ''), 10);
-    if (n > 999_999) continue; // "1,223,803 results" 等の検索件数ノイズを除外
-    addJpy(m[1], m.index);
-  }
-
-  // Priority 6: 文脈なし整数フォールバック（行単位でノイズ除外）
-  // JPY記号またはカンマ整数がある行は P1–5.5 で処理済みのためスキップ
-  const JPY_MARKER_LINE = /[¥￥円]|\bJPY\b|\d{1,3},\d{3}/i;
+  // P5.5・P6共通ガード（カンマ整数フォールバックと裸整数フォールバックの両方で使用）
   const LONG_DIGITS     = /\d{7,}/;
   const DATE_PATTERN    = /\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}|\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/;
   const PHONE_PATTERN   = /\d{2,4}-\d{2,4}-\d{4}/;
@@ -841,8 +851,38 @@ function extractJpyPriceCandidates(text: string): string[] {
   const IMAGE_SIZE      = /\d+\s*[xX×]\s*\d+/;
   const FILENAME_LINE   = /\b(?:IMG|DSC|DCIM|DSCF|Screenshot|photo)[_\-]\d+\b|\.\b(?:png|jpe?g|gif|webp|heic|bmp)\b/i;
   const HAS_PERCENT     = /%/;
-  const UNIT_MEASURE    = /\b\d+(?:\.\d+)?\s*(?:g|kg|ml|l|oz|lb)\b/i;
+  const UNIT_MEASURE    = /\b\d+(?:\.\d+)?\s*(?:cal|kcal|g|kg|ml|l|oz|lb)\b/i;
   const HAS_ALPHA       = /[A-Za-z]/;
+
+  // Priority 5.5: カンマ区切り整数（¥/円なし文脈でも拾う）
+  // 行単位でP6と同じガードを適用（kcal・栄養成分・日付・電話番号等の非価格数字を除外）
+  // JPY_MARKER_LINEは適用しない（\d{1,3},\d{3}自体を含むため、この段の対象行を自己除外してしまう）
+  const commaIntRe = /\b(\d{1,3}(?:,\d{3})+)\b/g;
+  for (const raw55 of text.split('\n')) {
+    const line55 = raw55.trim();
+    if (!line55) continue;
+    if (LONG_DIGITS.test(line55))   continue;
+    if (DATE_PATTERN.test(line55))  continue;
+    if (PHONE_PATTERN.test(line55)) continue;
+    if (HAS_DECIMAL.test(line55))   continue;
+    if (URL_LINE.test(line55))      continue;
+    if (DOMAIN_LINE.test(line55))   continue;
+    if (IMAGE_SIZE.test(line55))    continue;
+    if (FILENAME_LINE.test(line55)) continue;
+    if (HAS_PERCENT.test(line55))   continue;
+    if (UNIT_MEASURE.test(line55))  continue;
+    if (HAS_ALPHA.test(line55))     continue;
+
+    while ((m = commaIntRe.exec(line55)) !== null) {
+      const n = parseInt(m[1].replace(/,/g, ''), 10);
+      if (n > 999_999) continue; // "1,223,803 results" 等の検索件数ノイズを除外
+      addJpy(m[1], m.index);
+    }
+  }
+
+  // Priority 6: 文脈なし整数フォールバック（行単位でノイズ除外）
+  // JPY記号またはカンマ整数がある行は P1–5.5 で処理済みのためスキップ
+  const JPY_MARKER_LINE = /[¥￥円]|\bJPY\b|\d{1,3},\d{3}/i;
   const STANDALONE_YEAR = /^(19|20)\d{2}$/;
 
   for (const raw of text.split('\n')) {
