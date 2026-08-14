@@ -652,7 +652,8 @@ export default function CameraScreen() {
       // Phase 3Cでここを `translatedText ?? originalText` へ差し替える。
       setMemo((prev) => appendMemoText(prev, trimmed));
       setAddedMemoEntries((prev) => new Map(prev).set(line, trimmed));
-      scrollToInputCard();
+      // 追加先はメモ欄なので、価格欄(inputCardYRef)ではなくメモ欄(memoRowYRef)へスクロールする
+      scrollToMemoInput();
     }
   }
 
@@ -1242,14 +1243,6 @@ export default function CameraScreen() {
                         </View>
                       </View>
                     )}
-                    {/* [検証] Phase 2：翻訳結果の確認用（__DEV__限定）。
-                        上のメモ候補チップ・handleToggleMemoLine・保存処理には影響しない。 */}
-                    {__DEV__ && memoSectionOpen && (
-                      <DevMemoTranslationPanel
-                        candidates={memoCandidates}
-                        sourceLanguage={getTranslationSourceLanguage(currencyForDisplay)}
-                      />
-                    )}
                     {memoSectionOpen && (
                       <View style={styles.ocrMemoChipRow}>
                         {(memoExpanded
@@ -1283,6 +1276,16 @@ export default function CameraScreen() {
                           );
                         })}
                       </View>
+                    )}
+                    {/* [検証] Phase 2：翻訳結果の確認用（__DEV__限定）。
+                        メモ候補チップ・handleToggleMemoLine・保存処理には影響しない。
+                        メモ候補グループ（見出し〜チップ〜さらに○件/閉じる）の下に配置する
+                        （実機確認：グループの途中に割り込むと操作対象が分かりにくいため）。 */}
+                    {__DEV__ && memoSectionOpen && (
+                      <DevMemoTranslationPanel
+                        candidates={memoCandidates}
+                        sourceLanguage={getTranslationSourceLanguage(currencyForDisplay)}
+                      />
                     )}
                   </View>
                 )}
