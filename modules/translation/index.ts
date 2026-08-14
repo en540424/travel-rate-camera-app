@@ -19,7 +19,8 @@ export { TabirateTranslationHost } from './src/TabirateTranslationHost';
 /**
  * Apple Translation Framework（`TranslationSession` / `LanguageAvailability`）へのラッパー。
  *
- * **実機PoC専用。本番のOCR経路・メモ候補・保存処理・DBへは接続しない。**
+ * **本番のメモ候補（翻訳表示・メモ挿入）経路で使用する。** 保存処理・DBへは接続しない
+ * （翻訳結果はDBへ保存せず、`conversion_history.memo`へ入るのはユーザーが選んだ文字列のみ）。
  *
  * `getAvailability` / `getSupportedLanguages` はホストView不要。
  * `prepare` / `translateBatch` は `TabirateTranslationHost` がマウントされている必要がある

@@ -7,7 +7,7 @@ import type {
 } from './TabirateTranslation.types';
 
 // Apple Translation Frameworkはweb未対応。
-// 呼び出し側（__DEV__ PoCパネル）はPlatform.OS === 'ios'でガードしているため、
+// 呼び出し側はPlatform.OS === 'ios'（isTranslationPlatformSupported）でガードしているため、
 // ここに到達するのは想定外の呼び出し時のみ。
 class TabirateTranslationModule extends NativeModule<{}> {
   isSupportedOs(): boolean {

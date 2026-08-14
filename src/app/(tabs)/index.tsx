@@ -13,7 +13,7 @@ import {
   SaveLimitBanner,
 } from '@/components/domain';
 import { SaveLimitSheet } from '@/components/domain/SaveLimitSheet';
-import { DevTranslationHost } from '@/components/translation-dev-panel';
+import { isTranslationPlatformSupported, TranslationHost } from '@/components/translation-host';
 import { ActionSheet, EmptyState, SectionCard, SecondaryButton, PrimaryButton, Toast } from '@/components/ui';
 import type { ConversionDirection, CurrencyCode } from '@/constants/currencies';
 import { CURRENCIES, FOREIGN_CURRENCY_CODES } from '@/constants/currencies';
@@ -140,11 +140,11 @@ export default function CameraScreen() {
     languages: string[];
     errorMessage?: string;
   } | null>(null);
-  // 翻訳候補。Phase 3Bからメモ候補チップの**表示**もこれを見る（訳文＝主表示／原文＝補助表示）。
-  // 生成は__DEV__・iOS・翻訳対象通貨のときだけで、それ以外はnullのまま
-  // （＝チップは従来どおり原文1段）。メモ本文へ挿入する文字列にはPhase 3Bでは影響しない。
+  // 翻訳候補。メモ候補チップの表示（訳文＝主表示／原文＝補助表示）と挿入文字列の決定に使う。
+  // 生成はiOS・翻訳対象通貨のときだけで、それ以外（Android/Web・JPY旅行）はnullのまま
+  // （＝チップは原文1段で表示され、タップすると原文がメモへ入る）。
   const [memoCandidates, setMemoCandidates] = useState<MemoCandidate[] | null>(null);
-  // [検証] Phase 2：ホストViewはこの画面にフォーカスがある間だけマウントする。
+  // 翻訳ホストViewはこの画面にフォーカスがある間だけマウントする。
   const [isScreenFocused, setIsScreenFocused] = useState(false);
 
   const scrollViewRef = useRef<ScrollView>(null);
@@ -194,7 +194,7 @@ export default function CameraScreen() {
     }, [reload]),
   );
 
-  // [検証] Phase 2：翻訳ホストViewの寿命管理（__DEV__限定）。
+  // 翻訳ホストViewの寿命管理。
   // フォーカス中だけホストViewをマウントし、離脱時はアンマウント＋世代を進めて結果を破棄する。
   //
   // ここで cancelTranslation()（= native cancelAll()）は呼ばない。
@@ -208,7 +208,7 @@ export default function CameraScreen() {
   // （＝画面へ戻ると候補は「翻訳中…」のまま残る。次のOCR結果確定で正常に翻訳し直される）。
   useFocusEffect(
     useCallback(() => {
-      if (!__DEV__) return;
+      if (!isTranslationPlatformSupported) return;
       setIsScreenFocused(true);
       return () => {
         setIsScreenFocused(false);
@@ -450,13 +450,14 @@ export default function CameraScreen() {
     );
   }
 
-  // [検証] Phase 2：OCR結果が確定した瞬間に世代を進める。
+  // OCR結果が確定した瞬間に世代を進める。
   // 進行中だった翻訳の結果は、返ってきても世代不一致で破棄される（stale result対策の本体）。
-  // __DEV__以外・Web・翻訳非対象通貨では世代を進めるだけで何も起こさない。
-  function startDevMemoTranslation(memoLines: string[]) {
+  // iOS以外・翻訳非対象通貨（JPY）では世代を進めるだけで何も起こさない
+  // （＝memoCandidatesはnullのままで、メモ候補チップは原文1段で表示される）。
+  function startMemoTranslation(memoLines: string[]) {
     const generation = translationGenerationRef.current + 1;
     translationGenerationRef.current = generation;
-    if (!__DEV__ || isWeb) return;
+    if (!isTranslationPlatformSupported) return;
 
     const sourceLanguage = getTranslationSourceLanguage(currencyForDisplay);
     if (sourceLanguage == null || memoLines.length === 0) {
@@ -466,7 +467,9 @@ export default function CameraScreen() {
 
     // 翻訳を待たずに原文候補を即表示する（OCR完了が翻訳待ちにならないようにする）
     setMemoCandidates(createPendingCandidates(memoLines, sourceLanguage));
-    console.log('[TranslationDev] start', `gen=${generation} lines=${memoLines.length} src=${sourceLanguage}`);
+    if (__DEV__) {
+      console.log('[Translation] start', `gen=${generation} lines=${memoLines.length} src=${sourceLanguage}`);
+    }
 
     void (async () => {
       try {
@@ -481,20 +484,23 @@ export default function CameraScreen() {
         const result = await translateMemoLines({ lines: memoLines, sourceLanguage, generation });
         const isStale = result.generation !== translationGenerationRef.current;
         // [診断ログ] 破棄する結果もここまでは見えるようにする（race・cancelの実機確認に必要）。
-        console.log(
-          '[TranslationDev] result',
-          `gen=${result.generation} current=${translationGenerationRef.current}${isStale ? ' stale-discard' : ''}`,
-          result.candidates
-            .map((c) => c.translationStatus + (c.errorCode ? `:${c.errorCode}` : ''))
-            .join(','),
-        );
+        // 開発ビルドのみ出力する（Release正式接続後は毎回のOCRで走るため）。
+        if (__DEV__) {
+          console.log(
+            '[Translation] result',
+            `gen=${result.generation} current=${translationGenerationRef.current}${isStale ? ' stale-discard' : ''}`,
+            result.candidates
+              .map((c) => c.translationStatus + (c.errorCode ? `:${c.errorCode}` : ''))
+              .join(','),
+          );
+        }
         if (isStale) return; // 古い世代の結果はstateへ反映しない
         setMemoCandidates(result.candidates);
       } catch (error) {
         // TranslationServiceはrejectしない設計だが、想定外の例外でも現世代の候補を
         // 「翻訳中…」のまま放置しない。stateではなくmemoLinesから組み直すため、
         // 新しい世代の候補を上書きすることはない。
-        console.warn('[TranslationDev] error', error);
+        if (__DEV__) console.warn('[Translation] error', error);
         if (generation !== translationGenerationRef.current) return;
         setMemoCandidates(
           createPendingCandidates(memoLines, sourceLanguage).map((candidate) =>
@@ -535,7 +541,7 @@ export default function CameraScreen() {
     // 初回スキャン：比較対象がまだ無いため即反映する
     if (newPhotoUri != null) setOcrPhotoUri(newPhotoUri);
     setOcrResult(newResult);
-    startDevMemoTranslation(newResult.memoLines);
+    startMemoTranslation(newResult.memoLines);
     setSelectedPrice(null);
     setAddedMemoEntries(new Map());
     setMemoExpanded(false);
@@ -578,7 +584,7 @@ export default function CameraScreen() {
       setNewPhotoCandidate({ uri: photoUri, source: 'ocr' });
     }
     setOcrResult(newResult);
-    startDevMemoTranslation(newResult.memoLines);
+    startMemoTranslation(newResult.memoLines);
     setSelectedPrice(null);
     setAddedMemoEntries(new Map());
     setMemoExpanded(false);
@@ -802,7 +808,7 @@ export default function CameraScreen() {
     // （残すと「メモは空なのに追加済み扱い」の不整合が残る）
     setAddedMemoEntries(new Map());
     setOcrResult(null);
-    startDevMemoTranslation([]); // [検証] OCR結果を消したので世代を進め、遅れて届く翻訳結果を破棄する
+    startMemoTranslation([]); // OCR結果を消したので世代を進め、遅れて届く翻訳結果を破棄する
     setCameraLive(true); // 保存後は撮影前のライブカメラ表示に戻す
     setOcrRawExpanded(false);
     setPendingPhotoUri(null);
@@ -837,9 +843,9 @@ export default function CameraScreen() {
 
   return (
     <View style={styles.screen}>
-      {/* [検証] Phase 2：翻訳ホストView（__DEV__限定・透明・絶対配置・タッチ透過）。
-          これがマウントされている間だけtranslateBatchが成功する。本番ビルドでは描画されない。 */}
-      <DevTranslationHost active={isScreenFocused} />
+      {/* 翻訳ホストView（透明・絶対配置・タッチ透過）。これがマウントされている間だけ
+          translateBatchが成功する。iOS 18未満・iOS以外では何も描画されない。 */}
+      <TranslationHost active={isScreenFocused} />
       <SafeAreaView style={styles.safe} edges={['top']}>
         <ScrollView
           ref={scrollViewRef}
