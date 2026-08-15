@@ -119,8 +119,9 @@ OCR基盤・複数通貨OCR改善は一段落しており、USD / EUR / JPY / KR
 
 - **実装状況（2026-08-14時点）**：Apple Translation（オンデバイス翻訳）を採用し、TranslationHost経由でRelease正式経路へ接続済み（Translation Phase 3B〜3D完了、検証用の黒い[検証]翻訳候補パネルは撤去し本番memo候補UIへ統合済み）。ただしReleaseビルドでの実機実証、およびiOS16.4〜17.xでのweak-link動作実証はまだ実施していない
 - **OCR文字認識エンジン自体**：`expo-text-extractor`呼び出しは引き続き`recognitionLanguages`等の言語指定手段を持たず、OSデフォルト認識に依存（この点は変更なし）
-- **OCR候補品質改善（対応済み・現在は一旦保留）**：THB/TWD価格候補の誤検出修正（cal/時刻/商品コード混入防止）、KRW/JPYのカンマ区切り非価格数字（例：「2,000 kcal」）誤検出修正、memo候補への商品情報tier追加（カロリー・容量・重量・栄養情報）、memo内部候補数上限を8→12に拡張、栄養情報の%表記保持を実施済み。実機確認で「総内容量120g」「505 kcal」「炭水化物79g 24%」等をmemo候補として認識できることを確認済み。これ以上のOCR候補品質改善は現在いったん保留
-- **未着手・保留のまま**：confidence / boundingBoxの活用（native側は取得済みだが`CameraPreview.native.tsx`の`recognizeText()`が`fullText`のみ返しJS側で捨てている）、翻訳専用長文モード（将来機能）、Phase 6 source auto-detect、TWD `$3.99 → 4`（既知仕様として対応保留）
+- **OCR候補品質改善（対応済み）**：THB/TWD価格候補の誤検出修正（cal/時刻/商品コード混入防止）、KRW/JPYのカンマ区切り非価格数字（例：「2,000 kcal」）誤検出修正、memo候補への商品情報tier追加（カロリー・容量・重量・栄養情報）、memo内部候補数上限を8→12に拡張、栄養情報の%表記保持を実施済み。実機確認で「総内容量120g」「505 kcal」「炭水化物79g 24%」等をmemo候補として認識できることを確認済み
+- **【2026-08-15確定・KRW/JPY価格OCR改善：条件付き合格・Release候補として採用】** preview Release実機確認を経て正式判断。主要な取りこぼし回帰（`50c92c7`由来のHAS_ALPHA行全体除外による₩/¥記号欠落＋英字同居時の価格消失、`2774725`で修正）と、Vision OCRの桁区切りカンマ→ピリオド誤認（例：4,500→raw「4.500」、`eb8d5d9`でKRW P4.7/JPY P5.7として救済）の両方を修正済み。preview Release実機で複数価格の同時正常取得（4,900/4,500・4,000/6,500/2,700等）を確認済み。**既知制約として、Vision OCR rawは撮影条件（距離・傾き・反射・背景・周辺文字混入等）によって撮影ごとに揺れる。これはKRW固有の問題ではなくOCR全般（USD/EUR/GBP/THB/TWD/JPY共通）の性質であり、raw自体が別の数字へ誤認された場合はextract-prices側だけでは完全復元できない。この制約は現Releaseを止める未完了事項として扱わない**（自動テスト68 pass / 0 fail、`node --test src/utils/extract-prices.test.mjs`で固定化済み）。実機確認用に一時追加していたOCR raw診断UI（`5944750`）は確認完了後に撤去済み
+- **将来改善候補（Release前必須ではない。実運用で問題が多い場合に再検討）**：confidence / boundingBoxの活用（native側は取得済みだが`CameraPreview.native.tsx`の`recognizeText()`が`fullText`のみ返しJS側で捨てている）、さらなるOCRノイズ除去・撮影条件依存の追加対策、翻訳専用長文モード（将来機能）、Phase 6 source auto-detect、TWD `$3.99 → 4`（既知仕様として対応保留）
 - **DB方針**：現時点でDBスキーマ・保存処理は変更しない（OCR写真は現行仕様どおりDBに保存しない）
 - **方式の優先順位**：オンデバイスOCR・オンデバイス翻訳・端末内保存が第一候補。クラウドOCR・外部翻訳APIは既定路線ではなく、「オンデバイスが製品品質に届かなかった場合にのみ検討する未決定の代替案」
 - **次アクション（着手時期は人間判断待ち）**：英/日/韓/中(簡体・繁体)/タイ語での翻訳実機精度検証 → 品質判定 → （不足時のみ）外部方式の比較検討。Release build実証・iOS16.4〜17.x weak-link実証も次アクションに含む

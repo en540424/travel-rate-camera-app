@@ -22,6 +22,7 @@
 | 無料版上限・Pro回数（実コード） | `src/config/limits.ts`（`FREE_LIMITS.saves = 30` を含む） |
 | Pro購入・復元・課金設定（実コード） | `src/config/revenuecat.ts`・`src/config/feature-flags.ts`（実装済み・`SHOW_PRO = true`。外部ダッシュボード設定はVault `旅レートカメラ_RevenueCat・AppStoreConnect課金設定メモ.md`） |
 | 多言語OCR・翻訳・テキスト入力（中核構想） | Vault `AI-Workflow-System/07_project-kits/tabirate-camera/旅レートカメラ_多言語OCR・翻訳・テキスト入力_中核構想設計書_v1.md`（2026-07-22決定済み構想。2026-08-14時点：Apple TranslationをRelease正式経路へ接続済み。Release build実証・iOS16.4〜17.x weak-link実証は未実施。オンデバイス方式が第一候補、無料/Pro境界は未決定。詳細な現在地は`.claude/mvp-tasks.md`の該当節を参照） |
+| KRW/JPY価格OCR改善（実コード） | `src/utils/extract-prices.ts`・`src/utils/extract-prices.test.mjs`。2026-08-15時点：**条件付き合格・Release候補として採用**（`.claude/mvp-tasks.md`の該当節を参照。OCR完全解決・100%認識という位置づけではない） |
 
 ## 旧資料として扱うもの（現行の正ではない）
 
