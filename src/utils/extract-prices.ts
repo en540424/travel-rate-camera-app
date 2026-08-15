@@ -159,9 +159,15 @@ function extractKrwPriceCandidates(text: string): string[] {
   const HAS_PERCENT     = /%/;
   const UNIT_MEASURE    = /\b\d+(?:\.\d+)?\s*(?:cal|kcal|g|kg|ml|l|oz|lb)\b/i;
   const HAS_ALPHA       = /[A-Za-z]/;
+  // 商品コード・管理番号のラベル（SKU 123,456 等）。P4.5専用: 英字が同居していても
+  // 「PORK BAKE 4,900」のような商品名＋価格（₩記号がOCRで欠落したケース）は救済したいが、
+  // 商品コードのラベル付き数字は price として拾わない（extractMemoLinesのCODE_LABELと同じ考え方）。
+  const CODE_LABEL      = /\b(?:SKU|ITEM\s*NO\.?|ITEM\s*NUMBER|PRODUCT\s*CODE|BARCODE)\b.{0,12}\d/i;
 
   // Priority 4.5: カンマ区切り整数（₩/원なし文脈でも拾う。例: 12,900 / 100,000）
-  // 行単位でP5と同じガードを適用（kcal・栄養成分・日付・電話番号等の非価格数字を除外）
+  // 行単位でP5相当のガードを適用（kcal・栄養成分・日付・電話番号・商品コード等の非価格数字を除外）。
+  // HAS_ALPHAは使わない: ₩記号がOCRで欠落し、同じ行に英字の商品名/キャプション（PORK BAKE等）が
+  // 同居しているケースを価格として救済するため。英字ラベル付き商品コードのみCODE_LABELで個別に除外する。
   // KRW_MARKER_LINEは適用しない（\d{1,3},\d{3}自体を含むため、この段の対象行を自己除外してしまう）
   const commaIntRe = /\b(\d{1,3}(?:,\d{3})+)\b/g;
   for (const raw45 of text.split('\n')) {
@@ -177,7 +183,7 @@ function extractKrwPriceCandidates(text: string): string[] {
     if (FILENAME_LINE.test(line45)) continue;
     if (HAS_PERCENT.test(line45))   continue;
     if (UNIT_MEASURE.test(line45))  continue;
-    if (HAS_ALPHA.test(line45))     continue;
+    if (CODE_LABEL.test(line45))    continue;
 
     while ((m = commaIntRe.exec(line45)) !== null) {
       const n = parseInt(m[1].replace(/,/g, ''), 10);
@@ -853,9 +859,14 @@ function extractJpyPriceCandidates(text: string): string[] {
   const HAS_PERCENT     = /%/;
   const UNIT_MEASURE    = /\b\d+(?:\.\d+)?\s*(?:cal|kcal|g|kg|ml|l|oz|lb)\b/i;
   const HAS_ALPHA       = /[A-Za-z]/;
+  // 商品コード・管理番号のラベル（SKU 1,234 等）。P5.5専用: KRW P4.5と同じ理由で、
+  // ¥記号がOCRで欠落し英字の商品名/キャプションと同居する価格を救済するため、
+  // HAS_ALPHAではなくCODE_LABELで商品コードだけを個別に除外する。
+  const CODE_LABEL      = /\b(?:SKU|ITEM\s*NO\.?|ITEM\s*NUMBER|PRODUCT\s*CODE|BARCODE)\b.{0,12}\d/i;
 
   // Priority 5.5: カンマ区切り整数（¥/円なし文脈でも拾う）
-  // 行単位でP6と同じガードを適用（kcal・栄養成分・日付・電話番号等の非価格数字を除外）
+  // 行単位でP6相当のガードを適用（kcal・栄養成分・日付・電話番号・商品コード等の非価格数字を除外）。
+  // HAS_ALPHAは使わない（KRW P4.5と同じ理由）。
   // JPY_MARKER_LINEは適用しない（\d{1,3},\d{3}自体を含むため、この段の対象行を自己除外してしまう）
   const commaIntRe = /\b(\d{1,3}(?:,\d{3})+)\b/g;
   for (const raw55 of text.split('\n')) {
@@ -871,7 +882,7 @@ function extractJpyPriceCandidates(text: string): string[] {
     if (FILENAME_LINE.test(line55)) continue;
     if (HAS_PERCENT.test(line55))   continue;
     if (UNIT_MEASURE.test(line55))  continue;
-    if (HAS_ALPHA.test(line55))     continue;
+    if (CODE_LABEL.test(line55))    continue;
 
     while ((m = commaIntRe.exec(line55)) !== null) {
       const n = parseInt(m[1].replace(/,/g, ''), 10);
