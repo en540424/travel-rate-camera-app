@@ -126,6 +126,9 @@ export default function CameraScreen() {
   const [cameraLive, setCameraLive] = useState(true);
   // 撮影済みOCR写真を拡大表示するモーダル
   const [ocrPhotoZoomVisible, setOcrPhotoZoomVisible] = useState(false);
+  // [一時診断] Release OCR raw fullText確認用モーダル開閉。__DEV__限定にしない（Release実機で
+  // Vision OCR rawが何を返しているか確認するための一時機能）。実機確認後、削除予定。
+  const [ocrRawDiagnosticVisible, setOcrRawDiagnosticVisible] = useState(false);
   // 撮影した値札写真の縦横比（width/height）。読み込み時に確定し、プレビュー高さを実寸に合わせる。
   const [ocrImgAspect, setOcrImgAspect] = useState(0.75);
   // [診断] OCRデバッグパネル開閉 — リリース前に削除
@@ -947,6 +950,15 @@ export default function CameraScreen() {
                       <TouchableOpacity onPress={handleRescan} hitSlop={8} activeOpacity={0.7}>
                         <ThemedText style={styles.ocrPhotoPreviewRescan}>再読み取り</ThemedText>
                       </TouchableOpacity>
+                      {/* [一時診断] Release OCR raw fullText確認用。実機確認後、削除予定（AGENTS.md参照）。 */}
+                      {ocrResult != null && (
+                        <TouchableOpacity
+                          onPress={() => setOcrRawDiagnosticVisible(true)}
+                          hitSlop={8}
+                          activeOpacity={0.7}>
+                          <ThemedText style={styles.ocrPhotoPreviewRawDiagnostic}>OCR raw</ThemedText>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   </View>
                   {/* 再読み取り直後だけ表示。新しい結果はまだ未反映で、選ぶまで現在の結果を維持する */}
@@ -1990,6 +2002,39 @@ export default function CameraScreen() {
         </Modal>
       )}
 
+      {/* [一時診断] Release実機でVision OCR raw fullTextを確認するための一時モーダル。
+          extractPriceCandidates等のロジックは変更せず、handleOcrResultで既に保持している
+          ocrResult.raw / ocrResult.prices をそのまま表示するだけ（新しい計算はしない）。
+          __DEV__限定にしない（Release buildで確認するための機能のため）。
+          実機でのRelease OCR raw確認が完了し次第、削除予定（AGENTS.md参照）。 */}
+      {ocrResult != null && (
+        <Modal
+          visible={ocrRawDiagnosticVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setOcrRawDiagnosticVisible(false)}>
+          <View style={styles.photoPreviewOverlay}>
+            <ThemedText style={styles.ocrRawDiagnosticHeading}>
+              OCR raw診断（一時・実機確認用）
+            </ThemedText>
+            <ThemedText style={styles.ocrRawDiagnosticMeta}>
+              通貨: {currencyForDisplay} / 価格候補: {ocrResult.prices.length > 0 ? ocrResult.prices.join(', ') : '（なし）'}
+            </ThemedText>
+            <ScrollView style={styles.ocrRawDiagnosticBox} contentContainerStyle={styles.ocrRawDiagnosticBoxContent}>
+              <ThemedText selectable type="code" style={styles.ocrRawDiagnosticText}>
+                {ocrResult.raw || '（raw fullTextが空です）'}
+              </ThemedText>
+            </ScrollView>
+            <TouchableOpacity
+              style={styles.photoPreviewCloseBtn}
+              onPress={() => setOcrRawDiagnosticVisible(false)}
+              activeOpacity={0.75}>
+              <ThemedText style={styles.photoPreviewCloseBtnText}>閉じる</ThemedText>
+            </TouchableOpacity>
+          </View>
+        </Modal>
+      )}
+
       {/* 保存写真アクションシート（メイン画面・Alert置換）。
           閉じている時は描画しない＝透明Modal/backdropがタップを奪わないようにする。 */}
       {photoSheetVisible && (
@@ -2285,6 +2330,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: color.primary,
+  },
+  // [一時診断] Release OCR raw確認ボタン。実機確認後、削除予定（AGENTS.md参照）。
+  ocrPhotoPreviewRawDiagnostic: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: color.muted,
   },
   // 商品写真モード（captureMode==='photo'）のパネル
   productPanel: {
@@ -3115,5 +3166,32 @@ const styles = StyleSheet.create({
     fontSize: DT.fontSize.md,
     fontWeight: DT.fontWeight.semibold,
     color: '#fff',
+  },
+  // [一時診断] Release OCR raw確認モーダル用。実機確認後、削除予定（AGENTS.md参照）。
+  ocrRawDiagnosticHeading: {
+    fontSize: DT.fontSize.md,
+    fontWeight: DT.fontWeight.semibold,
+    color: '#fff',
+    marginBottom: DT.spacing.sm,
+  },
+  ocrRawDiagnosticMeta: {
+    fontSize: DT.fontSize.sm,
+    color: 'rgba(255,255,255,0.8)',
+    marginBottom: DT.spacing.md,
+    textAlign: 'center',
+  },
+  ocrRawDiagnosticBox: {
+    width: '100%',
+    maxHeight: '60%',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: DT.radius.md,
+    padding: DT.spacing.md,
+  },
+  ocrRawDiagnosticBoxContent: {
+    paddingBottom: DT.spacing.sm,
+  },
+  ocrRawDiagnosticText: {
+    color: '#fff',
+    fontSize: 12,
   },
 });
