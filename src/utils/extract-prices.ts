@@ -192,6 +192,38 @@ function extractKrwPriceCandidates(text: string): string[] {
     }
   }
 
+  // Priority 4.7: OCRが桁区切りカンマをピリオドと誤認したケースの救済（実機raw確認済み: 4,500→4.500）。
+  // 「1〜3桁 . 3桁」だけを対象にする（実際のカンマ区切りは3桁単位のため）。
+  // $3.99/€12.50のような本物の小数（小数部が2桁）とは小数部の桁数で区別する
+  // （EUR/GBPの千区切り表記も`\d{1,3}(?:\.\d{3})+,\d{1,2}`のように3桁区切りを前提にしており、
+  // この3桁という桁数が「桁区切り」と「実際の小数」を分ける唯一の signal であることは既存コードの
+  // 前提と一致する）。ガードはP4.5と同じ考え方（HAS_ALPHAではなくCODE_LABELで商品コードのみ除外）に
+  // VERSION_LABELを追加する（version番号の"1.234"のような3桁小数っぽい文字列を誤って価格にしないため）。
+  const VERSION_LABEL = /\bversion\b/i;
+  const dotGroupRe = /\b(\d{1,3})\.(\d{3})\b/g;
+  for (const raw47 of text.split('\n')) {
+    const line47 = raw47.trim();
+    if (!line47) continue;
+    if (LONG_DIGITS.test(line47))    continue;
+    if (DATE_PATTERN.test(line47))   continue;
+    if (PHONE_PATTERN.test(line47))  continue;
+    if (URL_LINE.test(line47))       continue;
+    if (DOMAIN_LINE.test(line47))    continue;
+    if (IMAGE_SIZE.test(line47))     continue;
+    if (FILENAME_LINE.test(line47))  continue;
+    if (HAS_PERCENT.test(line47))    continue;
+    if (UNIT_MEASURE.test(line47))   continue;
+    if (CODE_LABEL.test(line47))     continue;
+    if (VERSION_LABEL.test(line47))  continue;
+
+    while ((m = dotGroupRe.exec(line47)) !== null) {
+      const rejoined = `${m[1]}${m[2]}`; // "4" + "500" → "4500"（桁区切りカンマを除去した形と同じ扱い）
+      const n = parseInt(rejoined, 10);
+      if (n > 999_999) continue;
+      addKrw(rejoined, m.index);
+    }
+  }
+
   // Priority 5: 文脈なし整数フォールバック（行単位でノイズ除外）
   // KRW記号またはカンマ整数がある行は P1–4.5 で処理済みのためスキップ
   const KRW_MARKER_LINE = /[₩원]|\bW\b|\bKRW\b|\d{1,3},\d{3}/i;
@@ -888,6 +920,32 @@ function extractJpyPriceCandidates(text: string): string[] {
       const n = parseInt(m[1].replace(/,/g, ''), 10);
       if (n > 999_999) continue; // "1,223,803 results" 等の検索件数ノイズを除外
       addJpy(m[1], m.index);
+    }
+  }
+
+  // Priority 5.7: OCRが桁区切りカンマをピリオドと誤認したケースの救済（KRW P4.7と同じ理由・同じ設計）。
+  const VERSION_LABEL = /\bversion\b/i;
+  const dotGroupRe = /\b(\d{1,3})\.(\d{3})\b/g;
+  for (const raw57 of text.split('\n')) {
+    const line57 = raw57.trim();
+    if (!line57) continue;
+    if (LONG_DIGITS.test(line57))    continue;
+    if (DATE_PATTERN.test(line57))   continue;
+    if (PHONE_PATTERN.test(line57))  continue;
+    if (URL_LINE.test(line57))       continue;
+    if (DOMAIN_LINE.test(line57))    continue;
+    if (IMAGE_SIZE.test(line57))     continue;
+    if (FILENAME_LINE.test(line57))  continue;
+    if (HAS_PERCENT.test(line57))    continue;
+    if (UNIT_MEASURE.test(line57))   continue;
+    if (CODE_LABEL.test(line57))     continue;
+    if (VERSION_LABEL.test(line57))  continue;
+
+    while ((m = dotGroupRe.exec(line57)) !== null) {
+      const rejoined = `${m[1]}${m[2]}`;
+      const n = parseInt(rejoined, 10);
+      if (n > 999_999) continue;
+      addJpy(rejoined, m.index);
     }
   }
 
