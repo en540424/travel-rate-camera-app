@@ -1,4 +1,4 @@
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
 import { Image } from 'expo-image';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Keyboard, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
@@ -19,6 +19,8 @@ export default function ItemEditScreen() {
   const id = params.id != null ? parseInt(params.id, 10) : NaN;
   const { history, reload, updateAmount, updateMemo, togglePurchased, updateImageUri, removeEntry } = useHistory();
   const setHasUnsavedChanges = useUnsavedChangesStore((s) => s.setHasUnsavedChanges);
+  const setDiscardHandler = useUnsavedChangesStore((s) => s.setDiscardHandler);
+  const navigation = useNavigation();
 
   // React Compiler のメモ化で古いクロージャにならないよう ref 経由で参照
   const [amount, setAmount] = useState('');
@@ -31,8 +33,25 @@ export default function ItemEditScreen() {
   const originalAmountRef = useRef('');
   const originalMemoRef = useRef('');
   const originalIsPurchasedRef = useRef(false);
-  // 写真の変更・削除は即時DB反映だが、未保存変更の警告対象としては別フラグで持つ。
-  const [photoChanged, setPhotoChanged] = useState(false);
+  /**
+   * 写真も金額・メモと同じ「保存するまで下書き」に揃える。**画面が表示する写真の正はこれ**で、
+   * `item.image_uri`（＝DBの確定値）ではない。DBへ書くのは`handleSave`だけ。
+   */
+  const [draftPhotoUri, setDraftPhotoUri] = useState<string | null>(null);
+  /**
+   * 読み込み時点の写真（写真版の未保存判定の基準）。amount等の基準はrefだが、こちらは
+   * レンダー中の比較に使うためstateで持つ（refをレンダー中に読むとReactの規約違反になる）。
+   */
+  const [originalPhotoUri, setOriginalPhotoUri] = useState<string | null>(null);
+  /**
+   * この編集セッション中に作成した、**まだDBから参照されていない**写真file。
+   * 破棄・撮り直し・アンマウント時に削除してよい。保存済みのoriginalは決してここへ入れない
+   * （入れると「保存する前に元画像が消える」という今回直した不具合そのものに戻る）。
+   * 保存成功時は「未保存」ではなくなるので、削除せず台帳から外すだけにする。
+   */
+  const createdFilesRef = useRef<string[]>([]);
+  /** 保存・記録削除・破棄確定など、こちらが意図した離脱では未保存ガードを通さない */
+  const allowLeaveRef = useRef(false);
   // ScrollView自体の表示可能高さとcontentContainerの実測高さを比較し、
   // 本当に収まっている時だけscrollEnabledをfalseにする（item-detailと同じ実測ベースの方式）。
   const [scrollAreaHeight, setScrollAreaHeight] = useState(0);
@@ -52,6 +71,9 @@ export default function ItemEditScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      // 破棄して他タブへ移動した後にこの画面へ戻ってきた場合、画面は生き残っている。
+      // ガードの素通し許可を持ち越さない（持ち越すと以後の未保存変更が警告されなくなる）。
+      allowLeaveRef.current = false;
       reload();
     }, [reload]),
   );
@@ -64,23 +86,28 @@ export default function ItemEditScreen() {
       const initialAmount = item.currency === 'JPY' ? String(item.jpy_amount) : String(item.foreign_amount);
       const initialMemo = item.memo ?? '';
       const initialIsPurchased = (item.is_purchased ?? 0) === 1;
+      const initialPhotoUri = item.image_uri ?? null;
       setAmount(initialAmount);
       setMemo(initialMemo);
       setIsPurchased(initialIsPurchased);
+      setDraftPhotoUri(initialPhotoUri);
       originalAmountRef.current = initialAmount;
       originalMemoRef.current = initialMemo;
       originalIsPurchasedRef.current = initialIsPurchased;
-      setPhotoChanged(false);
+      setOriginalPhotoUri(initialPhotoUri);
+      createdFilesRef.current = [];
     }
   }, [item]);
 
   // 金額・メモ・ステータス・写真のいずれかが読み込み時点と異なれば「未保存の変更あり」。
+  // 写真も他項目と同じ「初期値との比較」で判定する（専用フラグは持たない）。そのため
+  // 元と同じ状態へ戻せば自然にfalseへ戻る。
   // 下タブ移動の確認Alert判定に使うstoreへ同期し、画面を離れる時は必ず解除する。
   const hasUnsavedChanges =
     amount !== originalAmountRef.current ||
     memo !== originalMemoRef.current ||
     isPurchased !== originalIsPurchasedRef.current ||
-    photoChanged;
+    draftPhotoUri !== originalPhotoUri;
 
   useEffect(() => {
     setHasUnsavedChanges(hasUnsavedChanges);
@@ -89,6 +116,89 @@ export default function ItemEditScreen() {
   useEffect(() => {
     return () => setHasUnsavedChanges(false);
   }, [setHasUnsavedChanges]);
+
+  /**
+   * 未保存の下書きfileだけを削除する。保存済みのoriginalは`createdFilesRef`に入らないため対象外。
+   * file削除の失敗はDB整合性に影響しない（孤児fileが残るだけ）ので握りつぶし、
+   * ユーザーを画面へ閉じ込めない。
+   */
+  const cleanupCreatedFiles = useCallback(async () => {
+    const files = createdFilesRef.current;
+    createdFilesRef.current = [];
+    for (const uri of files) {
+      try {
+        await FileSystem.deleteAsync(uri, { idempotent: true });
+      } catch {}
+    }
+  }, []);
+
+  /**
+   * 編集内容を読み込み時点へ戻す。DBには何も書いていないので「戻す」対象はstateと未保存fileだけ。
+   * 下タブ移動では画面がアンマウントされないため、明示的に戻さないと破棄したはずの値が残る。
+   */
+  const discardDraft = useCallback(() => {
+    setAmount(originalAmountRef.current);
+    setMemo(originalMemoRef.current);
+    setIsPurchased(originalIsPurchasedRef.current);
+    setDraftPhotoUri(originalPhotoUri);
+    void cleanupCreatedFiles();
+  }, [cleanupCreatedFiles, originalPhotoUri]);
+
+  // 下タブ側のガード（(tabs)/_layout.tsx）から「破棄して移動」時に呼んでもらう。
+  // あちらはStackの外側にいて編集画面のstateを知らないため、処理側をここから預ける。
+  useEffect(() => {
+    setDiscardHandler(() => {
+      allowLeaveRef.current = true;
+      discardDraft();
+    });
+    return () => setDiscardHandler(null);
+  }, [setDiscardHandler, discardDraft]);
+
+  /*
+   * ヘッダー戻る・iOSスワイプバックのガード。tabPress（下タブ）はタブバー押下でしか発火せず、
+   * この経路を一切見ていないため、従来は写真に限らず金額・メモの未保存変更も警告なしで捨てられていた。
+   *
+   * 二重Alertの防止: 下タブ経由の破棄では上のdiscardHandlerが`allowLeaveRef`を立てるので、
+   * その後にスタックが畳まれてbeforeRemoveが走っても素通しする（Alertは1回だけ）。
+   */
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      if (allowLeaveRef.current || !hasUnsavedChanges) return;
+      e.preventDefault();
+      Alert.alert(
+        '変更内容を破棄しますか？',
+        '保存していない変更があります。移動すると変更は破棄されます。',
+        [
+          { text: '編集を続ける', style: 'cancel' },
+          {
+            text: '破棄して移動',
+            style: 'destructive',
+            onPress: () => {
+              allowLeaveRef.current = true;
+              discardDraft();
+              setHasUnsavedChanges(false);
+              navigation.dispatch(e.data.action);
+            },
+          },
+        ],
+      );
+    });
+    return unsubscribe;
+  }, [navigation, hasUnsavedChanges, discardDraft, setHasUnsavedChanges]);
+
+  // native-stackのスワイプバックは、ジェスチャが始まってしまうとJS側からの中断が効かない場合がある。
+  // 未保存の間はジェスチャ自体を無効化し、ヘッダー戻る（＝上のAlertが確実に出る経路）へ寄せる。
+  useEffect(() => {
+    navigation.setOptions({ gestureEnabled: !hasUnsavedChanges });
+  }, [navigation, hasUnsavedChanges]);
+
+  // 画面が消える時、保存されなかった下書きfileを残さない（案A: 離脱時cleanup）。
+  // 保存成功時は台帳を空にしてから離れるので、保存した写真がここで消えることはない。
+  useEffect(() => {
+    return () => {
+      void cleanupCreatedFiles();
+    };
+  }, [cleanupCreatedFiles]);
 
   if (!item) {
     return (
@@ -111,24 +221,28 @@ export default function ItemEditScreen() {
     return isFinite(n) && n > 0 ? n : null;
   })();
 
-  async function persistPhoto(uri: string) {
-    if (!item) return;
+  /**
+   * 撮影・選択した写真を「未保存の下書き」として採用する。
+   * ImagePickerが返す一時URIは揮発性なのでapp管理下へcopyするところまでは従来どおりだが、
+   * **DBは更新せず、保存済みの元画像fileにも触れない**。
+   */
+  async function adoptDraftPhoto(uri: string) {
     const docsDir = FileSystem.documentDirectory;
     const photosDir = `${docsDir}photos/`;
     await FileSystem.makeDirectoryAsync(photosDir, { intermediates: true });
     const destUri = `${photosDir}${Date.now()}.jpg`;
     await FileSystem.copyAsync({ from: uri, to: destUri });
-    if (item.image_uri) {
-      try { await FileSystem.deleteAsync(item.image_uri, { idempotent: true }); } catch {}
-    }
-    await updateImageUri(item.id, destUri);
-    setPhotoChanged(true);
+    // 同じセッションで撮り直した場合（下書きB→C）、もう参照されないBをここで捨てる。
+    // 保存済みoriginalは台帳に無いので消えない。
+    await cleanupCreatedFiles();
+    createdFilesRef.current = [destUri];
+    setDraftPhotoUri(destUri);
   }
 
   async function pickAndSet() {
     const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
     if (picked.canceled || !picked.assets[0]) return;
-    await persistPhoto(picked.assets[0].uri);
+    await adoptDraftPhoto(picked.assets[0].uri);
   }
 
   async function takePhoto() {
@@ -136,14 +250,13 @@ export default function ItemEditScreen() {
     if (!perm.granted) return;
     const picked = await ImagePicker.launchCameraAsync({ quality: 0.8 });
     if (picked.canceled || !picked.assets[0]) return;
-    await persistPhoto(picked.assets[0].uri);
+    await adoptDraftPhoto(picked.assets[0].uri);
   }
 
+  /** 削除も下書き上だけ。保存済みfileは「保存する」が成功するまで残す */
   async function deletePhoto() {
-    if (!item?.image_uri) return;
-    try { await FileSystem.deleteAsync(item.image_uri, { idempotent: true }); } catch {}
-    await updateImageUri(item.id, null);
-    setPhotoChanged(true);
+    setDraftPhotoUri(null);
+    await cleanupCreatedFiles();
   }
 
   function handlePhoto() {
@@ -154,19 +267,30 @@ export default function ItemEditScreen() {
   async function handleSave() {
     if (!item) return;
     const updates: Promise<void>[] = [];
+    // 実際にDBへ書いた値だけを新しい基準にする（不正な金額は従来どおり保存されないため、
+    // その場合は基準を進めず「未保存のまま」を維持する）。
+    let savedAmount = originalAmountRef.current;
     if (item.currency === 'JPY') {
       const n = parseInt(amount.trim(), 10);
-      if (isFinite(n) && n > 0 && n !== item.jpy_amount) updates.push(updateAmount(item.id, n, n));
+      if (isFinite(n) && n > 0 && n !== item.jpy_amount) {
+        updates.push(updateAmount(item.id, n, n));
+        savedAmount = amount;
+      }
     } else {
       const f = parseFloat(amount.trim());
       if (isFinite(f) && f > 0 && f !== item.foreign_amount) {
         updates.push(updateAmount(item.id, f, Math.round(f * item.rate_used)));
+        savedAmount = amount;
       }
     }
     updates.push(updateMemo(item.id, memo.trim() || null));
     if (isPurchased !== ((item.is_purchased ?? 0) === 1)) {
       updates.push(togglePurchased(item.id, item.is_purchased ?? 0));
     }
+    // 写真の確定はここだけ。変更が無ければDBへ触らない。
+    const previousPhotoUri = originalPhotoUri;
+    const photoChanged = draftPhotoUri !== previousPhotoUri;
+    if (photoChanged) updates.push(updateImageUri(item.id, draftPhotoUri));
     // 保存失敗時に何も表示されない箇所があったため try/catch + Alert を追加（P0-08）。
     // 保存ロジック本体（updateAmount/updateMemo/togglePurchased）は変更しない。
     try {
@@ -180,7 +304,21 @@ export default function ItemEditScreen() {
       );
       return;
     }
-    setPhotoChanged(false);
+    // **DB確定に成功した後だけ**、参照されなくなった旧写真を消す。
+    // 失敗時にここへ来ないことが重要（DBは旧URIのままなのにfileだけ消える状態を作らない）。
+    if (photoChanged && previousPhotoUri) {
+      try {
+        await FileSystem.deleteAsync(previousPhotoUri, { idempotent: true });
+      } catch {}
+    }
+    // 保存した下書きfileはもう「未保存」ではない。削除せず台帳から外すだけにする
+    // （消してしまうと、直後のアンマウントcleanupで保存した写真自体が消える）。
+    createdFilesRef.current = [];
+    originalAmountRef.current = savedAmount;
+    originalMemoRef.current = memo;
+    originalIsPurchasedRef.current = isPurchased;
+    setOriginalPhotoUri(draftPhotoUri);
+    allowLeaveRef.current = true;
     setHasUnsavedChanges(false);
     router.back();
   }
@@ -193,10 +331,16 @@ export default function ItemEditScreen() {
         text: '削除',
         style: 'destructive',
         onPress: async () => {
-          if (item.image_uri && Platform.OS !== 'web') {
-            try { await FileSystem.deleteAsync(item.image_uri, { idempotent: true }); } catch {}
+          // 記録ごと消すので、未保存の下書きfileも保存済みfileも両方片付ける
+          allowLeaveRef.current = true;
+          if (Platform.OS !== 'web') {
+            await cleanupCreatedFiles();
+            if (item.image_uri) {
+              try { await FileSystem.deleteAsync(item.image_uri, { idempotent: true }); } catch {}
+            }
           }
           await removeEntry(item.id);
+          setHasUnsavedChanges(false);
           router.back();
         },
       },
@@ -218,9 +362,9 @@ export default function ItemEditScreen() {
         <View style={styles.formGroup}>
           {/* 保存写真 */}
           <View style={styles.photoRow}>
-            <Pressable onPress={() => item.image_uri && setPhotoOpen(true)} disabled={!item.image_uri} style={styles.thumb}>
-              {item.image_uri ? (
-                <Image source={{ uri: item.image_uri }} style={styles.thumbImage} contentFit="cover" />
+            <Pressable onPress={() => draftPhotoUri && setPhotoOpen(true)} disabled={!draftPhotoUri} style={styles.thumb}>
+              {draftPhotoUri ? (
+                <Image source={{ uri: draftPhotoUri }} style={styles.thumbImage} contentFit="cover" />
               ) : (
                 <View style={styles.thumbPlaceholder}>
                   <ThemedText style={styles.thumbPlaceholderText}>なし</ThemedText>
@@ -233,7 +377,7 @@ export default function ItemEditScreen() {
             </View>
             {Platform.OS !== 'web' && (
               <Pressable onPress={handlePhoto} style={({ pressed }) => [styles.photoBtn, pressed && styles.pressed]}>
-                <ThemedText style={styles.photoBtnText}>{item.image_uri ? '写真を変更' : '写真を追加'}</ThemedText>
+                <ThemedText style={styles.photoBtnText}>{draftPhotoUri ? '写真を変更' : '写真を追加'}</ThemedText>
               </Pressable>
             )}
           </View>
@@ -311,12 +455,12 @@ export default function ItemEditScreen() {
         </Pressable>
       </View>
 
-      <PhotoModal uri={photoOpen ? item.image_uri : null} onClose={() => setPhotoOpen(false)} />
+      <PhotoModal uri={photoOpen ? draftPhotoUri : null} onClose={() => setPhotoOpen(false)} />
 
       <PhotoChangeSheet
         visible={showPhotoSheet}
         onClose={() => setShowPhotoSheet(false)}
-        hasPhoto={!!item.image_uri}
+        hasPhoto={!!draftPhotoUri}
         onTakePhoto={() => { void takePhoto(); }}
         onPickLibrary={() => { void pickAndSet(); }}
         onDelete={() => { void deletePhoto(); }}

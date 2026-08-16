@@ -46,6 +46,10 @@ export default function TabsLayout() {
                 text: '破棄して移動',
                 style: 'destructive',
                 onPress: () => {
+                  // 下タブ移動では編集画面がアンマウントされないため、編集画面が登録した
+                  // revert処理を呼んで下書きを読み込み時点へ戻す（未保存の写真fileの削除を含む）。
+                  // これを省くと「破棄」したのに編集中の値が画面に残り続ける。
+                  useUnsavedChangesStore.getState().discardHandler?.();
                   useUnsavedChangesStore.getState().setHasUnsavedChanges(false);
                   navigation.navigate(route.name);
                 },

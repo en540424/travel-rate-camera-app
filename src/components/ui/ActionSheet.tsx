@@ -12,6 +12,12 @@ export interface ActionSheetProps {
   dimmed?: boolean;
   /** 背面タップで閉じるか（既定: true） */
   closeOnBackdropPress?: boolean;
+  /**
+   * dismissアニメーションが完全に終わった後に呼ばれる（RN Modalの`onDismiss`をそのまま公開）。
+   * **iOS専用**。閉じ切る前に別のnativeモーダル（ImagePicker等）をpresentすると
+   * 競合して無言で失敗するため、その起動タイミングを取るために使う。
+   */
+  onDismiss?: () => void;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -22,12 +28,13 @@ export function ActionSheet({
   children,
   dimmed = true,
   closeOnBackdropPress = true,
+  onDismiss,
   style,
 }: ActionSheetProps) {
   const insets = useSafeAreaInsets();
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} onDismiss={onDismiss}>
       <View style={styles.root}>
         <Pressable
           accessibilityRole="button"
