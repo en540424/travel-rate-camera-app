@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
-import { Alert, StyleSheet, type ColorValue } from 'react-native';
+import { Alert, Platform, StyleSheet, type ColorValue } from 'react-native';
 
 import { DT } from '@/constants/designTokens';
 import { useUnsavedChangesStore } from '@/stores/unsaved-changes-store';
@@ -61,6 +61,27 @@ export default function TabsLayout() {
           tabBarIcon: ({ color }) => (
             <TabIcon color={color} name={{ ios: 'camera', android: 'photo_camera', web: 'photo_camera' }} />
           ),
+        }}
+      />
+      {/*
+        専用翻訳ページ。カメラの右隣に置く（旅行中の使用頻度が高い「値段を読む」と「翻訳」を隣接させる）。
+        `href: null`でiOS以外はタブを表示しない（Apple TranslationはiOS専用で、
+        Android/Webにはnative実体が無いため）。routeは登録されたまま残るのでlinkは壊れない。
+        **iOSでは`href`キー自体を渡さないこと。** 現行のexpo-routerは`href !== undefined`で
+        分岐したうえで`href == null`を判定しており、`href: undefined`を渡すと将来の実装差で
+        iOSのタブまで消えうる。条件付きスプレッドでキーごと落とす。
+      */}
+      <Tabs.Screen
+        name="translation"
+        options={{
+          title: '翻訳',
+          tabBarIcon: ({ color }) => (
+            // `character.bubble`はSF Symbols 2.2 = iOS 14.5+。
+            // deployment targetが16.4（podspecでTranslationをweak link）のため、
+            // iOS 17.4+で追加された`translate`は使わない（16.4〜17.3でアイコンが空になる）。
+            <TabIcon color={color} name={{ ios: 'character.bubble', android: 'translate', web: 'translate' }} />
+          ),
+          ...(Platform.OS !== 'ios' ? { href: null } : {}),
         }}
       />
       <Tabs.Screen

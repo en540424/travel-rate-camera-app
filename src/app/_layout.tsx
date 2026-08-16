@@ -41,6 +41,7 @@ export default function RootLayout() {
           <Stack.Screen name="trip-list" options={{ headerShown: true, title: '旅行' }} />
           <Stack.Screen name="trip-edit" options={{ headerShown: true, title: '旅行を編集' }} />
           <Stack.Screen name="currency-select" options={{ headerShown: true, title: '通貨を選ぶ' }} />
+          <Stack.Screen name="translation-language-select" options={{ headerShown: true, title: '言語を選ぶ' }} />
           <Stack.Screen name="trip-created" options={{ headerShown: false }} />
           <Stack.Screen name="purchase-complete" options={{ headerShown: false }} />
           <Stack.Screen name="purchase-restore" options={{ headerShown: true, title: '購入を復元' }} />
