@@ -68,7 +68,7 @@ function delay(ms: number): Promise<void> {
 export default function TranslationScreen() {
   const insets = useSafeAreaInsets();
   const { activeTrip } = useTrips();
-  const params = useLocalSearchParams<{ picked?: string; field?: string }>();
+  const params = useLocalSearchParams<{ picked?: string; field?: string; other?: string }>();
 
   /**
    * ユーザーが明示的に選んだ言語。nullの間は旅行設定由来の初期値が使われる。
@@ -166,14 +166,6 @@ export default function TranslationScreen() {
   const source = languageOverride?.source ?? initialLanguages?.source ?? null;
   const target = languageOverride?.target ?? initialLanguages?.target ?? null;
 
-  /**
-   * route params消費effectは`params.picked`/`params.field`の変化にのみ反応させたい
-   * （現在のsource/targetが変わるたびに再実行されては困る）ため、依存配列に含めずに
-   * 「触られなかった側」の直近の実効値をrefで参照する。
-   */
-  const latestLanguagesRef = useRef({ source, target });
-  latestLanguagesRef.current = { source, target };
-
   // MARK: - 言語選択画面からの戻り値（route params）を消費する
 
   /*
@@ -181,20 +173,33 @@ export default function TranslationScreen() {
    * effect内でのsetStateが避けられない（レンダー中に消費すると`router.setParams`という
    * 副作用をレンダー中に呼ぶことになる）。同期は選択直後の1回だけで、消費後すぐparamsを
    * クリアするため、このルールが警告する連鎖レンダーは発生しない。
+   *
+   * 「触られなかった側」の値は、この画面のstate/refを一切参照せず、`other`として
+   * paramsで往復させて取得する（`openLanguageSelect`→`translation-language-select.tsx`
+   * →ここ、という一本の経路）。過去にrefで「直近の実効値」を保持する方式にしたところ、
+   * 2回目以降の言語選択（例: sourceをth に変えた後、続けてtargetを選び直す）で、
+   * 戻ってきたタイミングによってはrefが旅行設定由来の初期値を指したままになり、
+   * 触っていないはずのsourceが巻き戻る不具合が実機で再現した。route paramsという
+   * ナビゲーション自体が運ぶデータに乗せることで、どのコンポーネントインスタンスが
+   * 戻り値を受け取っても値が一致するようにし、この経路依存の不具合を構造的になくす。
    */
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const picked = params.picked;
     const field = params.field;
     if (typeof picked !== 'string' || picked === '') return;
     if (field !== 'source' && field !== 'target') return;
+    const other = typeof params.other === 'string' && params.other !== '' ? params.other : null;
 
-    // 触られなかった側も同時に確定させ、initialLanguagesへの暗黙結合を断つ（上のstate宣言のコメント参照）
-    setLanguageOverride(applyLanguagePick(field, picked, latestLanguagesRef.current));
+    setLanguageOverride(
+      applyLanguagePick(field, picked, field === 'source' ? { source: null, target: other } : { source: other, target: null }),
+    );
     // 言語が変わった時点で既存の訳文は古い条件の結果になるため破棄する
     clearResult();
     // 消費済みparamsを消し、再フォーカス時に同じ選択が再適用されるのを防ぐ
-    router.setParams({ picked: undefined, field: undefined });
-  }, [params.picked, params.field]);
+    router.setParams({ picked: undefined, field: undefined, other: undefined });
+  }, [params.picked, params.field, params.other]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // MARK: - 後片付け
 
@@ -244,9 +249,11 @@ export default function TranslationScreen() {
 
   function openLanguageSelect(field: 'source' | 'target') {
     const current = field === 'source' ? source : target;
+    // 触っていない側の現在値をotherとして渡す。戻りのroute paramsでそのまま持ち帰ってもらう
+    const other = field === 'source' ? target : source;
     router.push({
       pathname: '/translation-language-select',
-      params: { field, current: current ?? '' },
+      params: { field, current: current ?? '', other: other ?? '' },
     });
   }
 

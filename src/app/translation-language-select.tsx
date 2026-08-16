@@ -9,6 +9,11 @@
  *
  * 選択結果は**route params**で翻訳画面へ返す（新規storeやmodule-levelの隠れ状態を作らない）。
  * 画面構成・行UI・検索は既存の`currency-select.tsx`のパターンに合わせている。
+ *
+ * `other`（触っていない側の言語）は、入る時に受け取った値をそのまま持ち帰りの
+ * paramsへ載せて返す。翻訳画面側のコンポーネントインスタンスの状態を一切参照せず、
+ * ナビゲーションの往復だけで運ぶことで、戻り先が「本当にユーザーが出発した時と同じ
+ * 実効値」を確実に持てるようにしている（詳細は`translation.tsx`のコメント参照）。
  */
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
@@ -27,9 +32,11 @@ function isLanguageField(value: unknown): value is LanguageField {
 }
 
 export default function TranslationLanguageSelectScreen() {
-  const params = useLocalSearchParams<{ field?: string; current?: string }>();
+  const params = useLocalSearchParams<{ field?: string; current?: string; other?: string }>();
   const field: LanguageField = isLanguageField(params.field) ? params.field : 'source';
   const current = typeof params.current === 'string' ? params.current : null;
+  // 触っていない側の言語。翻訳画面へそのまま持ち帰るだけで、この画面では使わない
+  const other = typeof params.other === 'string' ? params.other : '';
 
   const [languages, setLanguages] = useState<string[] | null>(null);
   const [query, setQuery] = useState('');
@@ -54,8 +61,9 @@ export default function TranslationLanguageSelectScreen() {
   }, [languages, query]);
 
   function pick(code: string) {
-    // 選択値はroute paramsで翻訳画面へ返す。翻訳画面側で消費後にクリアする
-    router.navigate({ pathname: '/translation', params: { picked: code, field } });
+    // 選択値はroute paramsで翻訳画面へ返す。翻訳画面側で消費後にクリアする。
+    // otherは入る時に受け取った値をそのまま持ち帰る（上部コメント参照）
+    router.navigate({ pathname: '/translation', params: { picked: code, field, other } });
   }
 
   return (

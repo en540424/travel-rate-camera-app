@@ -220,3 +220,44 @@ test('applyLanguagePick / swapLanguages: 片方の選択後もswapが旅行設�
     assert.deepEqual(state, { source: 'es', target: 'en' });
   });
 });
+
+test('applyLanguagePick: 実機再現ケース（片側だけの変更を連続で行っても旅行設定へ巻き戻らない）', async (t) => {
+  await t.test('Case 1: KRW初期 ko→ja、source→th、続けてtarget→en で th→en になる', () => {
+    // 呼び出し側（translation.tsx）はroute paramsで運んだ「触られなかった側」だけをcurrentへ渡す。
+    // ここではその契約通り、関係ない側はnullで渡して検証する。
+    const afterSourcePick = applyLanguagePick('source', 'th', { source: null, target: 'ja' });
+    assert.deepEqual(afterSourcePick, { source: 'th', target: 'ja' });
+
+    const afterTargetPick = applyLanguagePick('target', 'en', { source: 'th', target: null });
+    assert.deepEqual(afterTargetPick, { source: 'th', target: 'en' });
+  });
+
+  await t.test('Case 2: KRW初期 ko→ja、target→en、続けてsource→th で th→en になる', () => {
+    const afterTargetPick = applyLanguagePick('target', 'en', { source: 'ko', target: null });
+    assert.deepEqual(afterTargetPick, { source: 'ko', target: 'en' });
+
+    const afterSourcePick = applyLanguagePick('source', 'th', { source: null, target: 'en' });
+    assert.deepEqual(afterSourcePick, { source: 'th', target: 'en' });
+  });
+
+  await t.test('Case 3: th→en からswapでen→th、再swapでth→enへ正しく往復する', () => {
+    const afterSwap1 = swapLanguages({ source: 'th', target: 'en' });
+    assert.deepEqual(afterSwap1, { source: 'en', target: 'th' });
+
+    const afterSwap2 = swapLanguages(afterSwap1);
+    assert.deepEqual(afterSwap2, { source: 'th', target: 'en' });
+  });
+
+  await t.test('Case 4: 一度確定したoverrideは、旅行設定由来のinitialLanguagesを一切引数に取らない', () => {
+    // applyLanguagePick/swapLanguagesはどちらもinitialLanguagesを引数に持たない。
+    // 呼び出し側が「override成立後はinitialLanguagesを一切渡さない」構造を守る限り、
+    // 旅行設定側の値がここへ再介入する経路自体が存在しないことをシグネチャ上で保証する。
+    assert.equal(applyLanguagePick.length, 3);
+    assert.equal(swapLanguages.length, 1);
+
+    // 通貨変更でinitialLanguagesがko/ja以外に再計算されたと仮定しても、
+    // 既に確定済みのoverride（th/en）はこの2関数を経由する限り変化しない。
+    const established = { source: 'th', target: 'en' };
+    assert.deepEqual(swapLanguages(swapLanguages(established)), established);
+  });
+});
