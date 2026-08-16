@@ -62,3 +62,14 @@ UI修正がこれらへ波及しそうな場合は、実装せず変更案の提
 ## Claude Code ⇄ Codex 移管
 
 作業を途中で他方のエージェントへ引き継ぐ場合は、Vault側正本`AI-Workflow-System/01_harness/Claude-Code_Codex_双方向移管_正本`の移管パック形式（対象repo・branch・commit・完了/未完了作業・次の1工程・変更禁止領域・Secret/Human-only項目等）に従う。
+
+## 作業ログ（EN-Knowledge-Vaultへのcross-repo記録）
+
+このrepoでの開発作業の記録先は、このrepo内ではなく**EN-Knowledge-Vaultの`02_Development-Logs/YYYY-MM/`**である。
+`.claude/mvp-tasks.md`・`AI_CONTEXT.md`の更新は現在地docsの更新であり、作業ログを書いたことにはならない。
+
+共通ルールは`.claude/en-devlog-cross-repo.md`（EN-Knowledge-Vaultから配布。このrepo内で編集しない）を参照する。
+判断基準の正本はVault側`AI-Workflow-System/01_harness/作業ログ自動運用_正本.md`。
+
+`git commit`前に`.claude/hooks/guard-devlog-before-commit.js`が機械的にログの有無を確認し、
+コード・設定・Skillの変更に対応するVault側ログが無い場合はcommitを拒否する（Hookの無効化・迂回はHuman-only）。
