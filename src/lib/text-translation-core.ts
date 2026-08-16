@@ -70,6 +70,33 @@ export function resolveInitialLanguages(
   return { source, target };
 }
 
+/** 明示的に選ばれたsource/target言語（片方でも選ばれたら両方nullではなくなる） */
+export type LanguageOverride = { source: string | null; target: string | null };
+
+/**
+ * 言語選択画面でsource/targetの片方だけを選び直した結果を、既存のoverrideへ合成する。
+ *
+ * `current`にはその時点の実効値（override ?? 初期値）を渡す。触られなかった側も
+ * `current`からそのままoverrideへ書き写すことで、「片方だけが明示state、もう片方は
+ * 初期値へ暗黙に結合されたまま」という状態を作らない。これを怠ると、後続の
+ * `swapLanguages`が暗黙結合側の値を巻き込み、意図せず初期値（旅行設定由来）を
+ * re-adoptしてしまう。
+ */
+export function applyLanguagePick(
+  field: 'source' | 'target',
+  picked: string,
+  current: LanguageOverride,
+): LanguageOverride {
+  return field === 'source'
+    ? { source: picked, target: current.target }
+    : { source: current.source, target: picked };
+}
+
+/** source/targetを入れ替える。両方が明示stateとして確定した状態を維持する */
+export function swapLanguages(current: LanguageOverride): LanguageOverride {
+  return { source: current.target, target: current.source };
+}
+
 /** 翻訳元と翻訳先が同じか。エラーではなく「実行できない状態」として扱う */
 export function isSameLanguage(source: string | null, target: string | null): boolean {
   return source != null && target != null && source === target;

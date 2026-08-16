@@ -17,6 +17,7 @@ const {
   DEFAULT_SOURCE_LANGUAGE,
   DEFAULT_TARGET_LANGUAGE,
   MAX_TRANSLATION_INPUT_LENGTH,
+  applyLanguagePick,
   clampInputLength,
   collectTranslatableLines,
   hasTranslatableInput,
@@ -24,6 +25,7 @@ const {
   rejoinTranslatedLines,
   resolveInitialLanguages,
   splitTextForTranslation,
+  swapLanguages,
 } = await import('./text-translation-core.ts');
 
 const { getLanguageDisplayName, matchesLanguageQuery } = await import(
@@ -180,5 +182,41 @@ test('matchesLanguageQuery: 日本語名とBCP-47コードの両方で検索で�
   await t.test('一致しない場合はfalse', () => assert.equal(matchesLanguageQuery('ko', 'タイ'), false));
   await t.test('未知コードでもコード自身では検索できる', () => {
     assert.equal(matchesLanguageQuery('xx-Unknown', 'unknown'), true);
+  });
+});
+
+test('applyLanguagePick / swapLanguages: 片方の選択後もswapが旅行設定へ巻き戻らない', async (t) => {
+  await t.test('KRW旅行の初期値からsourceのみ変更 → 触っていないtargetも同時に確定する', () => {
+    const initial = { source: 'ko', target: 'ja' };
+    const afterPick = applyLanguagePick('source', 'en', initial);
+    assert.deepEqual(afterPick, { source: 'en', target: 'ja' });
+  });
+
+  await t.test('B→C→D: en→ja からswapでja→en、再swapでen→jaへ正しく往復する', () => {
+    const afterPick = applyLanguagePick('source', 'en', { source: 'ko', target: 'ja' });
+    assert.deepEqual(afterPick, { source: 'en', target: 'ja' });
+
+    const afterSwap1 = swapLanguages(afterPick);
+    assert.deepEqual(afterSwap1, { source: 'ja', target: 'en' });
+
+    const afterSwap2 = swapLanguages(afterSwap1);
+    assert.deepEqual(afterSwap2, { source: 'en', target: 'ja' });
+  });
+
+  await t.test('targetのみ変更した後にswapしても、触っていないsourceが巻き戻らない', () => {
+    const afterPick = applyLanguagePick('target', 'fr', { source: 'ko', target: 'ja' });
+    assert.deepEqual(afterPick, { source: 'ko', target: 'fr' });
+
+    const afterSwap = swapLanguages(afterPick);
+    assert.deepEqual(afterSwap, { source: 'fr', target: 'ko' });
+  });
+
+  await t.test('複数回の任意言語変更後もswapは常に現在値だけを入れ替える', () => {
+    let state = applyLanguagePick('source', 'en', { source: 'ko', target: 'ja' });
+    state = applyLanguagePick('target', 'es', state);
+    assert.deepEqual(state, { source: 'en', target: 'es' });
+
+    state = swapLanguages(state);
+    assert.deepEqual(state, { source: 'es', target: 'en' });
   });
 });

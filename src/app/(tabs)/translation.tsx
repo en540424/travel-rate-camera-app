@@ -38,10 +38,12 @@ import { useTrips } from '@/hooks/use-trips';
 import {
   MAX_TRANSLATION_INPUT_LENGTH,
   SLOW_TRANSLATION_HINT_MS,
+  applyLanguagePick,
   clampInputLength,
   hasTranslatableInput,
   isSameLanguage,
   resolveInitialLanguages,
+  swapLanguages,
 } from '@/lib/text-translation-core';
 import { getTranslationEnvironment, translateFreeText } from '@/lib/text-translation-service';
 import type { MemoTranslationErrorCode } from '@/lib/translation-types';
@@ -73,9 +75,18 @@ export default function TranslationScreen() {
    * 「旅行設定は初期値としてのみ使う」を、effectでの後追い上書きではなく
    * 優先順位（override → 初期値）で表現している。
    * 一度overrideが入れば、あとから旅行が読み込まれても上書きされない。
+   *
+   * source/targetを別々のstateにすると、片方だけ選び直した直後は
+   * 「触っていない側」がinitialLanguages側の値へ暗黙に結合されたままになる。
+   * この状態でswapすると、その「暗黙に結合されたまま」の値を巻き込んで
+   * 入れ替えることになり、意図せず旅行設定側の値が re-adopt されうる。
+   * 1つのオブジェクトとして持ち、どちらか一方でも触られた時点で
+   * 両方を現在の実効値として同時に確定させることで、この結合を断つ。
    */
-  const [sourceOverride, setSourceOverride] = useState<string | null>(null);
-  const [targetOverride, setTargetOverride] = useState<string | null>(null);
+  const [languageOverride, setLanguageOverride] = useState<{
+    source: string | null;
+    target: string | null;
+  } | null>(null);
 
   // 入力・結果
   const [inputText, setInputText] = useState('');
@@ -152,8 +163,16 @@ export default function TranslationScreen() {
     return resolveInitialLanguages(hint, supportedLanguages);
   }, [supportedLanguages, activeTrip]);
 
-  const source = sourceOverride ?? initialLanguages?.source ?? null;
-  const target = targetOverride ?? initialLanguages?.target ?? null;
+  const source = languageOverride?.source ?? initialLanguages?.source ?? null;
+  const target = languageOverride?.target ?? initialLanguages?.target ?? null;
+
+  /**
+   * route params消費effectは`params.picked`/`params.field`の変化にのみ反応させたい
+   * （現在のsource/targetが変わるたびに再実行されては困る）ため、依存配列に含めずに
+   * 「触られなかった側」の直近の実効値をrefで参照する。
+   */
+  const latestLanguagesRef = useRef({ source, target });
+  latestLanguagesRef.current = { source, target };
 
   // MARK: - 言語選択画面からの戻り値（route params）を消費する
 
@@ -163,21 +182,19 @@ export default function TranslationScreen() {
    * 副作用をレンダー中に呼ぶことになる）。同期は選択直後の1回だけで、消費後すぐparamsを
    * クリアするため、このルールが警告する連鎖レンダーは発生しない。
    */
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const picked = params.picked;
     const field = params.field;
     if (typeof picked !== 'string' || picked === '') return;
     if (field !== 'source' && field !== 'target') return;
 
-    if (field === 'source') setSourceOverride(picked);
-    else setTargetOverride(picked);
+    // 触られなかった側も同時に確定させ、initialLanguagesへの暗黙結合を断つ（上のstate宣言のコメント参照）
+    setLanguageOverride(applyLanguagePick(field, picked, latestLanguagesRef.current));
     // 言語が変わった時点で既存の訳文は古い条件の結果になるため破棄する
     clearResult();
     // 消費済みparamsを消し、再フォーカス時に同じ選択が再適用されるのを防ぐ
     router.setParams({ picked: undefined, field: undefined });
   }, [params.picked, params.field]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   // MARK: - 後片付け
 
@@ -211,9 +228,8 @@ export default function TranslationScreen() {
 
   function handleSwap() {
     if (source == null || target == null) return;
-    // 明示操作なので、以後は旅行設定由来の初期値へ戻さない
-    setSourceOverride(target);
-    setTargetOverride(source);
+    // 明示操作なので、以後は旅行設定由来の初期値へ戻さない（両方を同時に確定させる）
+    setLanguageOverride(swapLanguages({ source, target }));
     // 入れ替え後の訳文は古い条件の結果なので破棄する
     clearResult();
   }
