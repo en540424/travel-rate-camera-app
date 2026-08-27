@@ -15,12 +15,16 @@ import assert from 'node:assert/strict';
 
 const {
   getLanguageSubtag,
+  getPreviewSampleText,
   getSpeechLocaleCandidate,
   getTtsLanguageCandidate,
+  listVoiceOptionsForLanguage,
   normalizeLocale,
+  resolveManualVoice,
   resolveSpeechLocale,
   resolveTtsRate,
   resolveTtsVoiceLanguage,
+  resolveVoiceSelection,
   selectEnhancedVoiceIdentifier,
 } = await import('./speech-locales.ts');
 
@@ -359,4 +363,125 @@ test('resolveTtsRate: null/undefined/空文字は既定速度(1.0)にfallbackす
   assert.equal(resolveTtsRate(null), 1.0);
   assert.equal(resolveTtsRate(undefined), 1.0);
   assert.equal(resolveTtsRate(''), 1.0);
+});
+
+// MARK: - voice選択UI（listVoiceOptionsForLanguage / resolveManualVoice / resolveVoiceSelection）
+
+/** name付きのvoice一覧。同一言語にDefault/Enhancedが混在し、他言語のvoiceも混じる端末を模す */
+const NAMED_VOICES = [
+  { identifier: 'com.apple.voice.ja-JP.Kyoko', name: 'Kyoko', language: 'ja-JP', quality: 'Default' },
+  { identifier: 'com.apple.voice.ja-JP.Otoya.Enhanced', name: 'Otoya', language: 'ja-JP', quality: 'Enhanced' },
+  { identifier: 'com.apple.voice.en-US.Samantha', name: 'Samantha', language: 'en-US', quality: 'Default' },
+  { identifier: 'com.apple.voice.ko-KR.Yuna', name: 'Yuna', language: 'ko-KR', quality: 'Default' },
+];
+
+test('listVoiceOptionsForLanguage: 完全一致するlocaleのvoiceだけを返す（exact locale）', () => {
+  const options = listVoiceOptionsForLanguage('ja', NAMED_VOICES);
+  assert.equal(options.length, 2);
+  assert.ok(options.every((v) => v.identifier.includes('ja-JP')));
+});
+
+test('listVoiceOptionsForLanguage: 完全一致が無い時は言語subtag一致へフォールバックする', () => {
+  // 表にja→ja-JPの候補はあるが、完全一致するidentifierが無い状況を模すため
+  // en-USしか無い端末で`en`を要求するケースで検証する
+  const voices = [{ identifier: 'x', name: 'Test Voice', language: 'en-US', quality: 'Default' }];
+  const options = listVoiceOptionsForLanguage('en', voices);
+  assert.equal(options.length, 1);
+  assert.equal(options[0].identifier, 'x');
+});
+
+test('listVoiceOptionsForLanguage: wrong-language voiceを候補に混入させない', () => {
+  const options = listVoiceOptionsForLanguage('ko', NAMED_VOICES);
+  assert.equal(options.length, 1);
+  assert.equal(options[0].identifier, 'com.apple.voice.ko-KR.Yuna');
+});
+
+test('listVoiceOptionsForLanguage: 空voice一覧は空配列を返す', () => {
+  assert.deepEqual(listVoiceOptionsForLanguage('ja', []), []);
+});
+
+test('listVoiceOptionsForLanguage: 対応言語が無ければ空配列を返す', () => {
+  assert.deepEqual(listVoiceOptionsForLanguage('th', NAMED_VOICES), []);
+});
+
+test('listVoiceOptionsForLanguage: Enhanced qualityがそのまま表示用に渡る', () => {
+  const options = listVoiceOptionsForLanguage('ja', NAMED_VOICES);
+  const enhanced = options.find((v) => v.identifier.includes('Otoya'));
+  assert.equal(enhanced.quality, 'Enhanced');
+});
+
+test('listVoiceOptionsForLanguage: Default qualityもそのまま表示用に渡る', () => {
+  const options = listVoiceOptionsForLanguage('ja', NAMED_VOICES);
+  const normal = options.find((v) => v.identifier.includes('Kyoko'));
+  assert.equal(normal.quality, 'Default');
+});
+
+test('resolveManualVoice: 保存identifierが現在のvoices一覧に存在すれば採用する', () => {
+  const result = resolveManualVoice('ja', 'com.apple.voice.ja-JP.Kyoko', NAMED_VOICES);
+  assert.ok(result !== null);
+  assert.equal(result.identifier, 'com.apple.voice.ja-JP.Kyoko');
+});
+
+test('resolveManualVoice: 保存identifierが消失していればnull（呼び出し側はautoへfallback）', () => {
+  const result = resolveManualVoice('ja', 'com.apple.voice.ja-JP.NoLongerInstalled', NAMED_VOICES);
+  assert.equal(result, null);
+});
+
+test('resolveManualVoice: 別言語向けのidentifierが紛れ込んでも採用しない（wrong-language除外）', () => {
+  // 'com.apple.voice.en-US.Samantha'は実在するidentifierだが、要求言語は'ja'
+  const result = resolveManualVoice('ja', 'com.apple.voice.en-US.Samantha', NAMED_VOICES);
+  assert.equal(result, null);
+});
+
+test('resolveManualVoice: identifier未指定（auto）はnull', () => {
+  assert.equal(resolveManualVoice('ja', null, NAMED_VOICES), null);
+  assert.equal(resolveManualVoice('ja', undefined, NAMED_VOICES), null);
+});
+
+test('resolveVoiceSelection: manual identifierが存在すればそれを使う', () => {
+  const result = resolveVoiceSelection('ja', 'com.apple.voice.ja-JP.Kyoko', NAMED_VOICES);
+  assert.equal(result.voiceIdentifier, 'com.apple.voice.ja-JP.Kyoko');
+  assert.equal(result.language, 'ja-JP');
+});
+
+test('resolveVoiceSelection: manual identifierが消失していればEnhanced優先の自動選択へfallbackする', () => {
+  const result = resolveVoiceSelection('ja', 'com.apple.voice.ja-JP.NoLongerInstalled', NAMED_VOICES);
+  // 自動選択は既存のselectEnhancedVoiceIdentifierと同じ結果になるはず
+  assert.equal(result.voiceIdentifier, selectEnhancedVoiceIdentifier('ja-JP', NAMED_VOICES));
+  assert.equal(result.voiceIdentifier, 'com.apple.voice.ja-JP.Otoya.Enhanced');
+});
+
+test('resolveVoiceSelection: manual未設定（auto）は既存のEnhanced優先選択と一致する', () => {
+  const result = resolveVoiceSelection('ja', null, NAMED_VOICES);
+  assert.equal(result.voiceIdentifier, selectEnhancedVoiceIdentifier('ja-JP', NAMED_VOICES));
+});
+
+test('resolveVoiceSelection: 言語が変わればmanual設定も別々に解決される', () => {
+  // 'ja'用のmanual identifierを'en'の解決に渡しても採用されない（wrong-language除外を経由）
+  const forJa = resolveVoiceSelection('ja', 'com.apple.voice.ja-JP.Kyoko', NAMED_VOICES);
+  const forEn = resolveVoiceSelection('en', 'com.apple.voice.ja-JP.Kyoko', NAMED_VOICES);
+  assert.equal(forJa.voiceIdentifier, 'com.apple.voice.ja-JP.Kyoko');
+  assert.notEqual(forEn.voiceIdentifier, 'com.apple.voice.ja-JP.Kyoko');
+});
+
+test('resolveVoiceSelection: 対応言語が無ければnull', () => {
+  assert.equal(resolveVoiceSelection('th', null, NAMED_VOICES), null);
+});
+
+// MARK: - 試聴サンプル文
+
+test('getPreviewSampleText: 対応言語コードごとに固定サンプル文を返す', () => {
+  assert.equal(typeof getPreviewSampleText('ja'), 'string');
+  assert.ok(getPreviewSampleText('ja').length > 0);
+  assert.ok(getPreviewSampleText('en').length > 0);
+});
+
+test('getPreviewSampleText: 表に無い言語コードは英語文にfallbackする', () => {
+  assert.equal(getPreviewSampleText('fr'), getPreviewSampleText('en'));
+});
+
+test('getPreviewSampleText: null/undefined/空文字は英語文にfallbackする', () => {
+  assert.equal(getPreviewSampleText(null), getPreviewSampleText('en'));
+  assert.equal(getPreviewSampleText(undefined), getPreviewSampleText('en'));
+  assert.equal(getPreviewSampleText(''), getPreviewSampleText('en'));
 });

@@ -32,7 +32,14 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ThemedText } from '@/components/themed-text';
 import { TranslationHost, isTranslationPlatformSupported } from '@/components/translation-host';
 import { EmptyState, ErrorMessage, GhostButton, PrimaryButton, SectionCard, Toast } from '@/components/ui';
-import { resolveSpeechLocale, resolveTtsRate, resolveTtsVoiceLanguage, selectEnhancedVoiceIdentifier } from '@/config/speech-locales';
+import { VoiceSelectSheet } from '@/components/domain/VoiceSelectSheet';
+import {
+  resolveSpeechLocale,
+  resolveTtsRate,
+  resolveTtsVoiceLanguage,
+  resolveVoiceSelection,
+  type VoiceLike,
+} from '@/config/speech-locales';
 import { getLanguageDisplayName } from '@/config/translation-language-names';
 import { getTranslationSourceLanguage } from '@/config/translation-languages';
 import { useTrips } from '@/hooks/use-trips';
@@ -61,6 +68,7 @@ import {
 } from '@/lib/text-translation-core';
 import { getTranslationEnvironment, translateFreeText } from '@/lib/text-translation-service';
 import type { MemoTranslationErrorCode } from '@/lib/translation-types';
+import { getVoicePreferences, setVoicePreference, type VoicePreferences } from '@/lib/tts-voice-preferences';
 import { color, radius, shadow, spacing } from '@/theme/tokens';
 
 /** `host_unavailable`の自動リトライまでの待ち時間(ms)。ホストViewの登録が間に合わない一瞬の窓を吸収する */
@@ -151,9 +159,12 @@ export default function TranslationScreen() {
   const [speechError, setSpeechError] = useState<SpeechScreenError | null>(null);
 
   // 読み上げ（TTS）
-  const [voices, setVoices] = useState<{ identifier: string; language: string }[]>([]);
+  const [voices, setVoices] = useState<VoiceLike[]>([]);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [speakFailed, setSpeakFailed] = useState(false);
+  /** 言語別のmanual voice設定（`tts-voice-preferences.ts`で永続化）。キーが無い言語は自動 */
+  const [voicePrefs, setVoicePrefs] = useState<VoicePreferences>({});
+  const [voiceSheetVisible, setVoiceSheetVisible] = useState(false);
 
   /**
    * 非同期翻訳の世代。`index.tsx`の`translationGenerationRef`とは別物（画面ごとに独立）。
@@ -222,15 +233,17 @@ export default function TranslationScreen() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [speech, synthesis] = await Promise.all([
+      const [speech, synthesis, savedVoicePrefs] = await Promise.all([
         getSpeechRecognitionEnvironment(),
         getSpeechSynthesisEnvironment(),
+        getVoicePreferences(),
       ]);
       if (cancelled) return;
       setSpeechAvailable(speech.available);
       setSupportedSpeechLocales(speech.supportedLocales);
       setSupportsOnDevice(speech.supportsOnDevice);
       setVoices(synthesis.voices);
+      setVoicePrefs(savedVoicePrefs);
     })();
     return () => {
       cancelled = true;
@@ -490,16 +503,18 @@ export default function TranslationScreen() {
       return;
     }
     if (resultText == null || resultText === '') return;
-    if (ttsVoice.status === 'unsupported') return;
+
+    // manual設定（保存identifier）を優先し、現在のvoices一覧に無ければ自動選択（Enhanced優先）へ
+    // fallbackする。試聴（VoiceSelectSheet）と同じ関数を経由し、解決結果を一致させる。
+    const manualIdentifier = target != null ? voicePrefs[target] ?? null : null;
+    const selection = resolveVoiceSelection(target, manualIdentifier, voices);
+    if (selection == null) return;
 
     setSpeakFailed(false);
-    // Enhanced品質のvoiceがあれば優先する。無ければundefinedのまま渡し、
-    // speakText側がlanguageのみでOS既定voiceに任せる（pitchは今回変更しない）
-    const voiceIdentifier = selectEnhancedVoiceIdentifier(ttsVoice.language, voices);
     // 言語別の体感速度差をrateで補正する（Human実機確認ベース。voice選択とは独立）
     const rate = resolveTtsRate(target);
     const started = await speakText(
-      { text: resultText, language: ttsVoice.language, voiceIdentifier, rate },
+      { text: resultText, language: selection.language, voiceIdentifier: selection.voiceIdentifier, rate },
       {
         onStart: () => setIsSpeaking(true),
         onFinish: () => setIsSpeaking(false),
@@ -513,6 +528,31 @@ export default function TranslationScreen() {
       setIsSpeaking(false);
       setSpeakFailed(true);
     }
+  }
+
+  /**
+   * 「読み上げ設定」button押下。シートを開く前にvoices一覧を再取得する。
+   * mount時の1回きりの取得のままだと、iOS設定でユーザーがvoiceを追加/削除しても
+   * アプリ再起動までピッカーへ反映されないため（シートを開くたびの再取得に留め、
+   * 継続的なポーリングは行わない）。
+   */
+  async function handleOpenVoiceSettings() {
+    const synthesis = await getSpeechSynthesisEnvironment();
+    setVoices(synthesis.voices);
+    setVoiceSheetVisible(true);
+  }
+
+  /** VoiceSelectSheetでの選択（`null`＝自動）。画面stateを即時更新し、永続化は非同期で行う */
+  function handleSelectVoice(identifier: string | null) {
+    if (target == null) return;
+    const lang = target;
+    setVoicePrefs((prev) => {
+      if (identifier == null) {
+        return Object.fromEntries(Object.entries(prev).filter(([key]) => key !== lang));
+      }
+      return { ...prev, [lang]: identifier };
+    });
+    void setVoicePreference(lang, identifier);
   }
 
   const handleToastHide = useCallback(() => setToast(null), []);
@@ -826,6 +866,21 @@ export default function TranslationScreen() {
                   </Pressable>
                 )}
 
+                {/* 言語別voice選択（自動/manual）。voicesが取得できる端末でのみ表示する */}
+                {voices.length > 0 && (
+                  <Pressable
+                    style={({ pressed }) => [styles.voiceSettingsBtn, pressed && styles.pressed]}
+                    onPress={() => void handleOpenVoiceSettings()}
+                    accessibilityRole="button"
+                    accessibilityLabel="読み上げ設定">
+                    <SymbolView
+                      name={{ ios: 'gearshape', android: 'settings', web: 'settings' }}
+                      tintColor={color.primaryDark}
+                      size={16}
+                    />
+                  </Pressable>
+                )}
+
                 <Pressable
                   style={({ pressed }) => [styles.copyBtn, pressed && styles.pressed]}
                   onPress={handleCopy}>
@@ -850,6 +905,16 @@ export default function TranslationScreen() {
       </SafeAreaView>
 
       <Toast message={toast} onHide={handleToastHide} style={{ top: insets.top + 8 }} />
+
+      <VoiceSelectSheet
+        visible={voiceSheetVisible}
+        onClose={() => setVoiceSheetVisible(false)}
+        languageCode={target}
+        languageDisplayName={target ? getLanguageDisplayName(target) : ''}
+        voices={voices}
+        selectedIdentifier={target != null ? voicePrefs[target] ?? null : null}
+        onSelect={handleSelectVoice}
+      />
     </View>
   );
 }
@@ -996,6 +1061,17 @@ const styles = StyleSheet.create({
   copyBtnText: { fontSize: 14, fontWeight: '700', color: color.primaryDark },
   copyBtnDisabled: { borderColor: color.line, backgroundColor: color.card },
   copyBtnTextDisabled: { color: color.faint2 },
+  // 「読み上げ設定」button。アイコンのみ・正方形（読み上げ/コピーと同じ高さ感）
+  voiceSettingsBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.button,
+    backgroundColor: color.card,
+    borderWidth: 1,
+    borderColor: color.primaryBorder,
+  },
 
   // 読み上げ・コピーを横並びにする（専用stopボタンは増やさずアイコンをtoggleする）
   resultActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },

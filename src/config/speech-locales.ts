@@ -127,7 +127,7 @@ export function resolveSpeechLocale(
  * optionalにしているのは、呼び出し元が古い形（quality無し）を渡しても既存の言語解決
  * （`resolveTtsVoiceLanguage`）が壊れないようにするため。
  */
-export type VoiceLike = { identifier: string; language: string; quality?: string };
+export type VoiceLike = { identifier: string; name?: string; language: string; quality?: string };
 
 /**
  * 読み上げvoiceの解決結果。
@@ -245,4 +245,110 @@ export function selectEnhancedVoiceIdentifier(
   }
 
   return undefined;
+}
+
+/** voice選択UIの1行分。identifierは表示せず、`name`＋`quality`だけをUIへ渡す */
+export type VoiceOption = { identifier: string; name: string; quality?: string };
+
+/**
+ * 現在のtarget言語コードに対応するvoice候補一覧を返す（voice選択UI用）。
+ *
+ * `resolveTtsVoiceLanguage`と同じ判定順序（完全一致→言語subtag一致）で対象言語を絞り込み、
+ * その言語に属するvoiceだけを返す。**wrong-language voiceを候補に混入させない**
+ * （完全一致が1件でもあればsubtag一致は見ない。既存の`resolveTtsVoiceLanguage`と同じ規律）。
+ */
+export function listVoiceOptionsForLanguage(
+  languageCode: string | null | undefined,
+  voices: readonly VoiceLike[],
+): VoiceOption[] {
+  if (languageCode == null || languageCode === '') return [];
+  const list = voices ?? [];
+  if (list.length === 0) return [];
+
+  const candidate = normalizeLocale(getTtsLanguageCandidate(languageCode));
+  const exactMatches = list.filter((voice) => normalizeLocale(voice.language) === candidate);
+  if (exactMatches.length > 0) return exactMatches.map(toVoiceOption);
+
+  const subtag = getLanguageSubtag(getTtsLanguageCandidate(languageCode));
+  if (subtag === '') return [];
+  return list.filter((voice) => getLanguageSubtag(voice.language) === subtag).map(toVoiceOption);
+}
+
+function toVoiceOption(voice: VoiceLike): VoiceOption {
+  return { identifier: voice.identifier, name: voice.name ?? voice.identifier, quality: voice.quality };
+}
+
+/**
+ * 保存済みmanual voice identifierを、現在のvoices一覧に対して検証する。
+ *
+ * **読み上げ前に必ずこの関数を経由すること。** installed `expo-speech`の`speak()`は
+ * 無効なidentifierを渡しても例外をJS側へ返さない（native実装は`AsyncFunction`で
+ * `InvalidVoiceException`を投げうるが、JS側の`speak()`はその戻り値のPromiseを
+ * `await`も`.catch`もしていないため、呼び出し元へは何も届かず無音・無反応のまま終わる。
+ * `node_modules/expo-speech/build/Speech.js`の`speak()`実装と
+ * `node_modules/expo-speech/ios/SpeechModule.swift`の`AsyncFunction("speak")`を実ソースで確認済み）。
+ * そのため既存の`try/catch`は安全網にならず、**使用前の実在確認が唯一の防御**になる。
+ *
+ * wrong-language除外: `languageCode`に対応するvoice候補（`listVoiceOptionsForLanguage`）の中に
+ * `identifier`が実在する場合だけ採用する。たとえidentifier自体が端末に存在しても、
+ * 別言語向けに保存された値が紛れ込んだ場合はここで弾かれる。
+ */
+export function resolveManualVoice(
+  languageCode: string | null | undefined,
+  identifier: string | null | undefined,
+  voices: readonly VoiceLike[],
+): VoiceOption | null {
+  if (languageCode == null || languageCode === '' || identifier == null || identifier === '') return null;
+  const options = listVoiceOptionsForLanguage(languageCode, voices);
+  return options.find((voice) => voice.identifier === identifier) ?? null;
+}
+
+/** `resolveVoiceSelection`の結果。`speakText`へそのまま渡せる形にしている */
+export type VoiceSelectionResult = { language: string; voiceIdentifier: string | undefined };
+
+/**
+ * 実際に読み上げへ渡すvoiceを決める単一の入口。
+ *
+ * manual設定（保存identifier）を優先し、現在のvoices一覧に実在する場合だけ採用する。
+ * 未設定、または保存済みidentifierが消失していた場合は、既存の自動選択
+ * （`selectEnhancedVoiceIdentifier`によるEnhanced優先。Human実機確認済みの挙動を変更しない）へ
+ * fallbackする。
+ *
+ * **本読み上げ・試聴のどちらもこの関数を経由すること。** 別々に解決ロジックを持つと、
+ * 「試聴で聞いた声と実際に読み上げられる声が違う」事故につながる。
+ */
+export function resolveVoiceSelection(
+  languageCode: string | null | undefined,
+  manualIdentifier: string | null | undefined,
+  voices: readonly VoiceLike[],
+): VoiceSelectionResult | null {
+  const ttsVoice = resolveTtsVoiceLanguage(languageCode, voices);
+  if (ttsVoice.status === 'unsupported') return null;
+
+  const manual = resolveManualVoice(languageCode, manualIdentifier, voices);
+  if (manual !== null) return { language: ttsVoice.language, voiceIdentifier: manual.identifier };
+
+  return { language: ttsVoice.language, voiceIdentifier: selectEnhancedVoiceIdentifier(ttsVoice.language, voices) };
+}
+
+/**
+ * 試聴用の固定サンプル文。翻訳品質の検証ではないため、短く自然な定型文でよい
+ * （Human実機確認の対象は「声の質・話速の体感」であり、文面の翻訳精度ではない）。
+ * 表に無い言語コードは`en`の文を使う（`resolveTtsRate`の「その他=既定」と同じ考え方）。
+ */
+const TTS_PREVIEW_SAMPLE_BY_LANGUAGE: Readonly<Record<string, string>> = {
+  ja: 'こんにちは。旅を楽しんでください。',
+  en: 'Hello. I hope you enjoy your trip.',
+  ko: '안녕하세요. 즐거운 여행 되세요.',
+  it: 'Ciao. Buon viaggio.',
+  th: 'สวัสดี ขอให้เดินทางปลอดภัย',
+  vi: 'Xin chào. Chúc bạn có một chuyến đi vui vẻ.',
+  'zh-Hans': '你好，祝你旅途愉快。',
+  'zh-Hant': '你好，祝你旅途愉快。',
+};
+
+/** 翻訳言語コードから試聴サンプル文を得る。表に無ければ英語文にfallbackする */
+export function getPreviewSampleText(languageCode: string | null | undefined): string {
+  if (languageCode == null || languageCode === '') return TTS_PREVIEW_SAMPLE_BY_LANGUAGE.en;
+  return TTS_PREVIEW_SAMPLE_BY_LANGUAGE[languageCode] ?? TTS_PREVIEW_SAMPLE_BY_LANGUAGE.en;
 }

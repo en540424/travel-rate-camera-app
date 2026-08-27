@@ -63,10 +63,12 @@ export async function getSpeechSynthesisEnvironment(): Promise<SpeechSynthesisEn
     const voices = await native.getAvailableVoicesAsync();
     return {
       available: true,
-      // identifier / language / quality を取り出す（純粋resolverが必要とする最小形）。
+      // identifier / name / language / quality を取り出す（純粋resolverが必要とする最小形）。
       // qualityはEnhanced voice優先選択（selectEnhancedVoiceIdentifier）に使う。
+      // nameはvoice選択UIの表示ラベル用（identifierはユーザーへ見せない）。
       voices: voices.map((voice) => ({
         identifier: voice.identifier,
+        name: voice.name,
         language: voice.language,
         quality: voice.quality,
       })),
