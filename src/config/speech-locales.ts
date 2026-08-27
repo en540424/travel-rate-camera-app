@@ -1,0 +1,165 @@
+/**
+ * 翻訳言語コード → 音声認識(STT) locale / 読み上げ(TTS) 言語 の解決。
+ *
+ * **react-native・nativeモジュール・`@/`エイリアスを一切importしない。**
+ * `node --test`から直接importして検証できる状態を保つため（`text-translation-core.ts`と同じ規律）。
+ *
+ * ■ 最重要の原則: 静的表は「候補」であって対応言語の正本ではない
+ *   - 翻訳の対応言語の正本 … 実機の`getSupportedLanguages()`（`modules/translation`）
+ *   - 音声認識の対応言語の正本 … 実機の`getSupportedLocales()`（`expo-speech-recognition`）
+ *   - 読み上げの対応voiceの正本 … 実機の`getAvailableVoicesAsync()`（`expo-speech`）
+ *
+ *   **この3つは別々の集合**であり、「翻訳はできるが音声認識はできない言語」が存在しうる。
+ *   そのため本ファイルの表は候補を作るだけで、採否は必ず実機の一覧との突き合わせで決める。
+ *   ここに無いコードが来ても壊れず、言語subtag一致のフォールバックで拾う
+ *   （`translation-language-names.ts`が「一覧を持たない」のと同じ考え方）。
+ *
+ * ■ 翻訳stateへは一切書き戻さない
+ *   解決は「現在選択されているsource/targetを読む → localeを派生する」の一方向のみ。
+ *   解決結果でsource/target言語stateを書き換えてはならない（既存の実機合格仕様）。
+ */
+
+/**
+ * 翻訳言語コード → 音声認識locale候補。
+ *
+ * `SFSpeechRecognizer`の対応localeは地域付き（`en-US`等）であるため、
+ * 翻訳側の言語コード（`en`等）をそのまま使わず地域付き候補へ広げる。
+ * ここに無いコードは`resolveSpeechLocale`が言語subtag一致で拾う。
+ */
+const SPEECH_LOCALE_CANDIDATES: Readonly<Record<string, string>> = {
+  en: 'en-US',
+  ja: 'ja-JP',
+  ko: 'ko-KR',
+  th: 'th-TH',
+  // Apple Translation側も`zh-Hant`→`zh-TW`へ正規化する（実機確認済み。translation-language-names.ts参照）
+  'zh-Hant': 'zh-TW',
+  'zh-Hans': 'zh-CN',
+};
+
+/**
+ * 翻訳言語コード → 読み上げ言語候補。
+ *
+ * `expo-speech`の`language`はBCP-47をそのまま受け付けるため、STTと違い地域付きへ広げる必要がない。
+ * script subtag形式（`zh-Hant`/`zh-Hans`）だけはvoice解決に失敗しうるので地域付きへ寄せる。
+ */
+const TTS_LANGUAGE_CANDIDATES: Readonly<Record<string, string>> = {
+  'zh-Hant': 'zh-TW',
+  'zh-Hans': 'zh-CN',
+};
+
+/**
+ * locale識別子を比較用に正規化する。
+ *
+ * Foundationの`Locale.identifier`はICU正準形のため`en_US`のようにアンダースコアで
+ * 返ることがある一方、BCP-47表記は`en-US`である。**どちらで来ても取りこぼさない**ように
+ * 区切りを`-`へ揃え、大文字小文字も無視する。
+ * （ここを厳密一致にすると、対応しているのにマイクが無言で無効化される事故になる）
+ */
+export function normalizeLocale(locale: string): string {
+  return locale.replace(/_/g, '-').toLowerCase();
+}
+
+/** 言語subtag（最初の区切りまで）を取り出す。`zh-Hant`→`zh`、`en-US`→`en` */
+export function getLanguageSubtag(code: string): string {
+  return normalizeLocale(code).split('-')[0] ?? '';
+}
+
+/** 翻訳言語コードに対する音声認識locale候補。表に無ければコード自身を候補とする */
+export function getSpeechLocaleCandidate(languageCode: string): string {
+  return SPEECH_LOCALE_CANDIDATES[languageCode] ?? languageCode;
+}
+
+/** 翻訳言語コードに対する読み上げ言語候補。表に無ければコード自身を候補とする */
+export function getTtsLanguageCandidate(languageCode: string): string {
+  return TTS_LANGUAGE_CANDIDATES[languageCode] ?? languageCode;
+}
+
+/**
+ * 音声認識localeの解決結果。
+ * `unsupported`のときはマイクを無効化する（言語選択自体は変更しない）。
+ */
+export type SpeechLocaleResolution =
+  | { status: 'exact'; locale: string }
+  | { status: 'fallback'; locale: string }
+  | { status: 'unsupported' };
+
+/**
+ * 現在のsource言語から音声認識localeを決める。
+ *
+ * 1. 候補localeを得る（静的表 → 無ければコード自身）
+ * 2. 実機の`supportedLocales`と完全一致すれば採用（`exact`）
+ * 3. 無ければ言語subtagが一致する最初のlocaleへフォールバック（`fallback`）
+ * 4. それも無ければ`unsupported`（この言語ではSTTを提供しない）
+ *
+ * **返す`locale`は必ず実機一覧に入っていた文字列そのもの**（正規化前の原文字列）。
+ * 正規化した文字列を渡すと、端末が`en_US`形式で持っている場合に一致しなくなるため。
+ *
+ * `supportedLocales`が空（取得失敗・非対応環境）のときは常に`unsupported`。
+ * 推測で候補localeを渡して実行時に失敗させない。
+ */
+export function resolveSpeechLocale(
+  languageCode: string | null | undefined,
+  supportedLocales: readonly string[],
+): SpeechLocaleResolution {
+  if (languageCode == null || languageCode === '') return { status: 'unsupported' };
+  const list = supportedLocales ?? [];
+  if (list.length === 0) return { status: 'unsupported' };
+
+  const candidate = normalizeLocale(getSpeechLocaleCandidate(languageCode));
+
+  const exact = list.find((locale) => normalizeLocale(locale) === candidate);
+  if (exact !== undefined) return { status: 'exact', locale: exact };
+
+  const subtag = getLanguageSubtag(languageCode);
+  if (subtag !== '') {
+    const sameLanguage = list.find((locale) => getLanguageSubtag(locale) === subtag);
+    if (sameLanguage !== undefined) return { status: 'fallback', locale: sameLanguage };
+  }
+
+  return { status: 'unsupported' };
+}
+
+/** 読み上げvoiceの解決に使う最小形。`expo-speech`の`Voice`から必要な2つだけを受け取る */
+export type VoiceLike = { identifier: string; language: string };
+
+/**
+ * 読み上げvoiceの解決結果。
+ * `unsupported`のときはスピーカーを無効化し、Humanへ明示エラーを出す
+ * （**別言語のvoiceで代読しない**。無音で失敗させるのも不可）。
+ */
+export type TtsVoiceResolution =
+  | { status: 'exact'; language: string }
+  | { status: 'subtag'; language: string }
+  | { status: 'unsupported' };
+
+/**
+ * 現在のtarget言語から読み上げ言語を決める。
+ *
+ * 1. 候補言語と完全一致するvoiceがあれば採用（`exact`）
+ * 2. 無ければ言語subtagが一致するvoiceへフォールバック（`subtag`。`ja`→`ja-JP`等はここで解決される）
+ * 3. それも無ければ`unsupported`
+ *
+ * 返す`language`は**実機のvoiceが持つ言語文字列**。`Speech.speak`の`language`へそのまま渡す
+ * （voice identifierを固定せず言語で指定することで、OSが既定の最良voiceを選ぶ）。
+ */
+export function resolveTtsVoiceLanguage(
+  languageCode: string | null | undefined,
+  voices: readonly VoiceLike[],
+): TtsVoiceResolution {
+  if (languageCode == null || languageCode === '') return { status: 'unsupported' };
+  const list = voices ?? [];
+  if (list.length === 0) return { status: 'unsupported' };
+
+  const candidate = normalizeLocale(getTtsLanguageCandidate(languageCode));
+
+  const exact = list.find((voice) => normalizeLocale(voice.language) === candidate);
+  if (exact !== undefined) return { status: 'exact', language: exact.language };
+
+  const subtag = getLanguageSubtag(getTtsLanguageCandidate(languageCode));
+  if (subtag !== '') {
+    const sameLanguage = list.find((voice) => getLanguageSubtag(voice.language) === subtag);
+    if (sameLanguage !== undefined) return { status: 'subtag', language: sameLanguage.language };
+  }
+
+  return { status: 'unsupported' };
+}

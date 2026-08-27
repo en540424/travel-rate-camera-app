@@ -26,15 +26,29 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { TranslationHost, isTranslationPlatformSupported } from '@/components/translation-host';
 import { EmptyState, ErrorMessage, GhostButton, PrimaryButton, SectionCard, Toast } from '@/components/ui';
+import { resolveSpeechLocale, resolveTtsVoiceLanguage } from '@/config/speech-locales';
 import { getLanguageDisplayName } from '@/config/translation-language-names';
 import { getTranslationSourceLanguage } from '@/config/translation-languages';
 import { useTrips } from '@/hooks/use-trips';
+import type { SpeechRecognitionErrorCode } from '@/lib/speech-recognition-service';
+import {
+  abortRecognition,
+  getSpeechRecognitionEnvironment,
+  requestSpeechPermissions,
+  startRecognition,
+  stopRecognition,
+} from '@/lib/speech-recognition-service';
+import {
+  getSpeechSynthesisEnvironment,
+  speakText,
+  stopSpeaking,
+} from '@/lib/speech-synthesis-service';
 import {
   MAX_TRANSLATION_INPUT_LENGTH,
   SLOW_TRANSLATION_HINT_MS,
@@ -60,6 +74,27 @@ const ERROR_MESSAGES: Record<MemoTranslationErrorCode, string> = {
   cancelled: '',
   translation_failed: '翻訳できませんでした。通信状況を確認してもう一度お試しください。',
 };
+
+/** 音声入力の失敗をユーザー向け文言へ。`aborted`（利用者の停止操作）はここへ来ない */
+const SPEECH_ERROR_MESSAGES: Record<SpeechRecognitionErrorCode, string> = {
+  permission_denied: 'マイクと音声認識の使用が許可されていません。設定から許可してください。',
+  network: '通信できないため音声を認識できませんでした。電波の良い場所でお試しください。',
+  no_speech: '音声を認識できませんでした。もう一度お試しください。',
+  audio_capture: 'マイクを利用できませんでした。ほかのアプリが使用していないかご確認ください。',
+  language_not_supported: 'この言語の音声入力には対応していません。',
+  interrupted: '音声入力が中断されました。もう一度お試しください。',
+  failed: '音声入力に失敗しました。もう一度お試しください。',
+};
+
+/**
+ * 画面が扱う音声入力エラー。
+ * `permission_blocked`だけは設定アプリへの導線を出す（iOSは一度拒否すると
+ * アプリ内から再度ダイアログを出せないため、再試行ボタンを置いても必ず失敗する）。
+ */
+type SpeechScreenError =
+  | { kind: 'permission_blocked' }
+  | { kind: 'permission_prompt_denied' }
+  | { kind: 'recognition'; code: SpeechRecognitionErrorCode };
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -106,9 +141,26 @@ export default function TranslationScreen() {
   // UI
   const [toast, setToast] = useState<string | null>(null);
 
+  // 音声入力（STT）。翻訳のstate群とは独立して持ち、既存の翻訳フローへ影響させない
+  const [speechAvailable, setSpeechAvailable] = useState(false);
+  const [supportedSpeechLocales, setSupportedSpeechLocales] = useState<string[]>([]);
+  const [supportsOnDevice, setSupportsOnDevice] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  /** 認識途中の文字列。**inputTextへは書かない**（確定時のみ反映する） */
+  const [interimText, setInterimText] = useState('');
+  const [speechError, setSpeechError] = useState<SpeechScreenError | null>(null);
+
+  // 読み上げ（TTS）
+  const [voices, setVoices] = useState<{ identifier: string; language: string }[]>([]);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [speakFailed, setSpeakFailed] = useState(false);
+
   /**
    * 非同期翻訳の世代。`index.tsx`の`translationGenerationRef`とは別物（画面ごとに独立）。
    * 遅れて届いた結果を捨てる唯一の手段であり、nativeのcancelには依存しない。
+   *
+   * **音声機能はこの世代値を使わない・意味を変えない。** STTの stale 遮断は
+   * service層のセッションID（`speech-recognition-service.ts`）が担当する。
    */
   const generationRef = useRef(0);
   const slowHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -132,6 +184,15 @@ export default function TranslationScreen() {
           slowHintTimerRef.current = null;
         }
         setShowSlowHint(false);
+
+        // 音声入力・読み上げを確実に畳む。`abortRecognition()`はAVAudioSessionの非活性化まで行う
+        // （翻訳→カメラ遷移でマイクindicatorやaudio sessionを残さないための要）。
+        // どちらも冪等なので、`end`イベント側の後片付けと二重に走っても問題ない。
+        setIsListening(false);
+        setInterimText('');
+        setIsSpeaking(false);
+        void abortRecognition();
+        void stopSpeaking();
       };
     }, []),
   );
@@ -145,6 +206,31 @@ export default function TranslationScreen() {
       if (cancelled) return;
       setOsSupported(env.osSupported);
       setSupportedLanguages(env.supportedLanguages);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // MARK: - 音声環境の取得（STT可否・認識locale一覧 / TTS voice一覧）
+
+  /*
+   * 翻訳の対応言語とは**別の集合**なので、別々に取得して別々に判定する。
+   * 「翻訳はできるが音声認識できない言語」が存在するため、翻訳側のsupportedを流用しない。
+   * 取得に失敗しても翻訳機能そのものは成立するので、画面は止めずマイク/スピーカーだけ出さない。
+   */
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const [speech, synthesis] = await Promise.all([
+        getSpeechRecognitionEnvironment(),
+        getSpeechSynthesisEnvironment(),
+      ]);
+      if (cancelled) return;
+      setSpeechAvailable(speech.available);
+      setSupportedSpeechLocales(speech.supportedLocales);
+      setSupportsOnDevice(speech.supportsOnDevice);
+      setVoices(synthesis.voices);
     })();
     return () => {
       cancelled = true;
@@ -206,6 +292,9 @@ export default function TranslationScreen() {
   useEffect(() => {
     return () => {
       if (slowHintTimerRef.current) clearTimeout(slowHintTimerRef.current);
+      // アンマウント経路でも音声とaudio sessionを残さない（focus cleanupと二重でも冪等）
+      void abortRecognition();
+      void stopSpeaking();
     };
   }, []);
 
@@ -214,6 +303,10 @@ export default function TranslationScreen() {
     setResolvedSourceLanguage(null);
     setErrorCode(null);
     setShowSlowHint(false);
+    // 読み上げ対象の訳文が消えるので、鳴っていれば止める（冪等）
+    setIsSpeaking(false);
+    setSpeakFailed(false);
+    void stopSpeaking();
   }
 
   function stopSlowHintTimer() {
@@ -245,6 +338,11 @@ export default function TranslationScreen() {
     setIsTranslating(false);
     setInputText('');
     clearResult();
+    // 認識中なら破棄する（入力を消すのに認識だけ走り続けるのを防ぐ）
+    setIsListening(false);
+    setInterimText('');
+    setSpeechError(null);
+    void abortRecognition();
   }
 
   function openLanguageSelect(field: 'source' | 'target') {
@@ -314,6 +412,104 @@ export default function TranslationScreen() {
     }
   }
 
+  // MARK: - 音声入力（STT）
+
+  /**
+   * マイクtap。録音中なら停止、そうでなければ権限確認のうえ開始する（toggle）。
+   * push-to-talkは採用しない（値札を見ながら話す場面で誤リリースしやすいため）。
+   */
+  async function handleMicPress() {
+    if (isListening) {
+      // 停止要求。確定結果は`onFinal`で受け取る
+      await stopRecognition();
+      return;
+    }
+    if (speechLocale.status === 'unsupported') return;
+
+    setSpeechError(null);
+
+    const permission = await requestSpeechPermissions();
+    if (permission.status === 'unavailable') {
+      setSpeechError({ kind: 'recognition', code: 'failed' });
+      return;
+    }
+    if (permission.status === 'denied') {
+      // 再度ダイアログを出せるかで文言と導線を変える（出せないのに再試行を促さない）
+      setSpeechError(
+        permission.canAskAgain ? { kind: 'permission_prompt_denied' } : { kind: 'permission_blocked' },
+      );
+      return;
+    }
+
+    setInterimText('');
+    setIsListening(true);
+
+    const started = await startRecognition(
+      { locale: speechLocale.locale, preferOnDevice: supportsOnDevice },
+      {
+        // 途中経過は補助表示のみ。inputTextへは書かない
+        onInterim: setInterimText,
+        onFinal: (text) => {
+          setInterimText('');
+          // 確定時だけ入力欄を置換する。1000文字は既存の`clampInputLength`へ載せる
+          // （STT専用の上限ロジック・専用警告は作らない）
+          setInputText(clampInputLength(text));
+        },
+        onEnd: () => {
+          setIsListening(false);
+          setInterimText('');
+        },
+        onError: (code) => {
+          // 権限起因は設定アプリ導線へ寄せる（アプリ内で再要求しても必ず失敗するため）
+          setSpeechError(
+            code === 'permission_denied'
+              ? { kind: 'permission_blocked' }
+              : { kind: 'recognition', code },
+          );
+        },
+      },
+    );
+
+    if (!started) {
+      setIsListening(false);
+      setSpeechError({ kind: 'recognition', code: 'failed' });
+    }
+  }
+
+  function handleOpenSettings() {
+    void Linking.openSettings();
+  }
+
+  // MARK: - 読み上げ（TTS）
+
+  /** スピーカーtap。読み上げ中なら停止（同じアイコンでtoggle。専用stopボタンは増やさない） */
+  async function handleSpeakerPress() {
+    if (isSpeaking) {
+      await stopSpeaking();
+      setIsSpeaking(false);
+      return;
+    }
+    if (resultText == null || resultText === '') return;
+    if (ttsVoice.status === 'unsupported') return;
+
+    setSpeakFailed(false);
+    const started = await speakText(
+      { text: resultText, language: ttsVoice.language },
+      {
+        onStart: () => setIsSpeaking(true),
+        onFinish: () => setIsSpeaking(false),
+        onError: () => {
+          setIsSpeaking(false);
+          setSpeakFailed(true);
+        },
+      },
+    );
+    if (!started) {
+      setIsSpeaking(false);
+      setSpeakFailed(true);
+    }
+  }
+
   const handleToastHide = useCallback(() => setToast(null), []);
 
   // MARK: - 派生値
@@ -328,6 +524,24 @@ export default function TranslationScreen() {
     !sameLanguage &&
     hasTranslatableInput(inputText) &&
     !isTranslating;
+
+  /**
+   * 音声認識locale。**実機の`getSupportedLocales()`との突き合わせで決まる**
+   * （`speech-locales.ts`の静的表は候補を作るだけで、対応可否の正本ではない）。
+   * 翻訳の対応言語とは別集合なので、翻訳できてもここがunsupportedになることがある。
+   * その場合も**言語選択自体は変更せず、マイクだけを無効化する**。
+   */
+  const speechLocale = useMemo(
+    () => resolveSpeechLocale(source, supportedSpeechLocales),
+    [source, supportedSpeechLocales],
+  );
+  const micUnsupported = speechAvailable && speechLocale.status === 'unsupported' && source != null;
+  const canUseMic = speechAvailable && speechLocale.status !== 'unsupported' && !isTranslating;
+
+  /** 読み上げvoice。実機のvoice一覧と突き合わせる（別言語のvoiceへは落とさない） */
+  const ttsVoice = useMemo(() => resolveTtsVoiceLanguage(target, voices), [target, voices]);
+  const hasResult = resultText != null && resultText !== '';
+  const canSpeak = hasResult && ttsVoice.status !== 'unsupported' && !isTranslating;
 
   // MARK: - 非対応環境
 
@@ -436,11 +650,91 @@ export default function TranslationScreen() {
               scrollEnabled={false}
             />
             <View style={styles.inputFooter}>
+              {/*
+                音声入力。非対応環境（native未搭載・iOS以外）では描かない。
+                認識中は同じボタンが停止になる（push-to-talkではなくtoggle）。
+              */}
+              {speechAvailable ? (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.micBtn,
+                    isListening && styles.micBtnActive,
+                    !canUseMic && !isListening && styles.micBtnDisabled,
+                    pressed && styles.pressed,
+                  ]}
+                  onPress={() => void handleMicPress()}
+                  disabled={!canUseMic && !isListening}
+                  accessibilityRole="button"
+                  accessibilityLabel={isListening ? '音声入力を停止' : '音声入力を開始'}
+                  accessibilityState={{ disabled: !canUseMic && !isListening }}>
+                  <SymbolView
+                    name={{
+                      ios: isListening ? 'stop.fill' : 'mic.fill',
+                      android: 'mic',
+                      web: 'mic',
+                    }}
+                    tintColor={isListening ? '#fff' : canUseMic ? color.primaryDark : color.faint2}
+                    size={15}
+                  />
+                  <ThemedText
+                    style={[
+                      styles.micBtnText,
+                      isListening && styles.micBtnTextActive,
+                      !canUseMic && !isListening && styles.micBtnTextDisabled,
+                    ]}>
+                    {isListening ? '停止' : '音声入力'}
+                  </ThemedText>
+                </Pressable>
+              ) : (
+                <View />
+              )}
+
               <ThemedText style={styles.counter}>
                 {inputText.length} / {MAX_TRANSLATION_INPUT_LENGTH}
               </ThemedText>
             </View>
           </SectionCard>
+
+          {/*
+            認識中の補助表示。**interimはここにだけ出し、入力欄へは書き込まない**
+            （確定時のみ`clampInputLength`を通してinputTextへ反映する）。
+          */}
+          {isListening && (
+            <View style={styles.listeningBox}>
+              <View style={styles.listeningHeader}>
+                <ActivityIndicator size="small" color={color.primaryDark} />
+                <ThemedText style={styles.listeningLabel}>聞き取り中…</ThemedText>
+              </View>
+              <ThemedText style={styles.interimText} numberOfLines={3}>
+                {interimText === '' ? '話しかけてください' : interimText}
+              </ThemedText>
+            </View>
+          )}
+
+          {/* 翻訳はできるが音声認識に対応しない言語。言語選択は変えずマイクだけ無効化する */}
+          {micUnsupported && !isListening && (
+            <ThemedText style={styles.micNote}>
+              {getLanguageDisplayName(source ?? '')}は音声入力に対応していません
+            </ThemedText>
+          )}
+
+          {speechError != null && (
+            <View style={styles.errorWrap}>
+              <ErrorMessage
+                message={
+                  speechError.kind === 'permission_blocked'
+                    ? 'マイクと音声認識の使用が許可されていません。設定から許可してください。'
+                    : speechError.kind === 'permission_prompt_denied'
+                      ? 'マイクと音声認識の使用を許可すると音声入力を利用できます。'
+                      : SPEECH_ERROR_MESSAGES[speechError.code]
+                }
+              />
+              {/* 一度拒否されるとアプリ内から再要求できないため、設定アプリへ送るしかない */}
+              {speechError.kind === 'permission_blocked' && (
+                <GhostButton title="設定を開く" tone="primary" onPress={handleOpenSettings} />
+              )}
+            </View>
+          )}
 
           {/* アクション（音声入力・カメラ翻訳は初版では置かない） */}
           <View style={styles.actionRow}>
@@ -491,18 +785,60 @@ export default function TranslationScreen() {
               <ThemedText style={styles.resultPlaceholder}>ここに翻訳結果が表示されます</ThemedText>
             )}
 
-            {resultText != null && resultText !== '' && !isTranslating && (
-              <Pressable
-                style={({ pressed }) => [styles.copyBtn, pressed && styles.pressed]}
-                onPress={handleCopy}>
-                <SymbolView
-                  name={{ ios: 'doc.on.doc', android: 'content_copy', web: 'content_copy' }}
-                  tintColor={color.primaryDark}
-                  size={16}
-                />
-                <ThemedText style={styles.copyBtnText}>コピー</ThemedText>
-              </Pressable>
+            {hasResult && !isTranslating && (
+              <View style={styles.resultActions}>
+                {/* 読み上げ。target側の訳文のみ。同じアイコンで再生/停止をtoggleする */}
+                {voices.length > 0 && (
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.copyBtn,
+                      isSpeaking && styles.speakBtnActive,
+                      !canSpeak && !isSpeaking && styles.copyBtnDisabled,
+                      pressed && styles.pressed,
+                    ]}
+                    onPress={() => void handleSpeakerPress()}
+                    disabled={!canSpeak && !isSpeaking}
+                    accessibilityRole="button"
+                    accessibilityLabel={isSpeaking ? '読み上げを停止' : '訳文を読み上げる'}
+                    accessibilityState={{ disabled: !canSpeak && !isSpeaking }}>
+                    <SymbolView
+                      name={{
+                        ios: isSpeaking ? 'stop.fill' : 'speaker.wave.2.fill',
+                        android: 'volume_up',
+                        web: 'volume_up',
+                      }}
+                      tintColor={isSpeaking ? '#fff' : canSpeak ? color.primaryDark : color.faint2}
+                      size={16}
+                    />
+                    <ThemedText
+                      style={[
+                        styles.copyBtnText,
+                        isSpeaking && styles.speakBtnTextActive,
+                        !canSpeak && !isSpeaking && styles.copyBtnTextDisabled,
+                      ]}>
+                      {isSpeaking ? '停止' : '読み上げ'}
+                    </ThemedText>
+                  </Pressable>
+                )}
+
+                <Pressable
+                  style={({ pressed }) => [styles.copyBtn, pressed && styles.pressed]}
+                  onPress={handleCopy}>
+                  <SymbolView
+                    name={{ ios: 'doc.on.doc', android: 'content_copy', web: 'content_copy' }}
+                    tintColor={color.primaryDark}
+                    size={16}
+                  />
+                  <ThemedText style={styles.copyBtnText}>コピー</ThemedText>
+                </Pressable>
+              </View>
             )}
+
+            {/* voice非対応は明示する（別言語のvoiceで代読せず、無音で失敗もさせない） */}
+            {hasResult && !isTranslating && voices.length > 0 && ttsVoice.status === 'unsupported' && (
+              <ThemedText style={styles.ttsNote}>この言語の読み上げには対応していません</ThemedText>
+            )}
+            {speakFailed && <ThemedText style={styles.ttsNote}>読み上げできませんでした</ThemedText>}
           </View>
 
         </ScrollView>
@@ -576,8 +912,48 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: color.text,
   },
-  inputFooter: { alignItems: 'flex-end', paddingHorizontal: 14, paddingBottom: 10 },
+  // マイクを左・文字数カウンタを右に置く（カウンタの見た目・位置は従来どおり右端）
+  inputFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingBottom: 10,
+  },
   counter: { fontSize: 12, fontWeight: '500', color: color.faint2, fontVariant: ['tabular-nums'] },
+
+  micBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: color.primaryBorder,
+    backgroundColor: color.primarySoft,
+  },
+  micBtnActive: { backgroundColor: color.primary, borderColor: color.primary },
+  micBtnDisabled: { backgroundColor: color.card, borderColor: color.line },
+  micBtnText: { fontSize: 13, fontWeight: '700', color: color.primaryDark },
+  micBtnTextActive: { color: '#fff' },
+  micBtnTextDisabled: { color: color.faint2 },
+
+  listeningBox: {
+    borderRadius: radius.chip,
+    borderWidth: 1,
+    borderColor: color.primaryBorder,
+    backgroundColor: color.primarySoft,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    gap: 6,
+    marginTop: -6,
+  },
+  listeningHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  listeningLabel: { fontSize: 12.5, fontWeight: '700', color: color.primaryDark },
+  /** 認識途中の文字列。確定するまで入力欄には入らない旨が分かるよう控えめに出す */
+  interimText: { fontSize: 14, lineHeight: 20, fontWeight: '500', color: color.muted },
+  micNote: { fontSize: 12.5, fontWeight: '500', color: color.muted, marginTop: -6 },
 
   actionRow: { flexDirection: 'row', justifyContent: 'flex-start', marginTop: -6 },
 
@@ -613,6 +989,14 @@ const styles = StyleSheet.create({
     borderColor: color.primaryBorder,
   },
   copyBtnText: { fontSize: 14, fontWeight: '700', color: color.primaryDark },
+  copyBtnDisabled: { borderColor: color.line, backgroundColor: color.card },
+  copyBtnTextDisabled: { color: color.faint2 },
+
+  // 読み上げ・コピーを横並びにする（専用stopボタンは増やさずアイコンをtoggleする）
+  resultActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  speakBtnActive: { backgroundColor: color.primary, borderColor: color.primary },
+  speakBtnTextActive: { color: '#fff' },
+  ttsNote: { fontSize: 12, fontWeight: '500', color: color.muted },
 
   pressed: { opacity: 0.85 },
 });
