@@ -63,8 +63,13 @@ export async function getSpeechSynthesisEnvironment(): Promise<SpeechSynthesisEn
     const voices = await native.getAvailableVoicesAsync();
     return {
       available: true,
-      // identifier / language だけを取り出す（純粋resolverが必要とする最小形）
-      voices: voices.map((voice) => ({ identifier: voice.identifier, language: voice.language })),
+      // identifier / language / quality を取り出す（純粋resolverが必要とする最小形）。
+      // qualityはEnhanced voice優先選択（selectEnhancedVoiceIdentifier）に使う。
+      voices: voices.map((voice) => ({
+        identifier: voice.identifier,
+        language: voice.language,
+        quality: voice.quality,
+      })),
     };
   } catch {
     // voice一覧が取れないとvoice解決ができない＝スピーカーを出せない
@@ -83,6 +88,13 @@ export type SpeakParams = {
   text: string;
   /** `resolveTtsVoiceLanguage`が実機voice一覧から選んだ言語。推測値を渡さないこと */
   language: string;
+  /**
+   * `selectEnhancedVoiceIdentifier`が見つけたEnhanced voiceのidentifier。
+   * **見つからなかった場合は`undefined`のまま渡すこと。** 存在しない/不正な
+   * identifierを渡すとiOSで無音失敗しうるため、`speakText`側は値がある時だけ
+   * `voice`キーを指定し、無ければ`language`のみの従来どおりの呼び出しにする。
+   */
+  voiceIdentifier?: string;
 };
 
 /**
@@ -118,6 +130,10 @@ export async function speakText(
       language: params.language,
       // STTが張ったsession（measurementで減衰）を引き継がないよう、OSに別sessionを立てさせる
       useApplicationAudioSession: false,
+      // Enhanced voiceが見つかった時だけ指定する。見つからない言語では`voice`キー自体を
+      // 渡さず、従来どおりlanguageのみでOS既定voiceに任せる（存在しないidentifierを
+      // 渡すと無音失敗しうるため、「悪化させない」を条件付きスプレッドで徹底する）。
+      ...(params.voiceIdentifier ? { voice: params.voiceIdentifier } : {}),
       onStart: callbacks.onStart,
       onDone: finishOnce,
       onStopped: finishOnce,

@@ -1,5 +1,5 @@
 import * as FileSystem from 'expo-file-system/legacy';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Image } from 'expo-image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, View, type ImageStyle, type StyleProp } from 'react-native';
@@ -471,11 +471,18 @@ export default function CalendarScreen() {
                             const isPurchased = item.is_purchased === 1;
                             const c = CURRENCIES[item.currency as CurrencyCode];
                             return (
-                              <View
+                              <Pressable
                                 key={item.id}
-                                style={[
+                                onPress={() =>
+                                  router.push({
+                                    pathname: '/history/item-detail',
+                                    params: { id: String(item.id) },
+                                  })
+                                }
+                                style={({ pressed }) => [
                                   styles.historyCard,
                                   isPurchased ? styles.historyCardPurchased : styles.historyCardCandidate,
+                                  pressed && styles.pressed,
                                 ]}>
                                 <View style={styles.calCardRow}>
                                   {item.image_uri && (
@@ -562,7 +569,7 @@ export default function CalendarScreen() {
                                     </View>
                                   </View>
                                 </View>
-                              </View>
+                              </Pressable>
                             );
                           })}
                         </View>

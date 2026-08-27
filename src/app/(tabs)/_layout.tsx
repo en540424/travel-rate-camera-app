@@ -18,7 +18,10 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: DT.colors.primary,
-        tabBarInactiveTintColor: DT.colors.textMuted,
+        // 視認性改善: 旧textMuted(#9CA3AF)は白背景とのコントラストが弱かったため、
+        // 既存のtextSecondary(#6B7280)へ変更（新色は増やさない）。
+        // font weight変更・selected背景追加はしない（見やすさだけの最小変更）。
+        tabBarInactiveTintColor: DT.colors.textSecondary,
         tabBarStyle: {
           backgroundColor: DT.colors.surface,
           borderTopColor: DT.colors.border,

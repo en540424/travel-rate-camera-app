@@ -20,6 +20,7 @@ const {
   normalizeLocale,
   resolveSpeechLocale,
   resolveTtsVoiceLanguage,
+  selectEnhancedVoiceIdentifier,
 } = await import('./speech-locales.ts');
 
 /** 実機のSFSpeechRecognizer.supportedLocales()を模した一覧（地域付き） */
@@ -261,4 +262,52 @@ test('resolveTtsVoiceLanguage: 該当voiceが無ければunsupported', async (t)
     assert.deepEqual(resolveTtsVoiceLanguage(null, VOICES), { status: 'unsupported' });
     assert.deepEqual(resolveTtsVoiceLanguage('', VOICES), { status: 'unsupported' });
   });
+});
+
+// MARK: - Enhanced voice選択
+
+/** quality付きのvoice一覧。同一言語にDefault/Enhancedが混在する端末を模す */
+const VOICES_WITH_QUALITY = [
+  { identifier: 'com.apple.voice.ja-JP.Default', language: 'ja-JP', quality: 'Default' },
+  { identifier: 'com.apple.voice.ja-JP.Enhanced', language: 'ja-JP', quality: 'Enhanced' },
+  { identifier: 'com.apple.voice.en-US.Default', language: 'en-US', quality: 'Default' },
+  { identifier: 'com.apple.voice.ko-KR.Default', language: 'ko-KR', quality: 'Default' },
+];
+
+test('selectEnhancedVoiceIdentifier: 完全一致するEnhanced voiceを優先する', () => {
+  assert.equal(
+    selectEnhancedVoiceIdentifier('ja-JP', VOICES_WITH_QUALITY),
+    'com.apple.voice.ja-JP.Enhanced',
+  );
+});
+
+test('selectEnhancedVoiceIdentifier: 完全一致が無ければ言語subtag一致のEnhancedへフォールバックする', () => {
+  const voices = [
+    { identifier: 'com.apple.voice.ja-JP.Enhanced', language: 'ja-JP', quality: 'Enhanced' },
+  ];
+  // 完全一致は無い（要求は`ja`単体）が、subtag「ja」が一致するEnhanced voiceを拾う
+  assert.equal(selectEnhancedVoiceIdentifier('ja', voices), 'com.apple.voice.ja-JP.Enhanced');
+});
+
+test('selectEnhancedVoiceIdentifier: Enhancedが存在しない場合はundefined（languageのみで話させる）', () => {
+  // en-USはDefaultしか無い。存在しないidentifierを捏造しない
+  assert.equal(selectEnhancedVoiceIdentifier('en-US', VOICES_WITH_QUALITY), undefined);
+});
+
+test('selectEnhancedVoiceIdentifier: voice一覧が空ならundefined', () => {
+  assert.equal(selectEnhancedVoiceIdentifier('ja-JP', []), undefined);
+});
+
+test('selectEnhancedVoiceIdentifier: qualityが無いvoice（旧形式）はEnhanced扱いしない', () => {
+  // VoiceLike.qualityはoptional。古い形のvoiceが混じっても誤ってEnhanced判定しない
+  const voices = [{ identifier: 'legacy-voice', language: 'ja-JP' }];
+  assert.equal(selectEnhancedVoiceIdentifier('ja-JP', voices), undefined);
+});
+
+test('selectEnhancedVoiceIdentifier: 同一言語に複数Enhancedがあっても最初の1件を返す', () => {
+  const voices = [
+    { identifier: 'first-enhanced', language: 'ja-JP', quality: 'Enhanced' },
+    { identifier: 'second-enhanced', language: 'ja-JP', quality: 'Enhanced' },
+  ];
+  assert.equal(selectEnhancedVoiceIdentifier('ja-JP', voices), 'first-enhanced');
 });

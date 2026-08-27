@@ -33,6 +33,23 @@ export async function getHistory(
   );
 }
 
+/**
+ * idで1件だけ取得する（trip_idによる絞り込みなし）。
+ *
+ * `item-detail.tsx` / `item-edit.tsx`のfallback専用。calendarタブは`useAllHistory()`で
+ * 全旅行の記録を表示するが、詳細/編集画面は`useHistory()`（activeTripで絞り込み済み）から
+ * idを探すため、activeTrip以外の旅行の記録を開くと見つからない。その場合だけこの関数で
+ * 1件読み直す（`useAllHistory()`を丸ごと使うと2000件+全旅行の取得が毎回走ってしまうため、
+ * 「見つからなかった時だけ」の単発読み取りに留める）。
+ */
+export async function getHistoryById(db: SQLiteDatabase, id: number): Promise<HistoryRow | null> {
+  const row = await db.getFirstAsync<HistoryRow>(
+    'SELECT * FROM conversion_history WHERE id = ?',
+    id,
+  );
+  return row ?? null;
+}
+
 /** 履歴の総件数を取得（全件） */
 export async function getHistoryCount(db: SQLiteDatabase): Promise<number> {
   const result = await db.getFirstAsync<{ count: number }>(

@@ -1,5 +1,6 @@
 import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
 import { Image } from 'expo-image';
+import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Keyboard, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -9,6 +10,8 @@ import { PhotoModal } from '@/components/photo-modal';
 import { PhotoChangeSheet } from '@/components/domain/PhotoChangeSheet';
 import { ThemedText } from '@/components/themed-text';
 import { CURRENCIES } from '@/constants/currencies';
+import type { HistoryRow } from '@/db/queries/history';
+import { getHistoryById } from '@/db/queries/history';
 import { useHistory } from '@/hooks/use-history';
 import { useUnsavedChangesStore } from '@/stores/unsaved-changes-store';
 import { color, radius, shadow } from '@/theme/tokens';
@@ -21,6 +24,17 @@ export default function ItemEditScreen() {
   const setHasUnsavedChanges = useUnsavedChangesStore((s) => s.setHasUnsavedChanges);
   const setDiscardHandler = useUnsavedChangesStore((s) => s.setDiscardHandler);
   const navigation = useNavigation();
+  const db = useSQLiteContext();
+  /**
+   * activeTrip外の旅行の記録用fallback。`item-detail.tsx`と同じ理由・同じ規律
+   * （見つからなかった時だけの単発クエリ、historyの変化に追随して再評価）。
+   * カレンダーの記録詳細から「編集する」で来た場合にここが必要になる
+   * （詳細側だけfallbackしても編集側が無ければ「表示だけ拾えたが編集が壊れる」半端な修正になるため）。
+   */
+  const [fallbackItem, setFallbackItem] = useState<HistoryRow | null>(null);
+  // 取得済みidを覚えておき、`history`の参照が変わる（reload毎）たびに再クエリしない
+  // （見つからなかった場合もnullを結果として記録済み扱いにし、無駄な再取得を防ぐ）。
+  const fetchedFallbackIdRef = useRef<number | null>(null);
 
   // React Compiler のメモ化で古いクロージャにならないよう ref 経由で参照
   const [amount, setAmount] = useState('');
@@ -78,7 +92,24 @@ export default function ItemEditScreen() {
     }, [reload]),
   );
 
-  const item = history.find((r) => r.id === id);
+  useEffect(() => {
+    // activeTrip内で見つかる通常経路では取得不要（`??`のショートサーキットでfallbackItemは
+    // 使われないため、古い値が残っていても実害はなく、明示的にリセットする必要もない）。
+    if (Number.isNaN(id) || history.some((r) => r.id === id)) return;
+    // 同じidを既に取得済み（結果がnullだった場合を含む）なら、`history`の参照が
+    // reload毎に変わっても再クエリしない。
+    if (fetchedFallbackIdRef.current === id) return;
+    fetchedFallbackIdRef.current = id;
+    let cancelled = false;
+    void getHistoryById(db, id).then((row) => {
+      if (!cancelled) setFallbackItem(row);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, history, db]);
+
+  const item = history.find((r) => r.id === id) ?? fallbackItem ?? undefined;
 
   useEffect(() => {
     if (item && initedRef.current !== item.id) {

@@ -119,8 +119,15 @@ export function resolveSpeechLocale(
   return { status: 'unsupported' };
 }
 
-/** 読み上げvoiceの解決に使う最小形。`expo-speech`の`Voice`から必要な2つだけを受け取る */
-export type VoiceLike = { identifier: string; language: string };
+/**
+ * 読み上げvoiceの解決に使う最小形。`expo-speech`の`Voice`から必要な分だけを受け取る。
+ *
+ * `quality`は`expo-speech`の`VoiceQuality`（`'Default' | 'Enhanced'`）を文字列として受ける。
+ * ここで型を輸入しない（本ファイルはnativeモジュールを一切importしない規律のため）。
+ * optionalにしているのは、呼び出し元が古い形（quality無し）を渡しても既存の言語解決
+ * （`resolveTtsVoiceLanguage`）が壊れないようにするため。
+ */
+export type VoiceLike = { identifier: string; language: string; quality?: string };
 
 /**
  * 読み上げvoiceの解決結果。
@@ -162,4 +169,45 @@ export function resolveTtsVoiceLanguage(
   }
 
   return { status: 'unsupported' };
+}
+
+/**
+ * 解決済みの読み上げ言語に対して、Enhanced品質のvoiceがあればそのidentifierを返す。
+ *
+ * `resolveTtsVoiceLanguage`とは独立した別関数にしている。既存関数の戻り値へ
+ * `voiceIdentifier`を足すと、`deepEqual`で戻り値全体を検証している既存テストが
+ * 全て壊れるため（今回の変更を「voice選択の追加」1点に閉じるための分離）。
+ *
+ * 優先順位:
+ * 1. `resolveTtsVoiceLanguage`が返したlanguageと完全一致 かつ quality === 'Enhanced'
+ * 2. 言語subtagが一致 かつ quality === 'Enhanced'
+ * 3. どちらも無ければ`undefined`（呼び出し側は`voice`を指定せず`language`のみで話させる）
+ *
+ * **`undefined`を返した場合、呼び出し側は`voice`キー自体を渡さないこと。**
+ * 存在しない/不正なidentifierをiOSの`Speech.speak`へ渡すと無音で失敗しうるため、
+ * 「見つかった時だけ指定する」を徹底し、voiceが無い言語では現状（language指定のみ）から
+ * 悪化させない。
+ */
+export function selectEnhancedVoiceIdentifier(
+  resolvedLanguage: string,
+  voices: readonly VoiceLike[],
+): string | undefined {
+  const list = voices ?? [];
+  if (list.length === 0) return undefined;
+
+  const normalizedTarget = normalizeLocale(resolvedLanguage);
+  const exactEnhanced = list.find(
+    (voice) => normalizeLocale(voice.language) === normalizedTarget && voice.quality === 'Enhanced',
+  );
+  if (exactEnhanced !== undefined) return exactEnhanced.identifier;
+
+  const subtag = getLanguageSubtag(resolvedLanguage);
+  if (subtag !== '') {
+    const subtagEnhanced = list.find(
+      (voice) => getLanguageSubtag(voice.language) === subtag && voice.quality === 'Enhanced',
+    );
+    if (subtagEnhanced !== undefined) return subtagEnhanced.identifier;
+  }
+
+  return undefined;
 }

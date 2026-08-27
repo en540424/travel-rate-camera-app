@@ -1,5 +1,6 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback } from 'react';
+import { useSQLiteContext } from 'expo-sqlite';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 
@@ -8,11 +9,11 @@ import { ResilientPhoto } from '@/components/resilient-photo';
 import { ThemedText } from '@/components/themed-text';
 import { CurrencyFlagImage } from '@/components/domain';
 import type { HistoryRow } from '@/db/queries/history';
+import { getHistoryById } from '@/db/queries/history';
 import { useHistory } from '@/hooks/use-history';
 import { useTrips } from '@/hooks/use-trips';
 import { color, radius, shadow } from '@/theme/tokens';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
-import { useState } from 'react';
 
 function formatSavedAt(row: HistoryRow): string {
   const iso = row.created_at.includes('T') ? row.created_at : `${row.created_at.replace(' ', 'T')}Z`;
@@ -35,7 +36,21 @@ export default function ItemDetailScreen() {
   const id = params.id != null ? parseInt(params.id, 10) : NaN;
   const { history, reload, removeEntry } = useHistory();
   const { activeTrip } = useTrips();
+  const db = useSQLiteContext();
   const [photoOpen, setPhotoOpen] = useState(false);
+  /**
+   * activeTrip外の旅行の記録用fallback。
+   *
+   * `useHistory()`はactiveTripで絞り込まれるため、カレンダー（`useAllHistory()`＝全旅行）
+   * からactiveTrip以外の記録を開くと`history`側では見つからない。その場合だけ
+   * `getHistoryById`で1件読み直す（`useAllHistory()`を丸ごと使わず、見つからなかった
+   * ときだけの単発クエリに留める）。`history`が変わる度（＝下のuseFocusEffectでreload
+   * される度）に再評価するため、フォーカスを跨いでも最新状態を反映する。
+   */
+  const [fallbackItem, setFallbackItem] = useState<HistoryRow | null>(null);
+  // 取得済みidを覚えておき、`history`の参照が変わる（reload毎）たびに再クエリしない
+  // （見つからなかった場合もnullを結果として記録済み扱いにし、無駄な再取得を防ぐ）。
+  const fetchedFallbackIdRef = useRef<number | null>(null);
   // ScrollView自体の表示可能高さとcontentContainerの実測高さを比較し、
   // 本当に収まっている時だけscrollEnabledをfalseにする（bounces/overScrollModeだけでは
   // 実測の僅かなオーバーフロー分はスクロールできてしまうため、実測ベースで止める）。
@@ -49,7 +64,24 @@ export default function ItemDetailScreen() {
     }, [reload]),
   );
 
-  const item = history.find((r) => r.id === id);
+  useEffect(() => {
+    // activeTrip内で見つかる通常経路では取得不要（`??`のショートサーキットでfallbackItemは
+    // 使われないため、古い値が残っていても実害はなく、明示的にリセットする必要もない）。
+    if (Number.isNaN(id) || history.some((r) => r.id === id)) return;
+    // 同じidを既に取得済み（結果がnullだった場合を含む）なら、`history`の参照が
+    // reload毎に変わっても再クエリしない。
+    if (fetchedFallbackIdRef.current === id) return;
+    fetchedFallbackIdRef.current = id;
+    let cancelled = false;
+    void getHistoryById(db, id).then((row) => {
+      if (!cancelled) setFallbackItem(row);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, history, db]);
+
+  const item = history.find((r) => r.id === id) ?? fallbackItem ?? undefined;
 
   if (!item) {
     return (
@@ -151,7 +183,11 @@ export default function ItemDetailScreen() {
           <View style={styles.infoSep} />
           <View style={styles.infoRow}>
             <ThemedText style={styles.infoLabel}>旅行</ThemedText>
-            <ThemedText style={styles.infoValue}>{activeTrip?.name ?? '—'}</ThemedText>
+            <ThemedText style={styles.infoValue}>
+              {/* fallback取得（他旅行のレコード）ではactiveTrip名を出すと誤情報になるため、
+                  trip_idが一致する場合のみ旅行名を表示する。 */}
+              {item.trip_id === activeTrip?.id ? (activeTrip?.name ?? '—') : '—'}
+            </ThemedText>
           </View>
           <View style={styles.infoSep} />
           <View style={styles.infoRow}>

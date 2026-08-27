@@ -65,6 +65,11 @@ export const color = {
   // misc accents
   saturdayBlue: '#3B8DBD',
   sundayRed: '#C2543F',
+
+  // 分析画面の棒グラフ（通常棒）。primary(teal)・candidate(amber)と衝突しない
+  // 落ち着いたスレートブルー。selected(primaryDark)・empty(旧DT.colors.borderSoft相当)は
+  // このtoken追加の対象外（既存のまま）。
+  chartBar: '#6B7FA0',
 } as const;
 
 export const typography = {

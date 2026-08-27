@@ -9,6 +9,7 @@ import { DT } from '@/constants/designTokens';
 import type { CurrencyCode } from '@/constants/currencies';
 import type { HistoryRow } from '@/db/queries/history';
 import { useAllHistory } from '@/hooks/use-all-history';
+import { color } from '@/theme/tokens';
 import { formatJpy } from '@/utils/format';
 import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
 
@@ -644,8 +645,8 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   barRectActive: {
-    // 未選択・データあり：グレー（選択中との差をはっきりさせる）
-    backgroundColor: DT.colors.textSecondary,
+    // 未選択・データあり：スレートブルー（旧・黒〜濃灰色から変更。選択中tealとの差は維持）
+    backgroundColor: color.chartBar,
   },
   barRectSelected: {
     // 選択中：濃いティールで強調
