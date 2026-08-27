@@ -19,6 +19,7 @@ const {
   getTtsLanguageCandidate,
   normalizeLocale,
   resolveSpeechLocale,
+  resolveTtsRate,
   resolveTtsVoiceLanguage,
   selectEnhancedVoiceIdentifier,
 } = await import('./speech-locales.ts');
@@ -310,4 +311,52 @@ test('selectEnhancedVoiceIdentifier: 同一言語に複数Enhancedがあって�
     { identifier: 'second-enhanced', language: 'ja-JP', quality: 'Enhanced' },
   ];
   assert.equal(selectEnhancedVoiceIdentifier('ja-JP', voices), 'first-enhanced');
+});
+
+test('resolveTtsRate: 日本語は既定速度(1.0)のまま', () => {
+  assert.equal(resolveTtsRate('ja'), 1.0);
+});
+
+test('resolveTtsRate: タイ語は既定速度(1.0)のまま', () => {
+  assert.equal(resolveTtsRate('th'), 1.0);
+});
+
+test('resolveTtsRate: 英語は既定よりやや遅い', () => {
+  const rate = resolveTtsRate('en');
+  assert.ok(rate < 1.0 && rate >= 0.85, `expected 0.85-1.0, got ${rate}`);
+});
+
+test('resolveTtsRate: 韓国語は既定よりかなり遅い（実機で早口すぎた言語）', () => {
+  const rate = resolveTtsRate('ko');
+  assert.ok(rate < 0.9 && rate >= 0.75, `expected 0.75-0.9, got ${rate}`);
+});
+
+test('resolveTtsRate: イタリア語は既定よりやや遅い', () => {
+  const rate = resolveTtsRate('it');
+  assert.ok(rate < 1.0 && rate >= 0.8, `expected 0.8-1.0, got ${rate}`);
+});
+
+test('resolveTtsRate: ベトナム語は既定よりわずかに遅い', () => {
+  const rate = resolveTtsRate('vi');
+  assert.ok(rate < 1.0 && rate >= 0.9, `expected 0.9-1.0, got ${rate}`);
+});
+
+test('resolveTtsRate: 簡体字中国語は既定よりやや遅い', () => {
+  const rate = resolveTtsRate('zh-Hans');
+  assert.ok(rate < 1.0 && rate >= 0.8, `expected 0.8-1.0, got ${rate}`);
+});
+
+test('resolveTtsRate: 繁体字中国語も簡体字と同じ補正', () => {
+  assert.equal(resolveTtsRate('zh-Hant'), resolveTtsRate('zh-Hans'));
+});
+
+test('resolveTtsRate: 表に無い言語コードは既定速度(1.0)にfallbackする', () => {
+  assert.equal(resolveTtsRate('fr'), 1.0);
+  assert.equal(resolveTtsRate('unknown-code'), 1.0);
+});
+
+test('resolveTtsRate: null/undefined/空文字は既定速度(1.0)にfallbackする', () => {
+  assert.equal(resolveTtsRate(null), 1.0);
+  assert.equal(resolveTtsRate(undefined), 1.0);
+  assert.equal(resolveTtsRate(''), 1.0);
 });

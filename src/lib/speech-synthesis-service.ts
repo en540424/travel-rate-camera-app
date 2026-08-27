@@ -95,6 +95,11 @@ export type SpeakParams = {
    * `voice`キーを指定し、無ければ`language`のみの従来どおりの呼び出しにする。
    */
   voiceIdentifier?: string;
+  /**
+   * `resolveTtsRate`が翻訳言語コードから決めた読み上げ速度倍率（`1.0`が既定）。
+   * 省略時はexpo-speechの既定（`1.0`相当）で読み上げる。
+   */
+  rate?: number;
 };
 
 /**
@@ -128,6 +133,7 @@ export async function speakText(
   try {
     native.speak(params.text, {
       language: params.language,
+      rate: params.rate,
       // STTが張ったsession（measurementで減衰）を引き継がないよう、OSに別sessionを立てさせる
       useApplicationAudioSession: false,
       // Enhanced voiceが見つかった時だけ指定する。見つからない言語では`voice`キー自体を

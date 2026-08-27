@@ -67,9 +67,14 @@ export const color = {
   sundayRed: '#C2543F',
 
   // 分析画面の棒グラフ（通常棒）。primary(teal)・candidate(amber)と衝突しない
-  // 落ち着いたスレートブルー。selected(primaryDark)・empty(旧DT.colors.borderSoft相当)は
+  // 明るめの青紫。selected(primaryDark)・empty(旧DT.colors.borderSoft相当)は
   // このtoken追加の対象外（既存のまま）。
-  chartBar: '#6B7FA0',
+  // 旧値#6B7FA0はHuman実機評価で「まだ黒っぽく暗い」との指摘を受け#7F8FC4へ変更。
+  chartBar: '#7F8FC4',
+
+  // 下タブの非選択アイコン/文字。旧#6B7280(=旧DT.colors.textSecondary)はHuman実機評価で
+  // 「まだ背景と同化して見づらい」との指摘を受け、黒には寄せず中濃度のneutral grayへ変更。
+  tabInactive: '#4F5865',
 } as const;
 
 export const typography = {

@@ -32,7 +32,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ThemedText } from '@/components/themed-text';
 import { TranslationHost, isTranslationPlatformSupported } from '@/components/translation-host';
 import { EmptyState, ErrorMessage, GhostButton, PrimaryButton, SectionCard, Toast } from '@/components/ui';
-import { resolveSpeechLocale, resolveTtsVoiceLanguage, selectEnhancedVoiceIdentifier } from '@/config/speech-locales';
+import { resolveSpeechLocale, resolveTtsRate, resolveTtsVoiceLanguage, selectEnhancedVoiceIdentifier } from '@/config/speech-locales';
 import { getLanguageDisplayName } from '@/config/translation-language-names';
 import { getTranslationSourceLanguage } from '@/config/translation-languages';
 import { useTrips } from '@/hooks/use-trips';
@@ -494,10 +494,12 @@ export default function TranslationScreen() {
 
     setSpeakFailed(false);
     // Enhanced品質のvoiceがあれば優先する。無ければundefinedのまま渡し、
-    // speakText側がlanguageのみでOS既定voiceに任せる（rate/pitchは今回変更しない）
+    // speakText側がlanguageのみでOS既定voiceに任せる（pitchは今回変更しない）
     const voiceIdentifier = selectEnhancedVoiceIdentifier(ttsVoice.language, voices);
+    // 言語別の体感速度差をrateで補正する（Human実機確認ベース。voice選択とは独立）
+    const rate = resolveTtsRate(target);
     const started = await speakText(
-      { text: resultText, language: ttsVoice.language, voiceIdentifier },
+      { text: resultText, language: ttsVoice.language, voiceIdentifier, rate },
       {
         onStart: () => setIsSpeaking(true),
         onFinish: () => setIsSpeaking(false),

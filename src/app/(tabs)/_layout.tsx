@@ -3,6 +3,7 @@ import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { Alert, Platform, StyleSheet, type ColorValue } from 'react-native';
 
 import { DT } from '@/constants/designTokens';
+import { color } from '@/theme/tokens';
 import { useUnsavedChangesStore } from '@/stores/unsaved-changes-store';
 import { triggerTabScrollReset } from '@/utils/tab-scroll-reset';
 
@@ -18,10 +19,11 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: DT.colors.primary,
-        // 視認性改善: 旧textMuted(#9CA3AF)は白背景とのコントラストが弱かったため、
-        // 既存のtextSecondary(#6B7280)へ変更（新色は増やさない）。
+        // 視認性改善（2段階目）: textMuted(#9CA3AF)→textSecondary(#6B7280)でも
+        // Human実機評価で「まだ背景と同化する」との指摘があったため、黒(textPrimary)には
+        // 寄せずcolor.tabInactive(#4F5865、中濃度neutral gray)へ変更。
         // font weight変更・selected背景追加はしない（見やすさだけの最小変更）。
-        tabBarInactiveTintColor: DT.colors.textSecondary,
+        tabBarInactiveTintColor: color.tabInactive,
         tabBarStyle: {
           backgroundColor: DT.colors.surface,
           borderTopColor: DT.colors.border,

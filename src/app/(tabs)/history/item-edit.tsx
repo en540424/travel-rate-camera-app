@@ -1,5 +1,4 @@
 import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
-import { Image } from 'expo-image';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Keyboard, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
@@ -8,6 +7,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { PhotoModal } from '@/components/photo-modal';
 import { PhotoChangeSheet } from '@/components/domain/PhotoChangeSheet';
+import { ResilientPhoto } from '@/components/resilient-photo';
 import { ThemedText } from '@/components/themed-text';
 import { CURRENCIES } from '@/constants/currencies';
 import type { HistoryRow } from '@/db/queries/history';
@@ -395,7 +395,9 @@ export default function ItemEditScreen() {
           <View style={styles.photoRow}>
             <Pressable onPress={() => draftPhotoUri && setPhotoOpen(true)} disabled={!draftPhotoUri} style={styles.thumb}>
               {draftPhotoUri ? (
-                <Image source={{ uri: draftPhotoUri }} style={styles.thumbImage} contentFit="cover" />
+                // 保存済みURIはアプリコンテナ再割当てで無効化しうるため、詳細画面と同じ
+                // ResilientPhoto経由で現在のdocumentDirectory基準へ再解決してから表示する。
+                <ResilientPhoto uri={draftPhotoUri} style={styles.thumbImage} contentFit="cover" />
               ) : (
                 <View style={styles.thumbPlaceholder}>
                   <ThemedText style={styles.thumbPlaceholderText}>なし</ThemedText>

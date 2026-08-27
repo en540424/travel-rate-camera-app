@@ -188,6 +188,41 @@ export function resolveTtsVoiceLanguage(
  * 「見つかった時だけ指定する」を徹底し、voiceが無い言語では現状（language指定のみ）から
  * 悪化させない。
  */
+/**
+ * 翻訳言語コード → 読み上げrate（`expo-speech`の`rate`はOS既定速度への倍率。`1.0`が既定）。
+ *
+ * `rate`の実体はinstalled `expo-speech`のiOS実装で確認済み：
+ * `utterance.rate = Float(rate) * AVSpeechUtteranceDefaultSpeechRate`
+ * （`node_modules/expo-speech/ios/SpeechModule.swift`）。型定義のコメントを鵜呑みにせず
+ * 実ソースで「1.0が絶対値ではなくOS既定への倍率」であることを確認したうえで値を決めている。
+ *
+ * Human実機確認（2026-08-27）で「日本語はちょうど良いが韓国語は早口すぎて聞き取れない」等、
+ * 言語ごとに体感速度差が大きいと判明したための補正表。一律rateでは吸収できないため、
+ * 翻訳言語コード単位で個別に持つ。pitchは対象外（今回未変更）。
+ */
+const TTS_RATE_BY_LANGUAGE: Readonly<Record<string, number>> = {
+  ja: 1.0,
+  th: 1.0,
+  vi: 0.94,
+  it: 0.88,
+  'zh-Hans': 0.88,
+  'zh-Hant': 0.88,
+  en: 0.9,
+  ko: 0.82,
+};
+
+/** 表に無い言語コードのrate。expo-speechの既定（`1.0`＝OS既定速度）と同じにし、悪化させない */
+const DEFAULT_TTS_RATE = 1.0;
+
+/**
+ * 翻訳言語コードから読み上げrateを決める。表に無ければ`DEFAULT_TTS_RATE`。
+ * `resolveTtsVoiceLanguage`と同じ入力（現在のtarget言語コード）を受け取る想定。
+ */
+export function resolveTtsRate(languageCode: string | null | undefined): number {
+  if (languageCode == null || languageCode === '') return DEFAULT_TTS_RATE;
+  return TTS_RATE_BY_LANGUAGE[languageCode] ?? DEFAULT_TTS_RATE;
+}
+
 export function selectEnhancedVoiceIdentifier(
   resolvedLanguage: string,
   voices: readonly VoiceLike[],
