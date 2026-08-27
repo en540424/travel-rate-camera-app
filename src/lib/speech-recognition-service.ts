@@ -27,6 +27,13 @@
  */
 import { Platform } from 'react-native';
 
+import {
+  accumulateFinalTranscript,
+  EMPTY_TRANSCRIPT_ACCUMULATOR,
+  joinTranscript,
+  type TranscriptAccumulatorState,
+} from './speech-transcript-accumulator';
+
 type SpeechRecognitionNative = typeof import('expo-speech-recognition');
 type SpeechRecognitionModule = SpeechRecognitionNative['ExpoSpeechRecognitionModule'];
 
@@ -222,7 +229,15 @@ type ActiveSession = {
   receivedResult: boolean;
   /** 確定結果を受け取ったか */
   receivedFinal: boolean;
-  /** 直近のinterim。finalが来ないまま終わった場合の救済に使う */
+  /**
+   * final断片の累積状態。
+   *
+   * `continuous:true`でセッションを継続させると、iOS18の疑似final回避策により
+   * `isFinal:true`のイベントが複数回・断片で届く（`speech-transcript-accumulator.ts`参照）。
+   * ここで全文へ再構成してから`onFinal`へ渡す。
+   */
+  finalAccumulator: TranscriptAccumulatorState;
+  /** 直近のinterim。finalが一度も来ないまま終わった場合の救済に使う */
   lastInterim: string;
   /** `end`到達時にserver認識で再試行するか */
   retryWithServer: boolean;
@@ -294,9 +309,30 @@ function invokeStart(speech: SpeechRecognitionModule, session: ActiveSession): v
     lang: session.locale,
     // 途中経過を見せるため取得する。入力欄へ書き込むのは`isFinal`のときだけ
     interimResults: true,
-    // 無音での自動終了をセーフティネットとして使う。
-    // 終了条件はiOS版数で差があるが、独自timerで上書きしない（packageの標準挙動に委ねる）
-    continuous: false,
+    /*
+     * continuous:trueにしている理由（Human実機で発話途中に勝手に終了する不具合の原因）:
+     *
+     * installed expo-speech-recognition（56.0.3）のiOS実装は、Appleのバグ
+     * （iOS18で`result.isFinal`が真の意味で発火しないケースがある）の回避策として、
+     * `speechRecognitionMetadata.speechDuration > 0`を「final相当」とみなす
+     * （ExpoSpeechRecognizer.swift）。native側はこの「疑似final」を検出すると、
+     * `continuous:false`のときだけ即座にセッションをreset（終了）する。
+     * `speechDuration`は時間経過で単調増加するため、この「疑似final」は
+     * 発話開始から数秒以内にほぼ確実に発生し、これが「話している途中で勝手に
+     * 終了する」症状の直接原因だった（`!continuous`がreset条件に含まれるため）。
+     *
+     * continuous:trueにするとこのreset早期発火が起きなくなり、Humanが明示的に
+     * stopするまでセッションが継続する。
+     *
+     * 副作用: 上記の「疑似final」検出以降、native側は`isFinal:true`のイベントを
+     * 断片で複数回送るようになる（result のハンドラ側で`speech-transcript-accumulator`
+     * により全文へ再構成している）。
+     *
+     * また、無音での自動終了（旧`continuous:false`時の3秒無音timer）はこの変更で
+     * 提供されなくなる。今回は「話している間に勝手に切れない」ことを優先し、
+     * 独自の無音timerは追加しない（将来必要なら別工程で設計する）。
+     */
+    continuous: true,
     requiresOnDeviceRecognition: session.onDevice,
     addsPunctuation: true,
     maxAlternatives: 1,
@@ -330,6 +366,7 @@ export async function startRecognition(
     onDevice: params.preferOnDevice,
     receivedResult: false,
     receivedFinal: false,
+    finalAccumulator: EMPTY_TRANSCRIPT_ACCUMULATOR,
     lastInterim: '',
     retryWithServer: false,
     finished: false,
@@ -345,11 +382,17 @@ export async function startRecognition(
       const transcript = event.results[0]?.transcript ?? '';
       session.receivedResult = true;
       if (event.isFinal) {
+        /*
+         * iOS18では疑似final検出以降、この分岐に複数回入りうる。断片を累積して
+         * 全文へ再構成した上で、都度`onFinal`を呼ぶ（画面側は置換のままでよい。
+         * 渡す文字列自体が最新の累積全文になるため）。
+         */
         session.receivedFinal = true;
+        session.finalAccumulator = accumulateFinalTranscript(session.finalAccumulator, transcript);
         session.lastInterim = '';
-        callbacks.onFinal(transcript);
+        callbacks.onFinal(joinTranscript(session.finalAccumulator));
       } else {
-        // finalが来ないまま終わったときの救済に使うため保持する
+        // finalが一度も来ないまま終わったときの救済に使うため保持する
         session.lastInterim = transcript;
         callbacks.onInterim(transcript);
       }
