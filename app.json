@@ -61,7 +61,8 @@
           "microphonePermission": "音声入力で話した内容を翻訳するためにマイクを使用します",
           "speechRecognitionPermission": "話した内容を文字に変換して翻訳するために音声認識を使用します"
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,

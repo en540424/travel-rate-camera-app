@@ -16,6 +16,11 @@ interface CompareRow {
 const ROWS: CompareRow[] = [
   { label: '保存件数', free: `${FREE_LIMITS.saves}件`, pro: '無制限' },
   { label: '旅行作成', free: `${FREE_LIMITS.trips}件`, pro: '無制限' },
+  // カテゴリーは「保存はFreeでもできる／絞り込みと分析はPro」という切り分けを表に出す
+  { label: 'カテゴリー保存', free: '○', pro: '○' },
+  { label: 'カテゴリー絞り込み', free: '—', pro: '○' },
+  { label: 'カテゴリー分析', free: '—', pro: '○' },
+  { label: 'CSV書き出し', free: '—', pro: '○' },
 ];
 
 export default function ProFeaturesScreen() {

@@ -5,8 +5,13 @@ import * as FileSystem from 'expo-file-system/legacy';
 
 import { ThemedText } from '@/components/themed-text';
 import { SettingRow, SettingSection } from '@/components/ui';
+import { getCategoryLabel } from '@/config/categories';
+import { SHOW_PRO } from '@/config/feature-flags';
 import { useHistory } from '@/hooks/use-history';
+import { useIsPro } from '@/hooks/use-purchases';
 import { useTrips } from '@/hooks/use-trips';
+import { buildCsvFilename, buildHistoryCsv, withUtf8Bom } from '@/lib/csv-export-core';
+import { shareCsv } from '@/lib/csv-export-service';
 import { color, radius, shadow } from '@/theme/tokens';
 
 function StatCard({ label, value, tone }: { label: string; value: string; tone?: 'candidate' | 'purchased' }) {
@@ -19,10 +24,18 @@ function StatCard({ label, value, tone }: { label: string; value: string; tone?:
   );
 }
 
+/** 端末のローカル日付を "YYYY-MM-DD" で返す（ファイル名用。UTCへ寄せない） */
+function todayDateKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export default function DataManagementScreen() {
   const { history, totalCount, clearAll, reload } = useHistory();
   const { activeTrip, loadTrips } = useTrips();
+  const isPro = useIsPro();
   const [tripCount, setTripCount] = useState(0);
+  const [isExporting, setIsExporting] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -57,6 +70,66 @@ export default function DataManagementScreen() {
         } catch {}
       }),
     );
+  }
+
+  /**
+   * CSV書き出し（Pro専用）。
+   *
+   * ■ 書き出す範囲
+   * `useHistory()`が読み込んでいる**現在の旅行の保存記録**をそのまま出す。
+   * 分析画面の「購入済みかつ期間内」という絞り込みは**流用しない**
+   * （CSVは履歴データの書き出しが目的なので、候補も含めて全件出し、
+   * 購入/候補は「状態」列として持たせ、受け取った側が自由に絞れる形にする）。
+   *
+   * ■ Free時
+   * ボタンは隠さず、押したらPro画面へ送る（何が得られるか分かる導線を優先）。
+   */
+  async function handleExportCsv() {
+    if (!isPro) {
+      router.push('/pro');
+      return;
+    }
+    if (activeTrip == null || history.length === 0) {
+      Alert.alert(
+        '書き出せる記録がありません',
+        'この旅行にはまだ保存された記録がありません。記録を保存してからお試しください。',
+        [{ text: 'OK' }],
+      );
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const csv = withUtf8Bom(
+        buildHistoryCsv(
+          history.map((row) => ({
+            createdAt: row.created_at,
+            entryDate: row.entry_date,
+            category: row.category,
+            memo: row.memo,
+            isPurchased: (row.is_purchased ?? 0) === 1,
+            currency: row.currency,
+            foreignAmount: row.foreign_amount,
+            jpyAmount: row.jpy_amount,
+            rateUsed: row.rate_used,
+          })),
+          // カテゴリーラベルは config/categories.ts を唯一の正とする（別mapを作らない）
+          { tripName: activeTrip.name, categoryLabelOf: getCategoryLabel },
+        ),
+      );
+      const result = await shareCsv(buildCsvFilename(activeTrip.name, todayDateKey()), csv);
+      if (result.status === 'unavailable') {
+        Alert.alert('この端末では書き出せません', 'ファイルの共有に対応していません。', [{ text: 'OK' }]);
+      } else if (result.status === 'error') {
+        Alert.alert(
+          '書き出せませんでした',
+          'CSVの作成中にエラーが発生しました。もう一度お試しください。',
+          [{ text: 'OK' }],
+        );
+      }
+    } finally {
+      setIsExporting(false);
+    }
   }
 
   function handleClearAll() {
@@ -106,6 +179,20 @@ export default function DataManagementScreen() {
             機種変更やバックアップ機能は今後の検討項目です。
           </ThemedText>
         </View>
+
+        {/* 書き出し（Pro）。「バックアップについて」の直後に置き、
+            端末内だけに残るデータを手元へ持ち出す手段としてつなげる。
+            CSV導線はアプリ内でここ1か所だけにする（複数画面へ重複配置しない）。 */}
+        {SHOW_PRO && Platform.OS !== 'web' && (
+          <SettingSection title="書き出し">
+            <SettingRow
+              label={isExporting ? '書き出し中…' : 'CSVで書き出す'}
+              value={activeTrip != null ? `${history.length}件` : undefined}
+              badge={isPro ? undefined : 'Pro'}
+              onPress={isExporting ? undefined : handleExportCsv}
+            />
+          </SettingSection>
+        )}
 
         {/* 危険な操作 */}
         <SettingSection title="危険な操作">

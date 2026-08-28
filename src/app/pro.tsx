@@ -32,6 +32,14 @@ interface Feature {
 const FEATURES: Feature[] = [
   { title: '保存件数の上限を解除', sub: `無料版は${FREE_LIMITS.saves}件まで。Proなら無制限に保存できます。` },
   { title: '旅行をいくつでも作成', sub: `無料版は${FREE_LIMITS.trips}件まで。Proなら複数の旅行を管理できます。` },
+  {
+    title: 'カテゴリー別の絞り込みと分析',
+    sub: 'カテゴリーの保存は無料版でも使えます。Proなら履歴の絞り込みと、金額・件数・構成比の分析ができます。',
+  },
+  {
+    title: 'CSVで書き出す',
+    sub: '保存した記録をCSVで書き出し、Excelやスプレッドシートで自由に集計できます。',
+  },
 ];
 
 export default function ProScreen() {
