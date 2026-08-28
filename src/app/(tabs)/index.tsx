@@ -51,7 +51,9 @@ import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
 const MEMO_PREVIEW_COUNT = 3;
 const PRICE_PREVIEW_COUNT = 3;
-const NEAR_SAVE_LIMIT = FREE_LIMITS.saves - 5;
+// 無料枠の大半を使ってからPro導線を出す（10件中7件目/70%消費時点から）。
+// 5件目（50%消費）からの表示は課金圧が強すぎるため緩和した（2026-08-28）。
+const NEAR_SAVE_LIMIT = FREE_LIMITS.saves - 3;
 // OCR写真プレビュー枠の高さ（styles.ocrPhotoPreviewFrameと一致させる・中心スクロール計算に使用）
 const OCR_PHOTO_PREVIEW_FRAME_HEIGHT = 110;
 
