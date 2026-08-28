@@ -81,10 +81,15 @@ export default function DataManagementScreen() {
    * （CSVは履歴データの書き出しが目的なので、候補も含めて全件出し、
    * 購入/候補は「状態」列として持たせ、受け取った側が自由に絞れる形にする）。
    *
+   * ■ 読み込み上限との関係
+   * `useHistory()`は表示用に最大500件しか読み込まない。保存件数がそれを超えている場合、
+   * **黙って足りないCSVを渡さない**（完全な書き出しに見えて実際は欠けている状態が一番危ない）。
+   * 件数が食い違う時は何件書き出すのかを明示し、ユーザーの了解を取ってから続行する。
+   *
    * ■ Free時
    * ボタンは隠さず、押したらPro画面へ送る（何が得られるか分かる導線を優先）。
    */
-  async function handleExportCsv() {
+  function handleExportCsv() {
     if (!isPro) {
       router.push('/pro');
       return;
@@ -97,6 +102,25 @@ export default function DataManagementScreen() {
       );
       return;
     }
+
+    if (history.length < totalCount) {
+      Alert.alert(
+        'すべての記録は書き出せません',
+        `この旅行には${totalCount}件の記録がありますが、書き出せるのは新しい方から${history.length}件です。`,
+        [
+          { text: 'キャンセル', style: 'cancel' },
+          { text: `${history.length}件を書き出す`, onPress: () => void runCsvExport() },
+        ],
+      );
+      return;
+    }
+
+    void runCsvExport();
+  }
+
+  /** 実際の書き出し・共有。件数の確認は`handleExportCsv`側で済ませてから呼ぶ */
+  async function runCsvExport() {
+    if (activeTrip == null) return;
 
     setIsExporting(true);
     try {
