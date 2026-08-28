@@ -302,6 +302,54 @@ export default function AnalyticsScreen() {
             </View>
           </View>
 
+          {SHOW_PRO && (
+            <View style={styles.card}>
+              <View style={styles.cardTitleRow}>
+                <ThemedText style={styles.cardTitle}>{categorySummaryTitle}</ThemedText>
+                {!isPro && <ProFeatureBadge />}
+              </View>
+
+              {isPro ? (
+                categorySummary.length === 0 ? (
+                  <ThemedText style={styles.emptyText}>この期間の購入済み記録はまだありません</ThemedText>
+                ) : (
+                  <View style={styles.tripList}>
+                    {categorySummary.map((c, i) => (
+                      <View key={c.id ?? 'uncategorized'} style={[styles.tripRow, i > 0 && styles.tripRowBorder]}>
+                        <View style={styles.categoryMain}>
+                          <ThemedText style={styles.tripName} numberOfLines={1}>{c.label}</ThemedText>
+                          <View style={styles.shareTrack}>
+                            <View style={[styles.shareFill, { width: `${Math.round(c.share * 100)}%` }]} />
+                          </View>
+                        </View>
+                        <View style={styles.tripRight}>
+                          <ThemedText style={styles.tripAmount}>{formatJpy(c.total)}</ThemedText>
+                          <ThemedText style={styles.tripCount}>
+                            {c.count}件・{Math.round(c.share * 100)}%
+                          </ThemedText>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )
+              ) : (
+                <>
+                  <ThemedText style={styles.lockedNote}>
+                    カテゴリー別の合計金額・件数・構成比をProで確認できます。カテゴリーの保存は無料版でも使えます。
+                  </ThemedText>
+                  {/* ProFeatureBadge自体は購入導線を持たない部品なので、行をPressableで包んで/proへ送る */}
+                  <Pressable
+                    onPress={() => router.push('/pro')}
+                    style={({ pressed }) => [styles.lockedCta, pressed && styles.lockedCtaPressed]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Proプランを見る">
+                    <ThemedText style={styles.lockedCtaText}>Proプランを見る</ThemedText>
+                  </Pressable>
+                </>
+              )}
+            </View>
+          )}
+
           {/* 今日表示：グラフの代わりに購入済み一覧 */}
           {period === 'today' && (
             <View style={styles.card}>
@@ -446,54 +494,6 @@ export default function AnalyticsScreen() {
           {/* 旅行別購入済み合計（データあり時のみ表示） */}
           {/* カテゴリー別（Pro機能）。カテゴリーの保存自体は無料版でもできるが、集計はPro。
               無料版でも存在は隠さず、何が得られるのかが分かる導線を出す（過度な煽りは置かない）。 */}
-          {SHOW_PRO && (
-            <View style={styles.card}>
-              <View style={styles.cardTitleRow}>
-                <ThemedText style={styles.cardTitle}>{categorySummaryTitle}</ThemedText>
-                {!isPro && <ProFeatureBadge />}
-              </View>
-
-              {isPro ? (
-                categorySummary.length === 0 ? (
-                  <ThemedText style={styles.emptyText}>この期間の購入済み記録はまだありません</ThemedText>
-                ) : (
-                  <View style={styles.tripList}>
-                    {categorySummary.map((c, i) => (
-                      <View key={c.id ?? 'uncategorized'} style={[styles.tripRow, i > 0 && styles.tripRowBorder]}>
-                        <View style={styles.categoryMain}>
-                          <ThemedText style={styles.tripName} numberOfLines={1}>{c.label}</ThemedText>
-                          <View style={styles.shareTrack}>
-                            <View style={[styles.shareFill, { width: `${Math.round(c.share * 100)}%` }]} />
-                          </View>
-                        </View>
-                        <View style={styles.tripRight}>
-                          <ThemedText style={styles.tripAmount}>{formatJpy(c.total)}</ThemedText>
-                          <ThemedText style={styles.tripCount}>
-                            {c.count}件・{Math.round(c.share * 100)}%
-                          </ThemedText>
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                )
-              ) : (
-                <>
-                  <ThemedText style={styles.lockedNote}>
-                    カテゴリー別の合計金額・件数・構成比をProで確認できます。カテゴリーの保存は無料版でも使えます。
-                  </ThemedText>
-                  {/* ProFeatureBadge自体は購入導線を持たない部品なので、行をPressableで包んで/proへ送る */}
-                  <Pressable
-                    onPress={() => router.push('/pro')}
-                    style={({ pressed }) => [styles.lockedCta, pressed && styles.lockedCtaPressed]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Proプランを見る">
-                    <ThemedText style={styles.lockedCtaText}>Proプランを見る</ThemedText>
-                  </Pressable>
-                </>
-              )}
-            </View>
-          )}
-
           {tripSummary.length > 0 && (
             <View style={styles.card}>
               <ThemedText style={styles.cardTitle}>{tripSummaryTitle}</ThemedText>

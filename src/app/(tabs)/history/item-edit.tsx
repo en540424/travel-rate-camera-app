@@ -9,7 +9,8 @@ import { PhotoModal } from '@/components/photo-modal';
 import { PhotoChangeSheet } from '@/components/domain/PhotoChangeSheet';
 import { ResilientPhoto } from '@/components/resilient-photo';
 import { ThemedText } from '@/components/themed-text';
-import { CATEGORIES, normalizeCategoryId, type CategoryId } from '@/config/categories';
+import { CategorySelector } from '@/components/domain';
+import { normalizeCategoryId, type CategoryId } from '@/config/categories';
 import { CURRENCIES } from '@/constants/currencies';
 import type { HistoryRow } from '@/db/queries/history';
 import { getHistoryById } from '@/db/queries/history';
@@ -476,31 +477,10 @@ export default function ItemEditScreen() {
             />
           </View>
 
-          {/* カテゴリー（無料版でも選択できる。もう一度押すと未分類へ戻す） */}
+          {/* カテゴリー（無料版でも選択できる。カメラ画面の保存フローと同じ共通部品を使う） */}
           <View style={styles.field}>
             <ThemedText style={styles.label}>カテゴリー</ThemedText>
-            <View style={styles.categoryChips}>
-              {CATEGORIES.map((c) => {
-                const selected = category === c.id;
-                return (
-                  <Pressable
-                    key={c.id}
-                    onPress={() => setCategory(selected ? null : c.id)}
-                    style={({ pressed }) => [
-                      styles.categoryChip,
-                      selected && styles.categoryChipSelected,
-                      pressed && styles.pressed,
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}>
-                    <ThemedText
-                      style={[styles.categoryChipText, selected && styles.categoryChipTextSelected]}>
-                      {c.label}
-                    </ThemedText>
-                  </Pressable>
-                );
-              })}
-            </View>
+            <CategorySelector value={category} onChange={setCategory} />
           </View>
 
           {/* ステータス */}
@@ -648,19 +628,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: color.text,
   },
-  // カテゴリーチップ。既存のtoggle（候補/購入済み）と同じinputBorder系の見た目に揃える
-  categoryChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  categoryChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: radius.pill,
-    borderWidth: 1.5,
-    borderColor: color.inputBorder,
-    backgroundColor: color.card,
-  },
-  categoryChipSelected: { backgroundColor: color.primaryBorder, borderColor: color.primary },
-  categoryChipText: { fontSize: 13.5, fontWeight: '700', color: color.muted },
-  categoryChipTextSelected: { color: color.primaryDark, fontWeight: '800' },
   toggle: {
     flexDirection: 'row',
     borderRadius: radius.chip,

@@ -1,4 +1,5 @@
 export * from './ActiveTripBanner';
+export * from './CategorySelector';
 export * from './ConversionSummaryCard';
 export * from './CurrencyFlagImage';
 export * from './ItemCard';
