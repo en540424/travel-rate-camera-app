@@ -14,7 +14,41 @@ import {
   restorePurchases as restorePurchasesOnDevice,
 } from '@/lib/revenuecat';
 import type { PurchaseOutcome, RestoreOutcome } from '@/lib/revenuecat';
+import { diagnosePurchaseSetup } from '@/lib/revenuecat-package-core';
 import { usePurchasesStore } from '@/stores/purchases-store';
+
+/**
+ * 価格が出ない原因を次回Buildで切り分けるための診断ログ。
+ *
+ * 出すのは**件数とidentifierだけ**。APIキー・レシート・ユーザー識別子・
+ * CustomerInfoの中身は一切出さない（identifierはApp Store Connect上の公開値）。
+ * `console.warn`で出すのは、Preview Build（release JS）でもXcode/Consoleから拾えるようにするため。
+ */
+function logPurchaseDiagnostics(): void {
+  const state = usePurchasesStore.getState();
+  const diagnosis = diagnosePurchaseSetup({
+    isConfigured: state.isConfigured,
+    offering: state.offering,
+    monthlyResolved: state.monthlyPackage != null,
+    annualResolved: state.annualPackage != null,
+  });
+  const packages = state.offering?.availablePackages ?? [];
+  console.warn(
+    '[PurchaseDiag]',
+    JSON.stringify({
+      diagnosis,
+      configured: state.isConfigured,
+      // どれが欠けているかを一目で切り分けるための最小情報
+      offeringId: state.offering?.identifier ?? null,
+      packageCount: packages.length,
+      packageIds: packages.map((p) => p.identifier),
+      packageTypes: packages.map((p) => p.packageType),
+      productIds: packages.map((p) => p.product?.identifier ?? null),
+      monthlyResolved: state.monthlyPackage != null,
+      annualResolved: state.annualPackage != null,
+    }),
+  );
+}
 
 /**
  * アプリ起動時に1回だけ呼び出す初期化hook。RootLayoutなど単一の場所からのみ呼ぶこと。
@@ -33,6 +67,9 @@ export function usePurchasesInit(): void {
 
       if (!configured) {
         usePurchasesStore.getState().setInitialized(true);
+        // ここで止まる＝iOS以外か、EXPO_PUBLIC_REVENUECAT_IOS_KEYがBuildへ埋まっていない。
+        // 前者はWeb/Android、後者はEAS環境変数の未設定が原因になる。
+        logPurchaseDiagnostics();
         return;
       }
 
@@ -56,6 +93,7 @@ export function usePurchasesInit(): void {
         if (mounted) {
           usePurchasesStore.getState().setLoading(false);
           usePurchasesStore.getState().setInitialized(true);
+          logPurchaseDiagnostics();
         }
       }
     }

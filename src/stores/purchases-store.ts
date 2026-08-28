@@ -1,7 +1,12 @@
 import { create } from 'zustand';
 import type { CustomerInfo, PurchasesOffering, PurchasesPackage } from 'react-native-purchases';
 
-import { REVENUECAT_ENTITLEMENT_ID } from '@/config/revenuecat';
+import {
+  REVENUECAT_ANNUAL_PRODUCT_ID,
+  REVENUECAT_ENTITLEMENT_ID,
+  REVENUECAT_MONTHLY_PRODUCT_ID,
+} from '@/config/revenuecat';
+import { resolveAnnualPackage, resolveMonthlyPackage } from '@/lib/revenuecat-package-core';
 
 interface PurchasesStore {
   /** Purchases.configure が完了しているか（非対応環境/Key未設定ならfalseのまま） */
@@ -45,11 +50,14 @@ export const usePurchasesStore = create<PurchasesStore>((set) => ({
       isPro: customerInfo != null && REVENUECAT_ENTITLEMENT_ID in customerInfo.entitlements.active,
     }),
 
+  // `offering.monthly` / `.annual`はDashboardで定義済みidentifier（$rc_monthly等）を
+  // 使っている場合しか埋まらない。独自identifier構成でも価格が出るよう、
+  // packageType → Product ID の順にフォールバックする（revenuecat-package-core.ts）。
   setOffering: (offering) =>
     set({
       offering,
-      monthlyPackage: offering?.monthly ?? null,
-      annualPackage: offering?.annual ?? null,
+      monthlyPackage: resolveMonthlyPackage(offering, REVENUECAT_MONTHLY_PRODUCT_ID),
+      annualPackage: resolveAnnualPackage(offering, REVENUECAT_ANNUAL_PRODUCT_ID),
     }),
 
   setError: (error) => set({ error }),

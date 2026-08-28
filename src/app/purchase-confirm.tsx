@@ -16,9 +16,17 @@ interface IncludedFeature {
   value: string;
 }
 
+/**
+ * 購入画面に出す「含まれる機能」。**実際に今のBuildで使えるものだけを載せる。**
+ * 未実装の機能（為替レート自動取得など）をここへ先に書かない
+ * （購入直後に「無い」と分かる状態を作らない）。
+ */
 const INCLUDED: IncludedFeature[] = [
   { label: '保存件数', value: '無制限' },
   { label: '旅行作成数', value: '無制限' },
+  { label: 'カテゴリー絞り込み', value: '利用可' },
+  { label: 'カテゴリー分析', value: '利用可' },
+  { label: 'CSV書き出し', value: '利用可' },
 ];
 
 export default function PurchaseConfirmScreen() {
