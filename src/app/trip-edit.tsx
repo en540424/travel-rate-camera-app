@@ -5,7 +5,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react
 import { ThemedText } from '@/components/themed-text';
 import { CurrencyFlagImage } from '@/components/domain';
 import type { CurrencyCode } from '@/constants/currencies';
-import { CURRENCY_CODES } from '@/constants/currencies';
+import { CURRENCY_CODES, getRateInputExample } from '@/constants/currencies';
 import { useAllHistory } from '@/hooks/use-all-history';
 import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
@@ -206,7 +206,8 @@ export default function TripEditScreen() {
             <ThemedText style={styles.label}>為替レート（手入力）</ThemedText>
             <View style={styles.rateRow}>
               <ThemedText style={styles.ratePrefix}>1 {currency} =</ThemedText>
-              <TextInput style={styles.rateInput} value={rate} onChangeText={setRate} placeholder="148.5" placeholderTextColor={color.faint2} keyboardType="decimal-pad" />
+              {/* 通貨ごとの桁感に合わせた入力例。実勢レートではないため「例」と明示する */}
+              <TextInput style={styles.rateInput} value={rate} onChangeText={setRate} placeholder={`例 ${getRateInputExample(currency)}`} placeholderTextColor={color.faint2} keyboardType="decimal-pad" />
               <ThemedText style={styles.rateSuffix}>円</ThemedText>
             </View>
             <View style={styles.warnBanner}>

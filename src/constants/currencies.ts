@@ -28,3 +28,32 @@ export const FOREIGN_CURRENCY_CODES: CurrencyCode[] = CURRENCY_CODES.filter((c) 
 
 /** 将来 JPY→外貨に対応するための換算方向型 */
 export type ConversionDirection = 'TO_JPY' | 'FROM_JPY';
+
+/**
+ * 手入力レート欄の**入力例**（1通貨あたりの円）。
+ *
+ * ■ これは「最新レート」ではない
+ *   本アプリは為替APIを持たず、レートはユーザーの手入力が正本
+ *   （`exchange_rates`テーブルと`trips.manual_rate`はいずれも手入力値の保存先）。
+ *   ここの値は**桁感を示すためだけの例**であり、実勢レートとして使わない。
+ *   表示側は必ず「例 150」のように例であると分かる形にすること。
+ *
+ * ■ なぜ通貨ごとに持つのか
+ *   以前は全通貨で`148.5`固定のplaceholderだったため、
+ *   「1 KRW = 148.5円」「1 THB = 148.5円」のように桁が明確に誤っていた。
+ *   桁を間違えた手入力を誘発するため、通貨ごとの桁感に合わせる。
+ */
+const RATE_INPUT_EXAMPLE: Record<CurrencyCode, string> = {
+  USD: '150',
+  KRW: '0.11',
+  TWD: '4.8',
+  THB: '4.5',
+  EUR: '175',
+  GBP: '200',
+  JPY: '1',
+};
+
+/** 手入力レート欄のplaceholder用の入力例文字列。実勢レートではない（上のコメント参照） */
+export function getRateInputExample(currency: CurrencyCode): string {
+  return RATE_INPUT_EXAMPLE[currency] ?? '150';
+}

@@ -6,7 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { CurrencyFlagImage } from '@/components/domain';
 import { TripLimitSheet } from '@/components/domain/TripLimitSheet';
 import type { CurrencyCode } from '@/constants/currencies';
-import { CURRENCIES, CURRENCY_CODES } from '@/constants/currencies';
+import { CURRENCIES, CURRENCY_CODES, getRateInputExample } from '@/constants/currencies';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { color, radius, shadow } from '@/theme/tokens';
@@ -144,7 +144,8 @@ export default function TripCreateScreen() {
                 style={styles.rateInput}
                 value={rate}
                 onChangeText={setRate}
-                placeholder="148.5"
+                // 通貨ごとの桁感に合わせた入力例。実勢レートではないため「例」と明示する
+                placeholder={`例 ${getRateInputExample(currency)}`}
                 placeholderTextColor={color.faint2}
                 keyboardType="decimal-pad"
               />
