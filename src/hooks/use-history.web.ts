@@ -32,6 +32,7 @@ function loadAll(): HistoryRow[] {
       memo: r.memo ?? null,
       image_uri: r.image_uri ?? null,
       entry_date: r.entry_date ?? null,
+      category: r.category ?? null,
     }));
   } catch {
     return [];
@@ -74,6 +75,7 @@ export function useHistory() {
     memo?: string,
     imageUri?: string,
     isPurchased?: boolean,
+    category?: string | null,
   ): Promise<{ blocked: boolean }> {
     if (!activeTrip) return { blocked: false };
     if (!canSaveEntry(isPro, totalCount)) return { blocked: true };
@@ -92,6 +94,7 @@ export function useHistory() {
       memo: memo ?? null,
       image_uri: imageUri ?? null,
       entry_date: null,
+      category: category ?? null,
     };
     persistAll([entry, ...loadAll()]);
     load();
@@ -172,6 +175,17 @@ export function useHistory() {
     load();
   }
 
+  /** カテゴリーを更新（null で未分類へ戻す） */
+  async function updateCategory(id: number, category: string | null) {
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    persistAll(
+      loadAll().map((r) =>
+        r.id === id ? { ...r, category, updated_at: now } : r,
+      ),
+    );
+    load();
+  }
+
   const isAtFreeLimit = !canSaveEntry(isPro, totalCount);
 
   return {
@@ -186,6 +200,7 @@ export function useHistory() {
     updateMemo,
     updateEntryDate,
     updateImageUri,
+    updateCategory,
     reload: load,
   };
 }

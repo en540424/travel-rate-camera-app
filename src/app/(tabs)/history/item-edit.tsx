@@ -9,6 +9,7 @@ import { PhotoModal } from '@/components/photo-modal';
 import { PhotoChangeSheet } from '@/components/domain/PhotoChangeSheet';
 import { ResilientPhoto } from '@/components/resilient-photo';
 import { ThemedText } from '@/components/themed-text';
+import { CATEGORIES, normalizeCategoryId, type CategoryId } from '@/config/categories';
 import { CURRENCIES } from '@/constants/currencies';
 import type { HistoryRow } from '@/db/queries/history';
 import { getHistoryById } from '@/db/queries/history';
@@ -20,7 +21,7 @@ import { formatJpy } from '@/utils/format';
 export default function ItemEditScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
   const id = params.id != null ? parseInt(params.id, 10) : NaN;
-  const { history, reload, updateAmount, updateMemo, togglePurchased, updateImageUri, removeEntry } = useHistory();
+  const { history, reload, updateAmount, updateMemo, togglePurchased, updateImageUri, updateCategory, removeEntry } = useHistory();
   const setHasUnsavedChanges = useUnsavedChangesStore((s) => s.setHasUnsavedChanges);
   const setDiscardHandler = useUnsavedChangesStore((s) => s.setDiscardHandler);
   const navigation = useNavigation();
@@ -40,13 +41,20 @@ export default function ItemEditScreen() {
   const [amount, setAmount] = useState('');
   const [memo, setMemo] = useState('');
   const [isPurchased, setIsPurchased] = useState(false);
+  /** 選択中カテゴリー。`null`は未分類（同じチップをもう一度押すと未分類へ戻せる） */
+  const [category, setCategory] = useState<CategoryId | null>(null);
   const [photoOpen, setPhotoOpen] = useState(false);
   const [showPhotoSheet, setShowPhotoSheet] = useState(false);
   const initedRef = useRef<number | null>(null);
   // 読み込み時点の値（未保存変更の判定基準）。amount/memo/isPurchasedの初期化と同時に確定する。
   const originalAmountRef = useRef('');
   const originalMemoRef = useRef('');
-  const originalIsPurchasedRef = useRef(false);
+  const originalIsPurchasedRef = useRef<boolean>(false);
+  /**
+   * 読み込み時点のカテゴリー（カテゴリー版の未保存判定の基準）。amount等の基準はrefだが、
+   * こちらは`originalPhotoUri`と同じ理由でstateで持つ（refをレンダー中に読むとReactの規約違反になる）。
+   */
+  const [originalCategory, setOriginalCategory] = useState<CategoryId | null>(null);
   /**
    * 写真も金額・メモと同じ「保存するまで下書き」に揃える。**画面が表示する写真の正はこれ**で、
    * `item.image_uri`（＝DBの確定値）ではない。DBへ書くのは`handleSave`だけ。
@@ -118,19 +126,23 @@ export default function ItemEditScreen() {
       const initialMemo = item.memo ?? '';
       const initialIsPurchased = (item.is_purchased ?? 0) === 1;
       const initialPhotoUri = item.image_uri ?? null;
+      // 未知の値（将来カテゴリーを減らした場合の残骸）はnull＝未分類へ寄せる
+      const initialCategory = normalizeCategoryId(item.category);
       setAmount(initialAmount);
       setMemo(initialMemo);
       setIsPurchased(initialIsPurchased);
+      setCategory(initialCategory);
       setDraftPhotoUri(initialPhotoUri);
       originalAmountRef.current = initialAmount;
       originalMemoRef.current = initialMemo;
       originalIsPurchasedRef.current = initialIsPurchased;
+      setOriginalCategory(initialCategory);
       setOriginalPhotoUri(initialPhotoUri);
       createdFilesRef.current = [];
     }
   }, [item]);
 
-  // 金額・メモ・ステータス・写真のいずれかが読み込み時点と異なれば「未保存の変更あり」。
+  // 金額・メモ・カテゴリー・ステータス・写真のいずれかが読み込み時点と異なれば「未保存の変更あり」。
   // 写真も他項目と同じ「初期値との比較」で判定する（専用フラグは持たない）。そのため
   // 元と同じ状態へ戻せば自然にfalseへ戻る。
   // 下タブ移動の確認Alert判定に使うstoreへ同期し、画面を離れる時は必ず解除する。
@@ -138,6 +150,7 @@ export default function ItemEditScreen() {
     amount !== originalAmountRef.current ||
     memo !== originalMemoRef.current ||
     isPurchased !== originalIsPurchasedRef.current ||
+    category !== originalCategory ||
     draftPhotoUri !== originalPhotoUri;
 
   useEffect(() => {
@@ -318,6 +331,10 @@ export default function ItemEditScreen() {
     if (isPurchased !== ((item.is_purchased ?? 0) === 1)) {
       updates.push(togglePurchased(item.id, item.is_purchased ?? 0));
     }
+    // カテゴリーは変更があった時だけ書く（他項目と同じ「変わっていなければDBへ触らない」規律）
+    if (category !== normalizeCategoryId(item.category)) {
+      updates.push(updateCategory(item.id, category));
+    }
     // 写真の確定はここだけ。変更が無ければDBへ触らない。
     const previousPhotoUri = originalPhotoUri;
     const photoChanged = draftPhotoUri !== previousPhotoUri;
@@ -348,6 +365,7 @@ export default function ItemEditScreen() {
     originalAmountRef.current = savedAmount;
     originalMemoRef.current = memo;
     originalIsPurchasedRef.current = isPurchased;
+    setOriginalCategory(category);
     setOriginalPhotoUri(draftPhotoUri);
     allowLeaveRef.current = true;
     setHasUnsavedChanges(false);
@@ -456,6 +474,33 @@ export default function ItemEditScreen() {
               maxLength={100}
               returnKeyType="done"
             />
+          </View>
+
+          {/* カテゴリー（無料版でも選択できる。もう一度押すと未分類へ戻す） */}
+          <View style={styles.field}>
+            <ThemedText style={styles.label}>カテゴリー</ThemedText>
+            <View style={styles.categoryChips}>
+              {CATEGORIES.map((c) => {
+                const selected = category === c.id;
+                return (
+                  <Pressable
+                    key={c.id}
+                    onPress={() => setCategory(selected ? null : c.id)}
+                    style={({ pressed }) => [
+                      styles.categoryChip,
+                      selected && styles.categoryChipSelected,
+                      pressed && styles.pressed,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}>
+                    <ThemedText
+                      style={[styles.categoryChipText, selected && styles.categoryChipTextSelected]}>
+                      {c.label}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
 
           {/* ステータス */}
@@ -603,6 +648,19 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: color.text,
   },
+  // カテゴリーチップ。既存のtoggle（候補/購入済み）と同じinputBorder系の見た目に揃える
+  categoryChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  categoryChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderColor: color.inputBorder,
+    backgroundColor: color.card,
+  },
+  categoryChipSelected: { backgroundColor: color.primaryBorder, borderColor: color.primary },
+  categoryChipText: { fontSize: 13.5, fontWeight: '700', color: color.muted },
+  categoryChipTextSelected: { color: color.primaryDark, fontWeight: '800' },
   toggle: {
     flexDirection: 'row',
     borderRadius: radius.chip,

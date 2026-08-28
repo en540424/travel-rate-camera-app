@@ -1,14 +1,17 @@
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
-import { CurrencyFlagImage } from '@/components/domain';
+import { CurrencyFlagImage, ProFeatureBadge } from '@/components/domain';
+import { aggregateByCategory } from '@/config/categories';
+import { SHOW_PRO } from '@/config/feature-flags';
 import { DT } from '@/constants/designTokens';
 import type { CurrencyCode } from '@/constants/currencies';
 import type { HistoryRow } from '@/db/queries/history';
 import { useAllHistory } from '@/hooks/use-all-history';
+import { useIsPro } from '@/hooks/use-purchases';
 import { color } from '@/theme/tokens';
 import { formatJpy } from '@/utils/format';
 import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
@@ -67,6 +70,7 @@ export default function AnalyticsScreen() {
   }, []);
 
   const { history, tripMap, reload } = useAllHistory();
+  const isPro = useIsPro();
   const { width: windowWidth } = useWindowDimensions();
   const [period, setPeriod] = useState<Period>('year');
   const [anchorDate, setAnchorDate] = useState(() => new Date());
@@ -176,6 +180,24 @@ export default function AnalyticsScreen() {
     return Array.from(map.values()).sort((a, b) => b.purchased - a.purchased);
   }, [history, tripMap, period, anchorYear, anchorMonth, todayKey]);
 
+  /**
+   * カテゴリー別集計。**絞り込み条件は上の`tripSummary`と完全に同じ**
+   * （`is_purchased === 1` かつ `matchesPeriod(...)`）にする。片方だけ候補を含めると、
+   * 同じ画面に並ぶ2枚のカードで合計が食い違って見えるため。
+   * 集計そのものは`config/categories.ts`の`aggregateByCategory`
+   * （純粋関数・`node --test`で検証済み）に委ねる。
+   */
+  const categorySummary = useMemo(() => {
+    const rows = history
+      .filter(
+        (row) =>
+          row.is_purchased === 1 &&
+          matchesPeriod(rowToDateKey(row), period, anchorYear, anchorMonth, todayKey),
+      )
+      .map((row) => ({ category: row.category, jpyAmount: row.jpy_amount }));
+    return aggregateByCategory(rows);
+  }, [history, period, anchorYear, anchorMonth, todayKey]);
+
   const maxAmount = Math.max(...chartData.map((d) => d.amount), 1);
   const hasAnyAmount = chartData.some((d) => d.amount > 0);
   const selectedBar = chartData.find((d) => d.key === selectedBarKey) ?? null;
@@ -206,6 +228,9 @@ export default function AnalyticsScreen() {
 
   const tripSummaryTitle =
     period === 'year' ? '今年の旅行別購入済み' : period === 'month' ? '今月の旅行別購入済み' : '今日の旅行別購入済み';
+
+  const categorySummaryTitle =
+    period === 'year' ? '今年のカテゴリー別' : period === 'month' ? '今月のカテゴリー別' : '今日のカテゴリー別';
 
   return (
     <View style={styles.screen}>
@@ -419,6 +444,56 @@ export default function AnalyticsScreen() {
           )}
 
           {/* 旅行別購入済み合計（データあり時のみ表示） */}
+          {/* カテゴリー別（Pro機能）。カテゴリーの保存自体は無料版でもできるが、集計はPro。
+              無料版でも存在は隠さず、何が得られるのかが分かる導線を出す（過度な煽りは置かない）。 */}
+          {SHOW_PRO && (
+            <View style={styles.card}>
+              <View style={styles.cardTitleRow}>
+                <ThemedText style={styles.cardTitle}>{categorySummaryTitle}</ThemedText>
+                {!isPro && <ProFeatureBadge />}
+              </View>
+
+              {isPro ? (
+                categorySummary.length === 0 ? (
+                  <ThemedText style={styles.emptyText}>この期間の購入済み記録はまだありません</ThemedText>
+                ) : (
+                  <View style={styles.tripList}>
+                    {categorySummary.map((c, i) => (
+                      <View key={c.id ?? 'uncategorized'} style={[styles.tripRow, i > 0 && styles.tripRowBorder]}>
+                        <View style={styles.categoryMain}>
+                          <ThemedText style={styles.tripName} numberOfLines={1}>{c.label}</ThemedText>
+                          <View style={styles.shareTrack}>
+                            <View style={[styles.shareFill, { width: `${Math.round(c.share * 100)}%` }]} />
+                          </View>
+                        </View>
+                        <View style={styles.tripRight}>
+                          <ThemedText style={styles.tripAmount}>{formatJpy(c.total)}</ThemedText>
+                          <ThemedText style={styles.tripCount}>
+                            {c.count}件・{Math.round(c.share * 100)}%
+                          </ThemedText>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )
+              ) : (
+                <>
+                  <ThemedText style={styles.lockedNote}>
+                    カテゴリー別の合計金額・件数・構成比をProで確認できます。カテゴリーの保存は無料版でも使えます。
+                  </ThemedText>
+                  {/* ProFeatureBadge自体は購入導線を持たない部品なので、行をPressableで包んで/proへ送る */}
+                  <Pressable
+                    onPress={() => router.push('/pro')}
+                    style={({ pressed }) => [styles.lockedCta, pressed && styles.lockedCtaPressed]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Proプランを見る">
+                    <ThemedText style={styles.lockedCtaText}>Proプランを見る</ThemedText>
+                  </Pressable>
+                </>
+              )}
+            </View>
+          )}
+
           {tripSummary.length > 0 && (
             <View style={styles.card}>
               <ThemedText style={styles.cardTitle}>{tripSummaryTitle}</ThemedText>
@@ -749,5 +824,47 @@ const styles = StyleSheet.create({
     fontSize: DT.fontSize.xs - 1,
     fontWeight: DT.fontWeight.medium,
     color: DT.colors.textMuted,
+  },
+
+  // ── カテゴリー別（Pro） ──
+  // 行の骨格は既存のtripRow/tripRight/tripAmount/tripCountをそのまま再利用し、
+  // 構成比バーとPro導線の分だけを足す（新しいdashboardは作らない）。
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: DT.spacing.sm,
+  },
+  categoryMain: { flex: 1, gap: 5 },
+  shareTrack: {
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: DT.colors.border,
+    overflow: 'hidden',
+  },
+  shareFill: {
+    height: '100%',
+    borderRadius: 3,
+    backgroundColor: color.primary,
+  },
+  lockedNote: {
+    fontSize: DT.fontSize.xs,
+    color: DT.colors.textMuted,
+    lineHeight: 19,
+    marginTop: 6,
+  },
+  lockedCta: {
+    marginTop: 12,
+    paddingVertical: 11,
+    borderRadius: DT.radius.md,
+    borderWidth: 1.5,
+    borderColor: color.primary,
+    alignItems: 'center',
+  },
+  lockedCtaPressed: { opacity: 0.85 },
+  lockedCtaText: {
+    fontSize: DT.fontSize.sm,
+    fontWeight: DT.fontWeight.bold,
+    color: color.primaryDark,
   },
 });

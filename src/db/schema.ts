@@ -110,4 +110,11 @@ export async function migrateDatabase(db: SQLiteDatabase): Promise<void> {
     try { await db.runAsync('ALTER TABLE conversion_history ADD COLUMN entry_date TEXT'); } catch {}
     await db.runAsync('PRAGMA user_version = 6');
   }
+
+  // 買い物カテゴリー。既存recordを一切書き換えないため nullable・DEFAULT無しの追加のみ
+  // （既存行は NULL ＝ 未分類。`config/categories.ts`のidだけを保存する）。
+  if (currentVersion < 7) {
+    try { await db.runAsync('ALTER TABLE conversion_history ADD COLUMN category TEXT'); } catch {}
+    await db.runAsync('PRAGMA user_version = 7');
+  }
 }

@@ -14,6 +14,7 @@ import {
   insertHistory,
   markPurchased as markPurchasedQuery,
   updateAmount as updateAmountQuery,
+  updateCategory as updateCategoryQuery,
   updateEntryDate as updateEntryDateQuery,
   updateImageUri as updateImageUriQuery,
   updateMemo as updateMemoQuery,
@@ -55,6 +56,7 @@ export function useHistory() {
     memo?: string,
     imageUri?: string,
     isPurchased?: boolean,
+    category?: string | null,
   ): Promise<{ blocked: boolean }> {
     if (!activeTrip) return { blocked: false };
     if (!canSaveEntry(isPro, totalCount)) return { blocked: true };
@@ -70,6 +72,7 @@ export function useHistory() {
       memo,
       imageUri,
       isPurchased,
+      category,
     );
     await load();
     return { blocked: false };
@@ -109,6 +112,12 @@ export function useHistory() {
     await load();
   }
 
+  /** カテゴリーを更新（null で未分類へ戻す） */
+  async function updateCategory(id: number, category: string | null) {
+    await updateCategoryQuery(db, id, category);
+    await load();
+  }
+
   async function updateImageUri(id: number, imageUri: string | null) {
     await updateImageUriQuery(db, id, imageUri);
     await load();
@@ -128,6 +137,7 @@ export function useHistory() {
     updateMemo,
     updateEntryDate,
     updateImageUri,
+    updateCategory,
     reload: load,
   };
 }

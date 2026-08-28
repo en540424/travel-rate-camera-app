@@ -8,6 +8,7 @@ import { PhotoModal } from '@/components/photo-modal';
 import { ResilientPhoto } from '@/components/resilient-photo';
 import { ThemedText } from '@/components/themed-text';
 import { CurrencyFlagImage } from '@/components/domain';
+import { getCategoryLabel } from '@/config/categories';
 import type { HistoryRow } from '@/db/queries/history';
 import { getHistoryById } from '@/db/queries/history';
 import { useHistory } from '@/hooks/use-history';
@@ -188,6 +189,12 @@ export default function ItemDetailScreen() {
                   trip_idが一致する場合のみ旅行名を表示する。 */}
               {item.trip_id === activeTrip?.id ? (activeTrip?.name ?? '—') : '—'}
             </ThemedText>
+          </View>
+          <View style={styles.infoSep} />
+          <View style={styles.infoRow}>
+            <ThemedText style={styles.infoLabel}>カテゴリー</ThemedText>
+            {/* 未設定・未知の値はどちらも「未分類」と表示する（getCategoryLabelが正規化する） */}
+            <ThemedText style={styles.infoValue}>{getCategoryLabel(item.category)}</ThemedText>
           </View>
           <View style={styles.infoSep} />
           <View style={styles.infoRow}>

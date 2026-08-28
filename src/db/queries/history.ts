@@ -17,6 +17,8 @@ export interface HistoryRow {
   memo: string | null;
   image_uri: string | null;
   entry_date: string | null;
+  /** 買い物カテゴリーid（`config/categories.ts`の`CategoryId`）。未分類はnull */
+  category: string | null;
 }
 
 /** 無料版の最大保存件数（config/limits.ts の FREE_LIMITS.saves を正とする） */
@@ -97,15 +99,16 @@ export async function clearHistoryForTrip(
 /** 履歴を1件追加 */
 export async function insertHistory(
   db: SQLiteDatabase,
-  entry: Omit<HistoryRow, 'id' | 'created_at' | 'is_purchased' | 'purchased_at' | 'updated_at' | 'memo' | 'image_uri' | 'entry_date'>,
+  entry: Omit<HistoryRow, 'id' | 'created_at' | 'is_purchased' | 'purchased_at' | 'updated_at' | 'memo' | 'image_uri' | 'entry_date' | 'category'>,
   memo?: string,
   imageUri?: string,
   isPurchased?: boolean,
+  category?: string | null,
 ): Promise<void> {
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
   await db.runAsync(
-    `INSERT INTO conversion_history (currency, foreign_amount, jpy_amount, rate_used, trip_id, memo, image_uri, is_purchased, purchased_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO conversion_history (currency, foreign_amount, jpy_amount, rate_used, trip_id, memo, image_uri, is_purchased, purchased_at, category)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     entry.currency,
     entry.foreign_amount,
     entry.jpy_amount,
@@ -115,6 +118,7 @@ export async function insertHistory(
     imageUri ?? null,
     isPurchased ? 1 : 0,
     isPurchased ? now : null,
+    category ?? null,
   );
 }
 
@@ -161,6 +165,21 @@ export async function updateMemo(
   await db.runAsync(
     `UPDATE conversion_history SET memo = ?, updated_at = ? WHERE id = ?`,
     memo,
+    now,
+    id,
+  );
+}
+
+/** 買い物カテゴリーを更新（null で未分類へ戻す。値は`config/categories.ts`のidのみ） */
+export async function updateCategory(
+  db: SQLiteDatabase,
+  id: number,
+  category: string | null,
+): Promise<void> {
+  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  await db.runAsync(
+    `UPDATE conversion_history SET category = ?, updated_at = ? WHERE id = ?`,
+    category,
     now,
     id,
   );

@@ -8,7 +8,7 @@ import { DEV_BYPASS_FREE_LIMITS } from './feature-flags';
 // 無料版の上限（§7）
 export const FREE_LIMITS = {
   trips: 1,
-  saves: 30,
+  saves: 10,
 } as const;
 
 /**
