@@ -32,7 +32,7 @@ export function useHistory() {
   const [totalCount, setTotalCount] = useState(0);
 
   const load = useCallback(async () => {
-    // 初回MVPは保存上限を露出しない方針のため、表示件数はFREE_HISTORY_LIMIT(30)で切らない（P0-04）。
+    // 初回MVPは保存上限を露出しない方針のため、表示件数はFREE_HISTORY_LIMIT（FREE_LIMITS.saves）で切らない（P0-04）。
     // Pro側と同じ上限(500)を無料版でも使う。FREE_LIMITS.saves自体は変更しない。
     const limit = 500;
     const [rows, count] = await Promise.all([

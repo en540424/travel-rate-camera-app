@@ -7,6 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { CurrencyFlagImage } from '@/components/domain';
 import { EmptyState } from '@/components/ui';
 import { ResilientPhoto } from '@/components/resilient-photo';
+import { CATEGORIES, normalizeCategoryId, type CategoryId } from '@/config/categories';
 import { FALLBACK_BUDGET_JPY } from '@/constants/camera-screen';
 import { SHOW_PRO } from '@/config/feature-flags';
 import { FREE_HISTORY_LIMIT } from '@/db/queries/history';
@@ -66,6 +67,8 @@ export default function HistoryScreen() {
 
   const { history, totalCount, reload } = useHistory();
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
+  /** カテゴリー絞り込み（Pro機能）。`null`は絞り込みなし */
+  const [categoryFilter, setCategoryFilter] = useState<CategoryId | null>(null);
   const isPro = useIsPro();
   const isLimited = !isPro && totalCount >= FREE_HISTORY_LIMIT;
   const { activeTrip } = useTrips();
@@ -88,10 +91,16 @@ export default function HistoryScreen() {
   }, [history]);
 
   const displayHistory = useMemo(() => {
-    if (filterMode === 'candidate') return history.filter((r) => (r.is_purchased ?? 0) === 0);
-    if (filterMode === 'purchased') return history.filter((r) => (r.is_purchased ?? 0) === 1);
-    return history;
-  }, [history, filterMode]);
+    let rows = history;
+    if (filterMode === 'candidate') rows = rows.filter((r) => (r.is_purchased ?? 0) === 0);
+    else if (filterMode === 'purchased') rows = rows.filter((r) => (r.is_purchased ?? 0) === 1);
+    // カテゴリー絞り込みはPro専用。無料版ではUI自体を出さないが、
+    // 解約等でisProがfalseへ戻った時に絞り込みが残り続けないよう、ここでも条件に含める。
+    if (isPro && categoryFilter !== null) {
+      rows = rows.filter((r) => normalizeCategoryId(r.category) === categoryFilter);
+    }
+    return rows;
+  }, [history, filterMode, isPro, categoryFilter]);
 
   useFocusEffect(
     useCallback(() => {
@@ -215,6 +224,36 @@ export default function HistoryScreen() {
                   <ThemedText style={[styles.segmentCount, active && styles.segmentCountActive]}>
                     {counts[mode]}
                   </ThemedText>
+                </ThemedText>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+
+      {/* カテゴリー絞り込み（Pro機能）。カテゴリーの保存自体は無料版でもできるが、絞り込みはPro。
+          既存のすべて/候補/購入済みセグメントは壊さず、その下に横並びチップとして足すだけに留める。 */}
+      {SHOW_PRO && isPro && history.length > 0 && (
+        <View style={styles.categoryFilterRow}>
+          <TouchableOpacity
+            style={[styles.categoryFilterChip, categoryFilter === null && styles.categoryFilterChipActive]}
+            onPress={() => setCategoryFilter(null)}
+            activeOpacity={0.8}>
+            <ThemedText
+              style={[styles.categoryFilterText, categoryFilter === null && styles.categoryFilterTextActive]}>
+              全カテゴリー
+            </ThemedText>
+          </TouchableOpacity>
+          {CATEGORIES.map((c) => {
+            const active = categoryFilter === c.id;
+            return (
+              <TouchableOpacity
+                key={c.id}
+                style={[styles.categoryFilterChip, active && styles.categoryFilterChipActive]}
+                onPress={() => setCategoryFilter(active ? null : c.id)}
+                activeOpacity={0.8}>
+                <ThemedText style={[styles.categoryFilterText, active && styles.categoryFilterTextActive]}>
+                  {c.label}
                 </ThemedText>
               </TouchableOpacity>
             );
@@ -421,6 +460,21 @@ const styles = StyleSheet.create({
   segmentTextActive: { color: color.text, fontWeight: '700' },
   segmentCount: { fontSize: 12.5, fontWeight: '600', color: color.faint2 },
   segmentCountActive: { color: color.muted },
+
+  // カテゴリー絞り込み（Pro）。上のsegmentとは別物と分かるよう、
+  // 塗り分けではなく枠線ベースのpillチップで軽く見せる。
+  categoryFilterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  categoryFilterChip: {
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: color.line,
+    backgroundColor: color.card,
+  },
+  categoryFilterChipActive: { backgroundColor: color.primaryBorder, borderColor: color.primary },
+  categoryFilterText: { fontSize: 12, fontWeight: '600', color: color.muted },
+  categoryFilterTextActive: { color: color.primaryDark, fontWeight: '700' },
 
   cardGap: { height: 10 },
   // カレンダー画面の商品カードと同じ思想（白カード＋左端の購入済み/候補アクセント）。

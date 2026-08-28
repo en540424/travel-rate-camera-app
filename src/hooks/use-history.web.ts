@@ -57,7 +57,7 @@ export function useHistory() {
       ? all.filter((r) => r.trip_id === activeTrip.id)
       : all;
     setTotalCount(rows.length);
-    // 初回MVPは保存上限を露出しない方針のため、表示件数はFREE_HISTORY_LIMIT(30)で切らない（P0-04）。
+    // 初回MVPは保存上限を露出しない方針のため、表示件数はFREE_HISTORY_LIMIT（FREE_LIMITS.saves）で切らない（P0-04）。
     const limit = 500;
     setHistoryState(rows.slice(0, limit));
   }, [activeTrip]);
