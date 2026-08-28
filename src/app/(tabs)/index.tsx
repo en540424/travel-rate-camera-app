@@ -9,6 +9,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { CameraPreview } from '@/components/camera/CameraPreview';
 import { ThemedText } from '@/components/themed-text';
 import {
+  CategorySelector,
   CurrencyFlagImage,
   SaveLimitBanner,
 } from '@/components/domain';
@@ -22,6 +23,7 @@ import {
   FALLBACK_TRIP_NAME,
 } from '@/constants/camera-screen';
 import { DT } from '@/constants/designTokens';
+import type { CategoryId } from '@/config/categories';
 import { FREE_LIMITS, canSaveEntry } from '@/config/limits';
 import { SHOW_PRO } from '@/config/feature-flags';
 import { getTranslationSourceLanguage } from '@/config/translation-languages';
@@ -47,13 +49,14 @@ import {
 } from '@/utils/ocr-benchmark';
 import type { VisionOcrBenchmarkArmDefinition, VisionOcrBenchmarkArmId, VisionOcrBenchmarkResult } from '@/utils/ocr-benchmark';
 import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
+import { remainingSaveSlots, shouldShowNearSaveLimit } from '@/utils/budget-core';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
 const MEMO_PREVIEW_COUNT = 3;
 const PRICE_PREVIEW_COUNT = 3;
-// 無料枠の大半を使ってからPro導線を出す（10件中7件目/70%消費時点から）。
-// 5件目（50%消費）からの表示は課金圧が強すぎるため緩和した（2026-08-28）。
-const NEAR_SAVE_LIMIT = FREE_LIMITS.saves - 3;
+// 上限の何件手前から「残りN件」案内を出すか（上限10件なら7件目から）。
+// 5件目（50%消費）からの表示は課金圧が強すぎるため3へ緩和した（2026-08-28）。
+const NEAR_SAVE_LIMIT_OFFSET = 3;
 // OCR写真プレビュー枠の高さ（styles.ocrPhotoPreviewFrameと一致させる・中心スクロール計算に使用）
 const OCR_PHOTO_PREVIEW_FRAME_HEIGHT = 110;
 
@@ -106,6 +109,8 @@ export default function CameraScreen() {
     source: 'ocr' | 'product';
   } | null>(null);
   const [saveAsPurchased, setSaveAsPurchased] = useState(false);
+  /** 保存時に付けるカテゴリー。`null`は未分類（未選択のままでも保存できる） */
+  const [saveCategory, setSaveCategory] = useState<CategoryId | null>(null);
   const [selectedPrice, setSelectedPrice] = useState<string | null>(null);
   // 追加済みメモ候補。key = 候補のoriginalText（選択状態のidentity）、
   // value = **実際にメモ本文へ挿入した文字列**。
@@ -273,6 +278,18 @@ export default function CameraScreen() {
   const remainingIfSaved = canSave
     ? Math.max(0, stats.remainingBudget - Math.round(jpyAmount))
     : null;
+
+  /**
+   * 無料枠の残りが少ないことを知らせるか。
+   *
+   * `totalCount`は`getHistoryCountForTrip`（現在の旅行スコープ）で、
+   * `canSaveEntry`が使う件数と同じ値。保存ブロックの判定と案内の基準を一致させる。
+   * 入力カード内のバナーと、下部の常設サマリーの両方でこの判定を共有する
+   * （入力カードは撮影・手入力中しか出ないため、それだけでは気付けない）。
+   */
+  const showNearSaveLimit =
+    SHOW_PRO && !isPro && shouldShowNearSaveLimit(totalCount, FREE_LIMITS.saves, NEAR_SAVE_LIMIT_OFFSET);
+  const saveSlotsLeft = remainingSaveSlots(totalCount, FREE_LIMITS.saves);
 
   // 下部サマリー「今日」用。既存の history を読むだけ（新規クエリなし）
   const todayCount = useMemo(() => {
@@ -786,6 +803,7 @@ export default function CameraScreen() {
         memo.trim() || undefined,
         savedPhotoUri,
         saveAsPurchased,
+        saveCategory,
       );
       if (result.blocked) {
         setShowSaveLimitSheet(true);
@@ -806,6 +824,9 @@ export default function CameraScreen() {
     // 保存成功時のみリセット
     setNativeAmount('');
     setMemo('');
+    // カテゴリーも必ずリセットする。残すと次の商品が前回のカテゴリーを
+    // 黙って引き継ぎ、「選んでいないのに分類されている」データ不整合になる。
+    setSaveCategory(null);
     // メモ本文を空にするので追加済み候補も必ず一緒に消す
     // （残すと「メモは空なのに追加済み扱い」の不整合が残る）
     setAddedMemoEntries(new Map());
@@ -1603,6 +1624,19 @@ export default function CameraScreen() {
                     />
                   </View>
 
+                  {/* カテゴリー（任意）。無料版でも選択・保存できる。
+                      編集画面と同じCategorySelectorを使い、定義もUIも二重管理しない。 */}
+                  <View>
+                    <View style={styles.saveSettingsDivider} />
+                    <View style={styles.saveSettingsSection}>
+                      <View style={styles.saveSettingsSectionLabelRow}>
+                        <ThemedText style={styles.saveSettingsSectionLabel}>カテゴリー</ThemedText>
+                        <ThemedText style={styles.saveSettingsOptionalHint}>任意</ThemedText>
+                      </View>
+                      <CategorySelector value={saveCategory} onChange={setSaveCategory} />
+                    </View>
+                  </View>
+
                   {Platform.OS !== 'web' && (
                     <View>
                       <View style={styles.saveSettingsDivider} />
@@ -1836,7 +1870,7 @@ export default function CameraScreen() {
               )}
 
               {/* 保存上限（無料版）。初回MVPは上限を露出しないためSHOW_PROで非表示（P0-03） */}
-              {SHOW_PRO && !isPro && totalCount >= NEAR_SAVE_LIMIT && (
+              {showNearSaveLimit && (
                 <SaveLimitBanner currentCount={totalCount} isPro={isPro} />
               )}
 
@@ -1882,10 +1916,22 @@ export default function CameraScreen() {
                     </ThemedText>
                   </ThemedText>
                   <ThemedText style={styles.bottomSummarySep}>|</ThemedText>
-                  <ThemedText style={styles.bottomSummaryText} numberOfLines={1}>
-                    今日{' '}
-                    <ThemedText style={styles.bottomSummaryValue}>{todayCount}件</ThemedText>
-                  </ThemedText>
+                  {/* 無料枠が残り少ない時は「今日N件」より残り保存件数を優先して見せる。
+                      入力カード内のバナーは撮影・手入力中しか出ないため、
+                      通常のホーム画面でも7件目以降に気付けるようにする。 */}
+                  {showNearSaveLimit ? (
+                    <ThemedText style={styles.bottomSummaryText} numberOfLines={1}>
+                      保存{' '}
+                      <ThemedText style={[styles.bottomSummaryValue, styles.bottomSummaryWarn]}>
+                        残り{saveSlotsLeft}件
+                      </ThemedText>
+                    </ThemedText>
+                  ) : (
+                    <ThemedText style={styles.bottomSummaryText} numberOfLines={1}>
+                      今日{' '}
+                      <ThemedText style={styles.bottomSummaryValue}>{todayCount}件</ThemedText>
+                    </ThemedText>
+                  )}
                 </View>
                 <TouchableOpacity onPress={openManualInput} hitSlop={8} activeOpacity={0.7}>
                   <ThemedText style={styles.bottomSummaryAction} numberOfLines={1}>
@@ -2827,6 +2873,12 @@ const styles = StyleSheet.create({
     color: color.muted,
     letterSpacing: 0.4,
   },
+  // 「任意」であることを見出し右に添え、未選択のまま保存してよいと分かるようにする
+  saveSettingsOptionalHint: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: color.faint2,
+  },
   memoDeleteBtnText: {
     fontSize: 12,
     fontWeight: '600',
@@ -2981,6 +3033,8 @@ const styles = StyleSheet.create({
     color: color.text,
     fontVariant: ['tabular-nums'],
   },
+  // 残り保存件数は候補色（アンバー系）で軽く注意を引く。赤（danger）は使わず煽らない
+  bottomSummaryWarn: { color: color.candidateStrong },
   bottomSummaryAction: {
     fontSize: 13,
     fontWeight: '700',

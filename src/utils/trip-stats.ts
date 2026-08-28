@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 
 import type { CurrencyCode } from '@/constants/currencies';
 import type { HistoryRow } from '@/db/queries/history';
+import { computeBudgetStats } from '@/utils/budget-core';
 
 const WEB_HISTORY_STORAGE_KEY = 'travelrate:history';
 
@@ -37,23 +38,12 @@ export interface TripStats {
   remainingBudget: number;
 }
 
+/**
+ * 集計の実体は`utils/budget-core.ts`（純粋関数・`node --test`で検証済み）に委ねる。
+ * **残り予算は「旅行予算 − 購入済み合計」**で、候補は差し引かない（budget-core.ts参照）。
+ */
 export function getTripStats(rows: HistoryRow[], budgetJpy: number): TripStats {
-  const candidates = rows.filter((r) => (r.is_purchased ?? 0) === 0);
-  const purchased = rows.filter((r) => (r.is_purchased ?? 0) === 1);
-  const candidateTotalJpy = candidates.reduce(
-    (sum, r) => sum + Math.round(r.jpy_amount),
-    0,
-  );
-  const purchasedTotalJpy = purchased.reduce(
-    (sum, r) => sum + Math.round(r.jpy_amount),
-    0,
-  );
-  return {
-    candidateCount: candidates.length,
-    candidateTotalJpy,
-    purchasedTotalJpy,
-    remainingBudget: Math.max(0, budgetJpy - candidateTotalJpy - purchasedTotalJpy),
-  };
+  return computeBudgetStats(rows, budgetJpy);
 }
 
 /**
