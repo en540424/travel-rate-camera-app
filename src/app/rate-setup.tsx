@@ -5,7 +5,7 @@ import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleShee
 
 import { ThemedText } from '@/components/themed-text';
 import { CurrencyFlagImage } from '@/components/domain';
-import { CURRENCIES } from '@/constants/currencies';
+import { CURRENCIES, getRateInputExample } from '@/constants/currencies';
 import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { color, radius, shadow } from '@/theme/tokens';
@@ -96,12 +96,13 @@ export default function RateSetupScreen() {
                 <ThemedText style={styles.label}>レートを変更</ThemedText>
                 <View style={styles.rateRow}>
                   <ThemedText style={styles.ratePrefix}>1 {currency} =</ThemedText>
+                  {/* 通貨ごとの桁感に合わせた入力例。実勢レートではないため「例」と明示する */}
                   <TextInput
                     style={styles.rateInput}
                     value={rate}
                     onChangeText={setRate}
                     keyboardType="decimal-pad"
-                    placeholder="158.00"
+                    placeholder={`例 ${getRateInputExample(currency)}`}
                     placeholderTextColor={color.faint2}
                     returnKeyType="done"
                   />
