@@ -106,6 +106,6 @@ RNは iOS と Android で別指定。CSSの `box-shadow` → RN変換の目安�
 
 ```ts
 // src/config/limits.ts（2026-07-22時点の実コードに合わせて更新。hiOcrTrial・PRO_OCR_QUOTAは削除済み）
-export const FREE_LIMITS  = { trips: 1, saves: 30 };
+export const FREE_LIMITS  = { trips: 1, saves: 10 };
 // 価格は RevenueCat の localizedPriceString を正にする。固定値は持たない。
 ```

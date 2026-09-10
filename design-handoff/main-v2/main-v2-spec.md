@@ -83,7 +83,7 @@ screen (flex column, paddingH 15, paddingTop insets.top+8, paddingBottom 12, gap
 
 - 保存時の `currency = activeTrip.base_currency` / `rate = JPY?1:activeTrip.manual_rate`（保存時レート固定）。
 - 写真保存先 `documentDirectory/photos/`（`handleSaveCandidate`）。
-- 旅行切替（`setActiveTrip`）・下タブ6構成・`FREE_LIMITS`（saves=30）。
+- 旅行切替（`setActiveTrip`）・下タブ6構成・`FREE_LIMITS`（saves=10）。
 - OCR処理（`CameraPreview.handleScan` / `extractTextFromImage`）・価格候補抽出（`utils/extract-prices`）。
 - → 本画面はUIのみ変更。上記の引数・保存値・呼び出し関係は不変。
 

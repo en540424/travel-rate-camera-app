@@ -89,7 +89,7 @@ ScrollView (padding 15, gap 12)
   `rate = JPY?1:activeTrip.manual_rate`、`foreign/jpy` を保存時点で確定（`rate_used`）。
 - 保存処理 `insertHistory` / 写真保存先 `documentDirectory/photos/`。
 - 価格候補抽出 `utils/extract-prices`（`extractPriceCandidates` / `extractMemoLines`）。
-- `FREE_LIMITS.saves=30` と `SaveLimitBanner` の上限判定。
+- `FREE_LIMITS.saves=10` と `SaveLimitBanner` の上限判定。
 - → 円換算の表示値・候補の中身・保存値の意味は不変。UIのみ変更。
 
 ## 9. v1から変えた点

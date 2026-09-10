@@ -16,7 +16,7 @@
 | 部品 | この画面での用途 |
 |---|---|
 | `PriceResultCard` | **円換算ヒーロー（主役）**。`jpyAmount, foreignAmount, currency, rate, label='日本円で'`。light variant。 |
-| `SaveLimitBanner` | 保存件数が上限近接（`totalCount >= FREE_LIMITS.saves-5`）かつ非Pro時のみ。`currentCount, isPro`。 |
+| `SaveLimitBanner` | 保存件数が上限近接（`shouldShowNearSaveLimit`。現行 offset=3 → 上限10なら7件目から）かつ非Pro時のみ。`currentCount, isPro`。 |
 | `RateInfoRow` | レート確認行を別出しする場合。`PriceResultCard` のサブ行で足りるなら不要。 |
 
 ## 新規作成が必要そうな小コンポーネント
