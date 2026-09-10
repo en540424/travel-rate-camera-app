@@ -44,7 +44,9 @@ UI修正がこれらへ波及しそうな場合は、実装せず変更案の提
 
 - commit・push運用は`AI-Workflow-System/01_harness/ChatGPT共同作業ルール正本`（Vault側正本）の共通条件＋アプリ・プロダクトrepo追加条件に従う
 - 変更前に必ず現在のbranch・HEAD・upstream・working tree状態を確認する
-- 検収コマンド：`npx tsc --noEmit`、`npm run lint`（`expo lint`）。自動テストスクリプトは未整備のため実機確認中心で運用する
+- 検収コマンド：`npx tsc --noEmit`、`npm test`（`node --test "src/**/*.test.mjs"`）、`npm run lint`（`expo lint`）
+- `npm test`は`src/`配下の`*.test.mjs`（純ロジックのユニットテスト）を実行する。**`node --test src/`はNode 24ではテストを発見できない**ためglob指定を使う。lintのbaselineは23 problems（16 errors / 7 warnings）で、これを増やさないことを条件とする
+- UI・DB・課金・OCRなどユニットテスト不可能な領域は引き続き実機確認で担保する（`TEST_CHECKLIST.md`）
 - 変更範囲は指定されたファイル・機能に限定する
 
 ## Human-only（このrepoでは自動実行しない）
