@@ -3,7 +3,7 @@
 // use-trips.native.ts（expo-sqlite 使用）はネイティブのみで使われる。
 import { useCallback, useEffect } from 'react';
 
-import { canCreateTrip } from '@/config/limits';
+import { canCreateTrip, canRestoreTrip } from '@/config/limits';
 import type { CurrencyCode } from '@/constants/currencies';
 import type { TripRow } from '@/db/queries/trips';
 import { useIsPro } from '@/hooks/use-purchases';
@@ -156,13 +156,19 @@ export function useTrips() {
     }
   }
 
-  /** アーカイブ済み旅行を復元。復元のみ行い、自動でのアクティブ化はしない（安全側） */
-  async function restoreTrip(id: number): Promise<void> {
+  /**
+   * アーカイブ済み旅行を復元。復元のみ行い、自動でのアクティブ化はしない（安全側）。
+   * 無料版は新規作成と同じ境界（非アーカイブ旅行数）でのみ復元できる（native版と同じ契約）。
+   */
+  async function restoreTrip(id: number): Promise<{ blocked: boolean }> {
+    const activeCount = loadAll().filter((t) => t.archived_at === null).length;
+    if (!canRestoreTrip(isPro, activeCount)) return { blocked: true };
     const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
     const all = loadAll().map((t) =>
       t.id === id ? { ...t, archived_at: null, updated_at: now } : t,
     );
     persistAll(all);
+    return { blocked: false };
   }
 
   return { activeTrip, loadTrips, createTrip, editTrip, removeTrip, switchTrip, restoreTrip };

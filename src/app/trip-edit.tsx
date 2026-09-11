@@ -4,6 +4,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react
 
 import { ThemedText } from '@/components/themed-text';
 import { CurrencyFlagImage } from '@/components/domain';
+import { TripLimitSheet } from '@/components/domain/TripLimitSheet';
 import type { CurrencyCode } from '@/constants/currencies';
 import { CURRENCY_CODES, getRateInputExample } from '@/constants/currencies';
 import { useAllHistory } from '@/hooks/use-all-history';
@@ -29,6 +30,8 @@ export default function TripEditScreen() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [makeActive, setMakeActive] = useState(false);
+  // 無料版の旅行数上限で復元がブロックされた時のPro案内（trip-create.tsxと同じシートを再利用）
+  const [showTripLimitSheet, setShowTripLimitSheet] = useState(false);
   const initedRef = useRef<number | null>(null);
   const origCurrencyRef = useRef<CurrencyCode>('USD');
 
@@ -166,7 +169,12 @@ export default function TripEditScreen() {
           text: '復元する',
           onPress: async () => {
             try {
-              await restoreTrip(id);
+              const result = await restoreTrip(id);
+              if (result.blocked) {
+                // DBは変更されていない。アーカイブ済みのまま、Pro導線を案内する
+                setShowTripLimitSheet(true);
+                return;
+              }
               router.back();
             } catch (err) {
               console.warn('[trip-edit restore error]', err);
@@ -287,6 +295,12 @@ export default function TripEditScreen() {
           </Pressable>
         )}
       </View>
+
+      <TripLimitSheet
+        visible={showTripLimitSheet}
+        onClose={() => setShowTripLimitSheet(false)}
+        onUpgrade={() => { setShowTripLimitSheet(false); router.push('/pro'); }}
+      />
     </View>
   );
 }

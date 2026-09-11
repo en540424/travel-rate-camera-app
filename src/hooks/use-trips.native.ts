@@ -1,7 +1,7 @@
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect } from 'react';
 
-import { canCreateTrip } from '@/config/limits';
+import { canCreateTrip, canRestoreTrip } from '@/config/limits';
 import type { CurrencyCode } from '@/constants/currencies';
 import {
   archiveTrip,
@@ -104,9 +104,19 @@ export function useTrips() {
     }
   }
 
-  /** アーカイブ済み旅行を復元。復元のみ行い、自動でのアクティブ化はしない（安全側） */
-  async function restoreTrip(id: number): Promise<void> {
+  /**
+   * アーカイブ済み旅行を復元。復元のみ行い、自動でのアクティブ化はしない（安全側）。
+   *
+   * 無料版は新規作成と同じ境界（非アーカイブ旅行数がFREE_LIMITS.trips未満）でのみ復元できる
+   * （作成→アーカイブ→作成→復元で複数旅行を同時に持てる抜け道を塞ぐ）。
+   * ブロック時はDBに触らず`{ blocked: true }`を返す。既存データ・アーカイブ済み旅行は削除しない。
+   * Proは無制限。既に上限を超えて非アーカイブ旅行を持つ既存ユーザーも、切替・閲覧は従来どおり可能。
+   */
+  async function restoreTrip(id: number): Promise<{ blocked: boolean }> {
+    const active = await getActiveTrips(db);
+    if (!canRestoreTrip(isPro, active.length)) return { blocked: true };
     await restoreTripInDb(db, id);
+    return { blocked: false };
   }
 
   return { activeTrip, loadTrips, createTrip, editTrip, removeTrip, switchTrip, restoreTrip };

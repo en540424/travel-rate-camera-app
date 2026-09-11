@@ -22,6 +22,17 @@ export function canCreateTrip(isPro: boolean, activeTripCount: number): boolean 
 }
 
 /**
+ * アーカイブ済み旅行を復元できるか。
+ *
+ * 復元も「同時に使える（非アーカイブの）旅行を1件増やす」操作なので、新規作成と**同じ境界**を通す。
+ * 独自の判定を持たず`canCreateTrip`へ委譲する（片方だけ条件が変わる事故を防ぐ）。
+ * `activeTripCount`は復元前の非アーカイブ旅行数。
+ */
+export function canRestoreTrip(isPro: boolean, activeTripCount: number): boolean {
+  return canCreateTrip(isPro, activeTripCount);
+}
+
+/**
  * 保存を追加できるか。development／__DEV__限定バイパス→Pro→無料上限の順に判定する唯一の入口。
  * FREE_LIMITS.savesそのものは変更しない。isProの意味・RevenueCat判定には触れない。
  */
