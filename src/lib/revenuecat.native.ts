@@ -9,6 +9,7 @@ import type {
 } from 'react-native-purchases';
 
 import { getRevenueCatIosApiKey, REVENUECAT_ENTITLEMENT_ID, REVENUECAT_OFFERING_ID } from '@/config/revenuecat';
+import { resolvePurchaseOutcome } from '@/lib/revenuecat-purchase-core';
 
 let configured = false;
 
@@ -95,7 +96,17 @@ export function removeCustomerInfoListener(listener: CustomerInfoUpdateListener)
 export type PurchaseOutcome =
   | { status: 'success'; customerInfo: CustomerInfo }
   | { status: 'cancelled' }
+  /** 決済処理は正常終了したが、pro Entitlementが有効になっていない（「復元を試す」案内へ） */
+  | { status: 'entitlement_missing'; customerInfo: CustomerInfo | null }
   | { status: 'error' };
+
+export type PurchaseOptions = {
+  /**
+   * 購入呼び出し前の時点でpro Entitlementが有効だったか（呼び出し側のstoreの`isPro`を渡す）。
+   * 例外後の救済で「既存Proを今回の購入成功と誤認しない」ために使う（revenuecat-purchase-core.ts）。
+   */
+  wasProBefore: boolean;
+};
 
 export type RestoreOutcome =
   | { status: 'success'; customerInfo: CustomerInfo; hasEntitlement: boolean }
@@ -108,30 +119,69 @@ function isUserCancelledError(error: unknown): boolean {
   return e.userCancelled === true || e.code === 'PURCHASE_CANCELLED_ERROR';
 }
 
+function hasProEntitlement(customerInfo: CustomerInfo): boolean {
+  return REVENUECAT_ENTITLEMENT_ID in customerInfo.entitlements.active;
+}
+
 /**
  * Packageを購入する。キャンセルは 'cancelled'、それ以外の失敗は 'error' を返す（詳細は露出しない）。
  *
- * purchasePackageが例外を投げても、Apple側では購入・Entitlement付与が成立している場合がある
- * （例: 購入完了直後のStoreKit.StoreKitError.unknown）。ユーザーキャンセル以外の例外時は、
- * 最新のCustomerInfoを1回だけ再取得し、pro Entitlementが有効ならそれを正として成功扱いにする。
- * 再取得自体が失敗、またはEntitlementが有効でなければ、本当の購入失敗として 'error' を返す。
+ * ■ 正常終了時も「StoreKit処理完了」と「pro Entitlement有効」を区別する
+ *   purchasePackageが返したCustomerInfoでproが有効でなければ、CustomerInfoを1回だけ再取得して
+ *   再確認し、それでも無効なら 'entitlement_missing' を返す（完了画面へ進めない）。
+ *
+ * ■ 例外時の救済
+ *   purchasePackageが例外を投げても、Apple側では購入・Entitlement付与が成立している場合がある
+ *   （例: 購入完了直後のStoreKit.StoreKitError.unknown）。ユーザーキャンセル以外の例外時は、
+ *   CustomerInfoを1回だけ再取得し、**購入前は非Proだったのに今はpro有効**ならそれを正として成功扱いにする
+ *   （購入前からProだった場合は既存契約の可能性があるため成功扱いにしない）。
+ *   再取得自体が失敗、またはEntitlementが有効でなければ 'error' を返す。
+ *
+ * `getCustomerInfo()`はSDKのキャッシュを返し得るが、購入直後はSDKがCustomerInfoを更新済みで、
+ * ここでの再取得は「purchasePackageの戻り値以外にもう1回見る」以上の意味を持たせない。
  * 同じpurchasePackageは再実行しない（呼び出しは常に1回のみ）。
  */
-export async function purchasePackage(pkg: PurchasesPackage): Promise<PurchaseOutcome> {
+export async function purchasePackage(
+  pkg: PurchasesPackage,
+  options: PurchaseOptions,
+): Promise<PurchaseOutcome> {
+  let threw = false;
+  let cancelled = false;
+  let customerInfo: CustomerInfo | null = null;
   try {
     const result = await Purchases.purchasePackage(pkg);
-    return { status: 'success', customerInfo: result.customerInfo };
+    customerInfo = result.customerInfo;
   } catch (error) {
-    if (isUserCancelledError(error)) return { status: 'cancelled' };
+    threw = true;
+    cancelled = isUserCancelledError(error);
+  }
+
+  // 正常終了でproが見えない／例外（キャンセル以外）のときだけ、CustomerInfoをもう1回だけ見る
+  const needsRecheck = threw ? !cancelled : customerInfo == null || !hasProEntitlement(customerInfo);
+  if (needsRecheck) {
     try {
-      const customerInfo = await Purchases.getCustomerInfo();
-      if (REVENUECAT_ENTITLEMENT_ID in customerInfo.entitlements.active) {
-        return { status: 'success', customerInfo };
-      }
+      customerInfo = await Purchases.getCustomerInfo();
     } catch {
-      // CustomerInfo再取得自体が失敗した場合は、下の本当の失敗として扱う
+      // 再取得自体が失敗した場合は proActiveAfter=null（不明）として判定へ渡す
     }
-    return { status: 'error' };
+  }
+
+  const status = resolvePurchaseOutcome({
+    threw,
+    cancelled,
+    wasProBefore: options.wasProBefore,
+    proActiveAfter: customerInfo ? hasProEntitlement(customerInfo) : null,
+  });
+  switch (status) {
+    case 'success':
+      // resolvePurchaseOutcomeがsuccessを返すのはproActiveAfter=true（＝customerInfo非null）の時だけ
+      return { status: 'success', customerInfo: customerInfo as CustomerInfo };
+    case 'cancelled':
+      return { status: 'cancelled' };
+    case 'entitlement_missing':
+      return { status: 'entitlement_missing', customerInfo };
+    default:
+      return { status: 'error' };
   }
 }
 

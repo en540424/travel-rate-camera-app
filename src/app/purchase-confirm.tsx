@@ -46,7 +46,8 @@ const INCLUDED: IncludedFeature[] = [
 
 export default function PurchaseConfirmScreen() {
   // Hooksは早期returnより前に呼ぶ（SHOW_PRO=falseでも呼び出し順を変えない）
-  const { isInitialized, isLoading, monthlyPackage, annualPackage, isPurchasing, purchase } = usePurchases();
+  const { isInitialized, isLoading, monthlyPackage, annualPackage, isPurchasing, purchase, refreshOfferings } = usePurchases();
+  const [isRefreshingPrices, setIsRefreshingPrices] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<PlanKey>('annual');
 
   // 初回MVPはPro未実装。ルート直接アクセスでも購入画面へ進めないようガードする（P0-02）
@@ -80,6 +81,18 @@ export default function PurchaseConfirmScreen() {
       return;
     }
     if (outcome.status === 'cancelled') return; // ユーザーキャンセルはエラー表示しない
+    if (outcome.status === 'entitlement_missing') {
+      // 決済処理は終わったがProが有効になっていない。二重購入はさせず、復元（Entitlement再確認）へ誘導する
+      Alert.alert(
+        'Proの有効化を確認できませんでした',
+        '購入手続きは受け付けられた可能性がありますが、Proの有効化を確認できませんでした。しばらく待ってから「購入を復元」をお試しください。',
+        [
+          { text: '閉じる', style: 'cancel' },
+          { text: '購入を復元', onPress: () => router.push('/purchase-restore') },
+        ],
+      );
+      return;
+    }
     Alert.alert(
       '購入を完了できませんでした',
       'App Storeとの通信に問題が発生しました。しばらく待ってから、もう一度お試しください。購入済みの場合は「購入を復元」をお試しください。',
@@ -182,7 +195,22 @@ export default function PurchaseConfirmScreen() {
         </View>
 
         {noPackagesAvailable && (
-          <ErrorMessage message="価格情報を取得できませんでした。しばらくしてからもう一度お試しください。" />
+          <>
+            <ErrorMessage message="価格情報を取得できませんでした。しばらくしてからもう一度お試しください。" />
+            {/* 通信復帰後にアプリ再起動なしで価格を取り直せる導線（1回の要求のみ。自動連打はしない） */}
+            <GhostButton
+              title={isRefreshingPrices ? '価格を取得中…' : '価格情報を再取得'}
+              onPress={async () => {
+                if (isRefreshingPrices) return;
+                setIsRefreshingPrices(true);
+                try {
+                  await refreshOfferings();
+                } finally {
+                  setIsRefreshingPrices(false);
+                }
+              }}
+            />
+          </>
         )}
 
         <View style={styles.actions}>

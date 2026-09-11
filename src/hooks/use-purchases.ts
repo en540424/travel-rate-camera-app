@@ -51,6 +51,33 @@ function logPurchaseDiagnostics(): void {
 }
 
 /**
+ * Offeringの取得を1本に束ねる（重複要求の防止）。
+ *
+ * 起動時・画面mount時・フォアグラウンド復帰時から同時に呼ばれても、実行中の要求があれば
+ * それを共有し、SDKへ二重に問い合わせない。取得できたかどうかに関わらず要求は1回で終わる
+ * （無限retryはしない。再試行は次のトリガー＝画面再入場・復帰・「再試行」操作でのみ起きる）。
+ * `fetchDefaultOffering()`はOffering未定義のとき**nullを正常値として返す**ため、
+ * 「nullだから失敗」とみなしてループさせない。
+ */
+let offeringsRequest: Promise<void> | null = null;
+
+function loadOfferingsOnce(): Promise<void> {
+  if (offeringsRequest) return offeringsRequest;
+  offeringsRequest = (async () => {
+    try {
+      const offering = await fetchDefaultOffering();
+      usePurchasesStore.getState().setOffering(offering);
+    } catch {
+      // 価格未取得のまま。購入画面は「価格情報を取得できませんでした」＋再試行で扱う。
+      // CustomerInfo（Pro権利）とは独立した失敗なので、storeのerror（プラン確認失敗）には流さない。
+    } finally {
+      offeringsRequest = null;
+    }
+  })();
+  return offeringsRequest;
+}
+
+/**
  * アプリ起動時に1回だけ呼び出す初期化hook。RootLayoutなど単一の場所からのみ呼ぶこと。
  * RevenueCat通信の完了を待たずに呼び出し元の描画をブロックしない（非同期・fire-and-forget）。
  */
@@ -76,26 +103,24 @@ export function usePurchasesInit(): void {
       usePurchasesStore.getState().setLoading(true);
       addCustomerInfoListener(listener);
 
-      try {
-        const [customerInfo, offering] = await Promise.all([
-          fetchCustomerInfo(),
-          fetchDefaultOffering(),
-        ]);
-        if (!mounted) return;
-        usePurchasesStore.getState().setCustomerInfo(customerInfo);
-        usePurchasesStore.getState().setOffering(offering);
+      // CustomerInfo（Pro権利）とOffering（価格）は独立して反映する。
+      // 片方の失敗でもう片方の成功結果を捨てない（旧Promise.allでは一方の失敗で両方未反映になっていた）。
+      // Offeringの失敗は価格未取得として画面側で扱い、Pro権利の確認失敗（error）とは区別する。
+      const [customerInfoResult] = await Promise.allSettled([
+        fetchCustomerInfo(),
+        loadOfferingsOnce(),
+      ]);
+      if (!mounted) return;
+      if (customerInfoResult.status === 'fulfilled') {
+        usePurchasesStore.getState().setCustomerInfo(customerInfoResult.value);
         usePurchasesStore.getState().setError(null);
-      } catch {
+      } else {
         // RevenueCat通信失敗時も無料機能を止めない。詳細はユーザー画面・ログへ露出しない。
-        if (!mounted) return;
         usePurchasesStore.getState().setError('revenuecat_init_failed');
-      } finally {
-        if (mounted) {
-          usePurchasesStore.getState().setLoading(false);
-          usePurchasesStore.getState().setInitialized(true);
-          logPurchaseDiagnostics();
-        }
       }
+      usePurchasesStore.getState().setLoading(false);
+      usePurchasesStore.getState().setInitialized(true);
+      logPurchaseDiagnostics();
     }
 
     init();
@@ -121,6 +146,9 @@ export function usePurchasesInit(): void {
         .catch(() => {
           /* オフライン等は無視。無料機能は継続利用可能なまま */
         });
+      // offline起動→online復帰で価格が永久に「—」のままにならないよう、
+      // Offering未取得のときだけ復帰ごとに1回だけ取り直す（取得済みなら触らない）。
+      if (usePurchasesStore.getState().offering == null) void loadOfferingsOnce();
     });
     return () => subscription.remove();
   }, []);
@@ -134,6 +162,17 @@ export function usePurchases() {
   // 二重タップ防止用。setStateの非同期反映を待たず即座に判定するためrefでも保持する。
   const purchasingRef = useRef(false);
   const restoringRef = useRef(false);
+  // Offering未取得のまま画面（購入画面等）へ入った時の取り直しは、mountごとに1回だけ。
+  // `offering == null`はOffering未定義の正常値でもあり得るため、依存配列で追いかけてループさせない。
+  const offeringsAttemptedRef = useRef(false);
+
+  const { isConfigured, isInitialized, offering } = state;
+  useEffect(() => {
+    if (!isConfigured || !isInitialized || offering != null) return;
+    if (offeringsAttemptedRef.current) return;
+    offeringsAttemptedRef.current = true;
+    void loadOfferingsOnce();
+  }, [isConfigured, isInitialized, offering]);
 
   const refreshCustomerInfo = useCallback(async () => {
     if (!usePurchasesStore.getState().isConfigured) return;
@@ -146,15 +185,10 @@ export function usePurchases() {
     }
   }, []);
 
+  /** 価格情報（Offering）の取り直し。購入画面の「再取得」など明示操作から呼ぶ。実行中なら相乗りする */
   const refreshOfferings = useCallback(async () => {
     if (!usePurchasesStore.getState().isConfigured) return;
-    try {
-      const offering = await fetchDefaultOffering();
-      usePurchasesStore.getState().setOffering(offering);
-      usePurchasesStore.getState().setError(null);
-    } catch {
-      usePurchasesStore.getState().setError('revenuecat_refresh_offerings_failed');
-    }
+    await loadOfferingsOnce();
   }, []);
 
   const purchase = useCallback(async (pkg: PurchasesPackage): Promise<PurchaseOutcome> => {
@@ -163,10 +197,14 @@ export function usePurchases() {
     purchasingRef.current = true;
     setIsPurchasing(true);
     try {
-      const outcome = await purchasePackageOnDevice(pkg);
+      // 購入前のPro状態を渡す（例外後の救済で既存Proを今回の成功と誤認しないため）
+      const outcome = await purchasePackageOnDevice(pkg, { wasProBefore: usePurchasesStore.getState().isPro });
       if (outcome.status === 'success') {
         usePurchasesStore.getState().setCustomerInfo(outcome.customerInfo);
         usePurchasesStore.getState().setError(null);
+      } else if (outcome.status === 'entitlement_missing' && outcome.customerInfo) {
+        // 最新のCustomerInfo（pro無効）は反映しておく。Pro開放はしない
+        usePurchasesStore.getState().setCustomerInfo(outcome.customerInfo);
       }
       return outcome;
     } finally {

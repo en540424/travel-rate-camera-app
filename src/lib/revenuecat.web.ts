@@ -38,13 +38,16 @@ export function removeCustomerInfoListener(_listener: CustomerInfoUpdateListener
 export type PurchaseOutcome =
   | { status: 'success'; customerInfo: CustomerInfo }
   | { status: 'cancelled' }
+  | { status: 'entitlement_missing'; customerInfo: CustomerInfo | null }
   | { status: 'error' };
+
+export type PurchaseOptions = { wasProBefore: boolean };
 
 export type RestoreOutcome =
   | { status: 'success'; customerInfo: CustomerInfo; hasEntitlement: boolean }
   | { status: 'error' };
 
-export async function purchasePackage(_pkg: PurchasesPackage): Promise<PurchaseOutcome> {
+export async function purchasePackage(_pkg: PurchasesPackage, _options: PurchaseOptions): Promise<PurchaseOutcome> {
   return { status: 'error' };
 }
 
