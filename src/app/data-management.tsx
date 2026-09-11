@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 
@@ -31,7 +31,7 @@ function todayDateKey(): string {
 }
 
 export default function DataManagementScreen() {
-  const { history, totalCount, clearAll, reload } = useHistory();
+  const { history, totalCount, budgetTotals, clearAll, reload } = useHistory();
   const { activeTrip, loadTrips } = useTrips();
   const isPro = useIsPro();
   const [tripCount, setTripCount] = useState(0);
@@ -44,15 +44,9 @@ export default function DataManagementScreen() {
     }, [loadTrips, reload]),
   );
 
-  const { candidateCount, purchasedCount } = useMemo(() => {
-    let c = 0;
-    let p = 0;
-    for (const r of history) {
-      if ((r.is_purchased ?? 0) === 1) p += 1;
-      else c += 1;
-    }
-    return { candidateCount: c, purchasedCount: p };
-  }, [history]);
+  // 件数は表示用の最新500件（`history`）ではなく、DB集計の全件（`budgetTotals`）から出す。
+  // 「保存件数」`totalCount`と同じ母集団に揃え、501件目以降が黙って落ちないようにする。
+  const { candidateCount, purchasedCount } = budgetTotals;
 
   /**
    * 削除済み記録の写真fileを片付ける。**DB削除が成功した後**にだけ呼ぶ
