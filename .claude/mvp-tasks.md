@@ -1,6 +1,28 @@
 # 旅レートカメラ MVP残タスク管理 2026-07-01
 
-## 現在の開発フェーズ
+## 現在地（2026-09-11現行化・最新）
+
+> 本節が現在地の正。以下の「現在の開発フェーズ」以降は2026-07-01〜08時点の履歴で、完了済み項目を未完へ戻さない。
+
+**フェーズ：App Store初回リリース直前。コード側のrelease-critical修正は完了し、次回Preview Build＋実機/Sandbox確認待ち。**
+
+- **Fable 5.1第三者監査（high）完了**、**Codex独立監査完了**（対象HEAD `dbd99ce`。両者B条件付き合格・S0なし・S1 3件で一致。記録：Vault `AI-Workflow-System/07_project-kits/tabirate-camera/Codex独立監査1_旅レートカメラApp Store初回リリース前最終監査結果_2026-09-11.md`）
+- **S1／S2統合修正完了**（app `dbd99ce`→`8b145c5`、12 commits。Privacy/Legal整合・Pro比較画面の矛盾・復元gate・Offering再取得・購入後entitlement確認・保存/旅行作成の連打lock・写真整合・全件集計・STT/TTS race・v3 migration transaction化）
+- tests：`npx tsc --noEmit` pass／`npm test` **331 pass / 0 fail**／lint 20 problems（16 errors / 4 warnings、既存baseline）
+- app HEAD `8b145c5`（`feat/design-sync-v2-main`、push済み）→ 本ファイル更新を含む文言整合commitが続く。LP `01e0588`（`master`、push済み。Vercel自動デプロイ想定）
+- **Privacy／Terms現行化済み**（LP `01e0588`。Pro・自動更新・解約・RevenueCat・音声認識を明記）
+- **Product Hub反映済み**（`app_tabirate-camera`。送信箱→Hub画面の更新ボタンで反映）
+- **仕様確定（2026-09-11 Human判断）**：
+  - **保存上限10件は「1つの旅行につき10件」**（旅行ごと。端末全体ではない。現行実装`getHistoryCountForTrip`と一致。ロジック・`FREE_LIMITS.saves`は不変。A案採用）
+  - **無料版の旅行数は「同時に管理できる旅行1件」**（非アーカイブ数で判定。アーカイブ後の新規作成・復元は同じ境界。累積1件ではない）
+  - Pro：保存無制限・複数旅行を同時管理・カテゴリー絞り込み/分析・CSV
+  - **価格：月額¥500／年額¥4,000**（自動更新・買い切りなし。アプリ内は`priceString`表示。**App Store Connect／RevenueCatの実設定がこの値になっているかはHuman確認**。以前の記録にある¥400/¥3,000・¥480/¥3,800は旧価格）
+  - UI文言を上記へ整合済み（`SaveLimitBanner`／`SaveLimitSheet`／`CurrentPlanCard`／`pro.tsx`／`pro-features.tsx`／`help.tsx` FAQ追加）
+- **次のアクション**：**最新HEADでPreview Build（EAS `preview`）を1回実行 → `TEST_CHECKLIST.md`（2026-09-11現行版・54項目）で実機/Sandbox確認**。前回Preview Build（`f2a4a64`）は旧HEADのため、`8b145c5`以降の修正は新Buildでないと実機に載らない（OTA未使用）
+- その後：LP全面再構築（旧構成・色・素材・旧機能説明の刷新。別テーマ。Privacy/Terms/Supportは現行文言を壊さない）は実機確認の後または並行候補
+- 最終App Store submission（App Store Connect入力・App Privacy申告・スクショ・buildNumber方針・production Build・提出）は**Human作業**。提出文書：Vault `旅レートカメラ_AppStore提出文書セット_2026-09-11.md`
+
+## 現在の開発フェーズ（2026-07-01時点の記述・履歴）
 
 MVP仕上げフェーズの中盤初期。
 
@@ -101,7 +123,7 @@ OCR基盤・複数通貨OCR改善は一段落しており、USD / EUR / JPY / KR
 
 7. 旅レートカメラPro版の説明・誘導
    - 【2026-07-11現行化】本項目作成時点（2026-07-01）はRevenueCat実装を後回しにする方針だったが、2026-07-09のPro課金方針再判定により、Pro課金導線を含めて公開する方針へ変更された（詳細：`旅レートカメラ_RevenueCat・AppStoreConnect課金設定メモ`／`Fable追加レビュー1_旅レートカメラ公開直前・Pro課金導入前完全横断監査レビュー結果`）。RevenueCat実装・購入/復元処理・isPro永続化・FREE_LIMITS実制御は現在、公開前に必要な実装タスクとして扱う。本ファイルはタスクの粒度管理用であり、実行順序の正本ではない（実行順序はFable追加レビュー1 §10参照）
-   - Pro機能の説明と導線だけ整理 → 現在はPro5画面の文言・価格の現行化（月額¥400/年額¥3,000/買い切りなし）も対象に含まれる
+   - Pro機能の説明と導線だけ整理 → 現在はPro5画面の文言・価格の現行化（月額¥400/年額¥3,000/買い切りなし）も対象に含まれる（【2026-09-11現行化】価格はHuman確定で**月額¥500／年額¥4,000**へ。アプリ内はRevenueCat `priceString`表示のためコード変更なし。ASC/RevenueCat実設定の一致確認はHuman）
    - 無料版制限の説明
    - 保存上限や詳細分析などの将来Pro候補を整理 → 高性能OCR・Pro Plusは初回公開に含めない（詳細：`旅レートカメラ_ProPlus・高性能OCR・クラウド機能_構想設計書_v1`）
    - 【2026-07-11・RevenueCatバッチ0完了】課金基盤（購入・復元の本実装ではない）を導入。
@@ -183,6 +205,8 @@ OCR基盤・複数通貨OCR改善は一段落しており、USD / EUR / JPY / KR
 - ただし禁止領域は守る
 
 ## 次に優先して検討する候補
+
+> 【2026-09-11現行化】以下は2026-07-01時点の候補。現在の最優先は冒頭「現在地」節の「次のアクション」（最新HEADでPreview Build→`TEST_CHECKLIST.md`で実機/Sandbox確認）。換算画面の微スクロール・設定画面Step 2.5の実機確認は、その後の実機確認で問題が出なければ完了扱いとする。
 
 - 換算画面：微スクロール修正（今回のkeyboardVisible方式・2回目）が実機で本当に直っているかを最優先で確認。前回の実測ベース方式は直っていなかった実績があるため、必ず実機で「通常時に上下へ動かないか」を確認してほしい。キーボード表示時の操作性、キーボードを閉じた直後の位置ズレも合わせて確認
 - 設定画面：Step 2.5の表示崩れ修正（金額見切れ・「設定」タイトル見切れ・戻るボタン「Tabs」表示）が実機で本当に直っているかを最優先で確認

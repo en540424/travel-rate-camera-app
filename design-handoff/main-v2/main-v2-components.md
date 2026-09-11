@@ -14,7 +14,7 @@
 
 | 部品 | この画面での用途 |
 |---|---|
-| `SaveLimitBanner` | 撮影前は非表示。保存件数が上限近接時に入力カード内で表示（既存挙動）。近接判定は `shouldShowNearSaveLimit(totalCount, FREE_LIMITS.saves, NEAR_SAVE_LIMIT_OFFSET)`（現行 offset=3 → 上限10なら7件目から表示）。 |
+| `SaveLimitBanner` | 撮影前は非表示。保存件数が上限近接時に入力カード内で表示（既存挙動）。近接判定は `shouldShowNearSaveLimit(totalCount, FREE_LIMITS.saves, NEAR_SAVE_LIMIT_OFFSET)`（現行 offset=3 → 上限10なら7件目から表示）。`totalCount`は**現在の旅行の件数**（上限は1つの旅行につき10件。2026-09-11確定）。ラベルは「この旅行の保存件数」。 |
 | （`ActiveTripBanner`） | 本画面の簡易ヘッダーはこれを使わず軽量な `TripRateHeader` を使う。黒ヒーローは履歴側で再利用想定。 |
 
 ## 既存 `src/components/camera/` で使うべき部品
