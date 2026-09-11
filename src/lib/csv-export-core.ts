@@ -26,7 +26,7 @@ const NEWLINE = '\r\n';
  * （U+FEFF はUTF-8へエンコードされると EF BB BF の3バイトになる）
  * 不可視文字を生で埋め込まず、エスケープ表記で明示する（editor・diff・レビューで見えなくなるのを防ぐ）。
  */
-export const UTF8_BOM = '﻿';
+export const UTF8_BOM = '\uFEFF';
 
 /**
  * Excel等がセル内容を数式として解釈しうる先頭文字。
