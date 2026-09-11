@@ -3,7 +3,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Keyboard, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Keyboard, Linking, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CameraPreview } from '@/components/camera/CameraPreview';
@@ -387,6 +387,19 @@ export default function CameraScreen() {
   // 既に保存対象写真があるときは撮影してすぐに上書きせず、「履歴に残す写真」欄で選んでもらう。
   async function handleTakeProductPhoto() {
     try {
+      // 撮影前にカメラ権限を確認する（未許可のままlaunchCameraAsyncを呼ぶとSDK側で拒否され、無反応に見える）。
+      // 拒否時は設定アプリへの導線を出す（item-edit.tsxのtakePhotoと同じ確認方式）
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert(
+          'カメラを使用できません',
+          '商品写真を撮影するには、設定アプリでカメラへのアクセスを許可してください。',
+          perm.canAskAgain
+            ? [{ text: 'OK' }]
+            : [{ text: 'あとで', style: 'cancel' }, { text: '設定を開く', onPress: () => { void Linking.openSettings(); } }],
+        );
+        return;
+      }
       const captured = await ImagePicker.launchCameraAsync({
         mediaTypes: ['images'],
         quality: 0.8,

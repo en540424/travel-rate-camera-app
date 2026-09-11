@@ -23,7 +23,8 @@ const NEWLINE = '\r\n';
  * Windows版Excelは BOM 無しUTF-8 CSVをShift_JISとして開くため日本語が文字化けする。
  * BOMを先頭に置くとUTF-8として認識される。macOS Numbers・Google Sheets・
  * macOS Excelはいずれも BOM 付きUTF-8を正しく読むため、付けて困る環境が無い。
- * （`﻿`はUTF-8へエンコードされると EF BB BF の3バイトになる）
+ * （U+FEFF はUTF-8へエンコードされると EF BB BF の3バイトになる）
+ * 不可視文字を生で埋め込まず、エスケープ表記で明示する（editor・diff・レビューで見えなくなるのを防ぐ）。
  */
 export const UTF8_BOM = '﻿';
 
