@@ -13,19 +13,22 @@ export interface TripLimitSheetProps {
 
 /**
  * 旅行作成上限シート。SaveLimitSheetと同じ構成・トーンで、責めず「もっと使いたいならPro」。
- * トリガーは旅行作成フロー側（trip-create.tsx）。ここはUI部品のみ。
+ * トリガーは旅行作成フロー（trip-create.tsx）とアーカイブ復元（trip-edit.tsx）。ここはUI部品のみ。
  */
 export function TripLimitSheet({ visible, onClose, onUpgrade }: TripLimitSheetProps) {
   return (
     <ActionSheet visible={visible} onClose={onClose}>
       <View style={styles.iconWrap}><ThemedText style={styles.icon}>🧳</ThemedText></View>
-      <ThemedText style={styles.title}>無料版は旅行1件までです</ThemedText>
+      {/* 「累積1件」ではなく「同時に使える（非アーカイブの）旅行が1件」。
+          新規作成だけでなくアーカイブからの復元でも同じ境界で出る（trip-edit.tsx）。 */}
+      <ThemedText style={styles.title}>無料版で同時に使える旅行は1件までです</ThemedText>
       <ThemedText style={styles.body}>
         Proにすると、複数の旅行を同時に管理できます。今の旅行の記録はそのまま残ります。
+        旅行を終了（アーカイブ）すると、新しい旅行を作成できます。
       </ThemedText>
 
       <View style={styles.quota}>
-        <ThemedText style={styles.quotaLabel}>無料版の旅行数</ThemedText>
+        <ThemedText style={styles.quotaLabel}>無料版で同時に使える旅行</ThemedText>
         <ThemedText style={styles.quotaValue}>{FREE_LIMITS.trips}件まで</ThemedText>
       </View>
 

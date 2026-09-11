@@ -36,14 +36,14 @@ export function CurrentPlanCard() {
     statusTitle = 'Proをご利用中';
     statusBody =
       planPeriod === 'monthly'
-        ? '保存件数・旅行作成数 無制限（月額）'
+        ? '保存・旅行数 無制限、カテゴリー分析・CSV（月額）'
         : planPeriod === 'annual'
-          ? '保存件数・旅行作成数 無制限（年額）'
-          : '保存件数・旅行作成数 無制限';
+          ? '保存・旅行数 無制限、カテゴリー分析・CSV（年額）'
+          : '保存・旅行数 無制限、カテゴリー分析・CSV';
     actionText = '契約内容を確認';
   } else {
     statusTitle = '無料プランをご利用中';
-    statusBody = `保存${FREE_LIMITS.saves}件・旅行${FREE_LIMITS.trips}件まで無料。Proで無制限に。`;
+    statusBody = `保存${FREE_LIMITS.saves}件・旅行は同時に${FREE_LIMITS.trips}件まで無料。Proで無制限に。`;
     actionText = 'Proを見る';
   }
 

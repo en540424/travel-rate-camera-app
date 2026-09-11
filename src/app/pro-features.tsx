@@ -49,8 +49,10 @@ export default function ProFeaturesScreen() {
           ))}
         </View>
 
+        {/* 比較表と矛盾させない：CSV書き出し・カテゴリー分析は今回のProに含まれる。
+            含まれないのはクラウド機能（高性能OCR等）だけ。PDF出力は未実装なのでここに書かない。 */}
         <ThemedText style={styles.scopeNote}>
-          高性能OCR・詳細分析・CSV/PDF出力などのクラウド機能は、今回のProには含まれません。
+          高性能OCRなどのクラウド機能は、今回のProには含まれません。
         </ThemedText>
 
         <View style={styles.actions}>

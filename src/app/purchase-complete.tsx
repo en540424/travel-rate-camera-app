@@ -6,9 +6,13 @@ import { GhostButton, PrimaryButton, SecondaryButton } from '@/components/ui';
 import { SHOW_PRO } from '@/config/feature-flags';
 import { color, radius, shadow } from '@/theme/tokens';
 
+/** 購入画面（purchase-confirm.tsx の INCLUDED）と同じ現行Pro 5項目。片方だけ増減させない */
 const UNLOCKED: { label: string; value: string }[] = [
   { label: '保存件数', value: '無制限' },
   { label: '旅行作成数', value: '無制限' },
+  { label: 'カテゴリー絞り込み', value: '利用可' },
+  { label: 'カテゴリー分析', value: '利用可' },
+  { label: 'CSV書き出し', value: '利用可' },
 ];
 
 export default function PurchaseCompleteScreen() {
@@ -30,7 +34,7 @@ export default function PurchaseCompleteScreen() {
 
         <ThemedText style={styles.title}>Proが有効になりました</ThemedText>
         <ThemedText style={styles.body}>
-          保存数・旅行数の制限が解除されました。
+          保存数・旅行数の制限が解除され、カテゴリー機能とCSV書き出しが使えるようになりました。
         </ThemedText>
 
         <View style={styles.list}>
