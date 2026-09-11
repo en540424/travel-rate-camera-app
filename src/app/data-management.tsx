@@ -54,15 +54,13 @@ export default function DataManagementScreen() {
     return { candidateCount: c, purchasedCount: p };
   }, [history]);
 
-  async function deleteHistoryPhotos() {
+  /**
+   * 削除済み記録の写真fileを片付ける。**DB削除が成功した後**にだけ呼ぶ
+   * （先にfileを消してDB削除が失敗すると、記録は残るのに写真だけ無い状態になる）。
+   * 対象URIは表示用に読み込んだ500件ではなく、`clearAll`がDBから集めた削除対象全件のもの。
+   */
+  async function deleteHistoryPhotos(uris: string[]) {
     if (Platform.OS === 'web') return;
-    const uris = Array.from(
-      new Set(
-        history
-          .map((row) => row.image_uri)
-          .filter((uri): uri is string => !!uri),
-      ),
-    );
     await Promise.all(
       uris.map(async (uri) => {
         try {
@@ -167,8 +165,13 @@ export default function DataManagementScreen() {
           text: '削除',
           style: 'destructive',
           onPress: async () => {
-            await deleteHistoryPhotos();
-            await clearAll();
+            try {
+              const { imageUris } = await clearAll();
+              await deleteHistoryPhotos(imageUris);
+            } catch (err) {
+              console.warn('[data-management clear error]', err);
+              Alert.alert('削除できませんでした', '履歴の削除中にエラーが発生しました。もう一度お試しください。', [{ text: 'OK' }]);
+            }
           },
         },
       ],

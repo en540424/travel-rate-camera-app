@@ -75,6 +75,13 @@ export default function ItemEditScreen() {
   const createdFilesRef = useRef<string[]>([]);
   /** 保存・記録削除・破棄確定など、こちらが意図した離脱では未保存ガードを通さない */
   const allowLeaveRef = useRef(false);
+  /**
+   * 保存処理中（DB確定〜旧写真削除〜画面を離れるまで）。
+   * この間は写真の変更・破棄によるcleanupを走らせない（DBが新URIへ確定した直後に、
+   * 下書き台帳経由でその写真fileを消してしまう競合を防ぐ）。refで即時判定、stateでボタンを止める。
+   */
+  const savingRef = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
   // ScrollView自体の表示可能高さとcontentContainerの実測高さを比較し、
   // 本当に収まっている時だけscrollEnabledをfalseにする（item-detailと同じ実測ベースの方式）。
   const [scrollAreaHeight, setScrollAreaHeight] = useState(0);
@@ -97,6 +104,8 @@ export default function ItemEditScreen() {
       // 破棄して他タブへ移動した後にこの画面へ戻ってきた場合、画面は生き残っている。
       // ガードの素通し許可を持ち越さない（持ち越すと以後の未保存変更が警告されなくなる）。
       allowLeaveRef.current = false;
+      // fallbackの「取得済み」印もフォーカスごとに外し、他旅行の記録を最新で読み直す（item-detailと同じ）
+      fetchedFallbackIdRef.current = null;
       reload();
     }, [reload]),
   );
@@ -106,7 +115,7 @@ export default function ItemEditScreen() {
     // 使われないため、古い値が残っていても実害はなく、明示的にリセットする必要もない）。
     if (Number.isNaN(id) || history.some((r) => r.id === id)) return;
     // 同じidを既に取得済み（結果がnullだった場合を含む）なら、`history`の参照が
-    // reload毎に変わっても再クエリしない。
+    // reload毎に変わっても再クエリしない（取得済み印はフォーカス時に外す）。
     if (fetchedFallbackIdRef.current === id) return;
     fetchedFallbackIdRef.current = id;
     let cancelled = false;
@@ -115,6 +124,8 @@ export default function ItemEditScreen() {
     });
     return () => {
       cancelled = true;
+      // 完了前に取り消した場合は「取得済み」印を残さない
+      if (fetchedFallbackIdRef.current === id) fetchedFallbackIdRef.current = null;
     };
   }, [id, history, db]);
 
@@ -182,12 +193,16 @@ export default function ItemEditScreen() {
    * 下タブ移動では画面がアンマウントされないため、明示的に戻さないと破棄したはずの値が残る。
    */
   const discardDraft = useCallback(() => {
+    // 保存処理中は下書きcleanupを走らせない（DB確定済みの新写真を消す競合を防ぐ）
+    if (savingRef.current) return;
     setAmount(originalAmountRef.current);
     setMemo(originalMemoRef.current);
     setIsPurchased(originalIsPurchasedRef.current);
+    // カテゴリーも読み込み時点へ戻す（戻さないと破棄したはずの選択が残り、後の保存で確定してしまう）
+    setCategory(originalCategory);
     setDraftPhotoUri(originalPhotoUri);
     void cleanupCreatedFiles();
-  }, [cleanupCreatedFiles, originalPhotoUri]);
+  }, [cleanupCreatedFiles, originalCategory, originalPhotoUri]);
 
   // 下タブ側のガード（(tabs)/_layout.tsx）から「破棄して移動」時に呼んでもらう。
   // あちらはStackの外側にいて編集画面のstateを知らないため、処理側をここから預ける。
@@ -239,6 +254,7 @@ export default function ItemEditScreen() {
 
   // 画面が消える時、保存されなかった下書きfileを残さない（案A: 離脱時cleanup）。
   // 保存成功時は台帳を空にしてから離れるので、保存した写真がここで消えることはない。
+  // 保存処理中のアンマウントでも、DBへ確定した写真は`handleSave`が確定直後に台帳から外しているため消えない。
   useEffect(() => {
     return () => {
       void cleanupCreatedFiles();
@@ -285,12 +301,14 @@ export default function ItemEditScreen() {
   }
 
   async function pickAndSet() {
+    if (savingRef.current) return;
     const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
     if (picked.canceled || !picked.assets[0]) return;
     await adoptDraftPhoto(picked.assets[0].uri);
   }
 
   async function takePhoto() {
+    if (savingRef.current) return;
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) return;
     const picked = await ImagePicker.launchCameraAsync({ quality: 0.8 });
@@ -300,51 +318,77 @@ export default function ItemEditScreen() {
 
   /** 削除も下書き上だけ。保存済みfileは「保存する」が成功するまで残す */
   async function deletePhoto() {
+    if (savingRef.current) return;
     setDraftPhotoUri(null);
     await cleanupCreatedFiles();
   }
 
   function handlePhoto() {
-    if (Platform.OS === 'web' || !item) return;
+    if (Platform.OS === 'web' || !item || savingRef.current) return;
     setShowPhotoSheet(true);
   }
 
   async function handleSave() {
     if (!item) return;
-    const updates: Promise<void>[] = [];
-    // 実際にDBへ書いた値だけを新しい基準にする（不正な金額は従来どおり保存されないため、
-    // その場合は基準を進めず「未保存のまま」を維持する）。
-    let savedAmount = originalAmountRef.current;
-    if (item.currency === 'JPY') {
-      const n = parseInt(amount.trim(), 10);
-      if (isFinite(n) && n > 0 && n !== item.jpy_amount) {
-        updates.push(updateAmount(item.id, n, n));
-        savedAmount = amount;
-      }
-    } else {
-      const f = parseFloat(amount.trim());
-      if (isFinite(f) && f > 0 && f !== item.foreign_amount) {
-        updates.push(updateAmount(item.id, f, Math.round(f * item.rate_used)));
-        savedAmount = amount;
-      }
+    if (savingRef.current) return; // 連打防止
+    savingRef.current = true;
+    setIsSaving(true);
+    try {
+      await doSave(item);
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
     }
-    updates.push(updateMemo(item.id, memo.trim() || null));
-    if (isPurchased !== ((item.is_purchased ?? 0) === 1)) {
-      updates.push(togglePurchased(item.id, item.is_purchased ?? 0));
-    }
-    // カテゴリーは変更があった時だけ書く（他項目と同じ「変わっていなければDBへ触らない」規律）
-    if (category !== normalizeCategoryId(item.category)) {
-      updates.push(updateCategory(item.id, category));
-    }
-    // 写真の確定はここだけ。変更が無ければDBへ触らない。
+  }
+
+  /**
+   * 項目ごとに**順番に**DBへ確定し、成功した項目から未保存判定の基準を進める。
+   * 旧実装の`Promise.all`＋一括基準更新では、途中の失敗（やreload失敗）で
+   * 「DBには書けたのに全体が保存失敗扱い」になり、特に写真は**DBが新URIへ確定済みなのに
+   * 下書き台帳に残ったまま破棄・離脱で削除される**経路があった（Codex S2-4）。
+   * 写真を最初に確定し、確定した瞬間に台帳から外すことでその経路を塞ぐ。
+   */
+  async function doSave(current: HistoryRow) {
     const previousPhotoUri = originalPhotoUri;
     const photoChanged = draftPhotoUri !== previousPhotoUri;
-    if (photoChanged) updates.push(updateImageUri(item.id, draftPhotoUri));
-    // 保存失敗時に何も表示されない箇所があったため try/catch + Alert を追加（P0-08）。
-    // 保存ロジック本体（updateAmount/updateMemo/togglePurchased）は変更しない。
     try {
-      if (updates.length > 0) await Promise.all(updates);
+      // 1) 写真（最優先で確定し、確定直後に下書き台帳から外す）
+      if (photoChanged) {
+        await updateImageUri(current.id, draftPhotoUri);
+        // DBが新URIを参照した時点で「未保存の下書き」ではなくなる。削除せず台帳から外す
+        createdFilesRef.current = [];
+        setOriginalPhotoUri(draftPhotoUri);
+      }
+      // 2) 金額（不正な金額は従来どおり保存しない。その場合は基準を進めず「未保存のまま」を維持する）
+      if (current.currency === 'JPY') {
+        const n = parseInt(amount.trim(), 10);
+        if (isFinite(n) && n > 0 && n !== current.jpy_amount) {
+          await updateAmount(current.id, n, n);
+          originalAmountRef.current = amount;
+        }
+      } else {
+        const f = parseFloat(amount.trim());
+        if (isFinite(f) && f > 0 && f !== current.foreign_amount) {
+          await updateAmount(current.id, f, Math.round(f * current.rate_used));
+          originalAmountRef.current = amount;
+        }
+      }
+      // 3) メモ
+      await updateMemo(current.id, memo.trim() || null);
+      originalMemoRef.current = memo;
+      // 4) ステータス
+      if (isPurchased !== ((current.is_purchased ?? 0) === 1)) {
+        await togglePurchased(current.id, current.is_purchased ?? 0);
+      }
+      originalIsPurchasedRef.current = isPurchased;
+      // 5) カテゴリー（変更があった時だけ書く。他項目と同じ「変わっていなければDBへ触らない」規律）
+      if (category !== normalizeCategoryId(current.category)) {
+        await updateCategory(current.id, category);
+      }
+      setOriginalCategory(category);
     } catch (err) {
+      // ここへ来るのはDB書き込み自体の失敗だけ（reload失敗はhook側で投げない）。
+      // 確定済みの項目は基準を進めてあるので、画面は「残りの項目だけ未保存」の正しい状態になる。
       console.warn('[item-edit save error]', err);
       Alert.alert(
         '保存できませんでした',
@@ -360,14 +404,6 @@ export default function ItemEditScreen() {
         await FileSystem.deleteAsync(previousPhotoUri, { idempotent: true });
       } catch {}
     }
-    // 保存した下書きfileはもう「未保存」ではない。削除せず台帳から外すだけにする
-    // （消してしまうと、直後のアンマウントcleanupで保存した写真自体が消える）。
-    createdFilesRef.current = [];
-    originalAmountRef.current = savedAmount;
-    originalMemoRef.current = memo;
-    originalIsPurchasedRef.current = isPurchased;
-    setOriginalCategory(category);
-    setOriginalPhotoUri(draftPhotoUri);
     allowLeaveRef.current = true;
     setHasUnsavedChanges(false);
     router.back();
@@ -381,7 +417,16 @@ export default function ItemEditScreen() {
         text: '削除',
         style: 'destructive',
         onPress: async () => {
-          // 記録ごと消すので、未保存の下書きfileも保存済みfileも両方片付ける
+          if (savingRef.current) return;
+          // DB削除が成功してから、未保存の下書きfileと保存済みfileの両方を片付ける
+          // （逆順だとDB削除失敗時に記録だけ残り写真が消える）
+          try {
+            await removeEntry(item.id);
+          } catch (err) {
+            console.warn('[item-edit delete error]', err);
+            Alert.alert('削除できませんでした', '記録の削除中にエラーが発生しました。もう一度お試しください。', [{ text: 'OK' }]);
+            return;
+          }
           allowLeaveRef.current = true;
           if (Platform.OS !== 'web') {
             await cleanupCreatedFiles();
@@ -389,7 +434,6 @@ export default function ItemEditScreen() {
               try { await FileSystem.deleteAsync(item.image_uri, { idempotent: true }); } catch {}
             }
           }
-          await removeEntry(item.id);
           setHasUnsavedChanges(false);
           router.back();
         },
@@ -428,7 +472,10 @@ export default function ItemEditScreen() {
               <ThemedText style={styles.photoSub}>履歴一覧で表示されます</ThemedText>
             </View>
             {Platform.OS !== 'web' && (
-              <Pressable onPress={handlePhoto} style={({ pressed }) => [styles.photoBtn, pressed && styles.pressed]}>
+              <Pressable
+                onPress={handlePhoto}
+                disabled={isSaving}
+                style={({ pressed }) => [styles.photoBtn, pressed && styles.pressed, isSaving && styles.disabled]}>
                 <ThemedText style={styles.photoBtnText}>{draftPhotoUri ? '写真を変更' : '写真を追加'}</ThemedText>
               </Pressable>
             )}
@@ -505,10 +552,13 @@ export default function ItemEditScreen() {
 
       {/* 固定フッター：保存 + 削除（ScrollView外に出すことでタブバーinsetの影響を受けない） */}
       <View style={styles.footer}>
-        <Pressable onPress={handleSave} style={({ pressed }) => [styles.saveBtn, pressed && styles.pressed]}>
-          <ThemedText style={styles.saveBtnText}>保存する</ThemedText>
+        <Pressable
+          onPress={handleSave}
+          disabled={isSaving}
+          style={({ pressed }) => [styles.saveBtn, pressed && styles.pressed, isSaving && styles.disabled]}>
+          <ThemedText style={styles.saveBtnText}>{isSaving ? '保存中…' : '保存する'}</ThemedText>
         </Pressable>
-        <Pressable onPress={handleDelete} style={styles.deleteLink}>
+        <Pressable onPress={handleDelete} disabled={isSaving} style={styles.deleteLink}>
           <ThemedText style={styles.deleteLinkText}>🗑 この記録を削除</ThemedText>
         </Pressable>
       </View>
@@ -654,4 +704,5 @@ const styles = StyleSheet.create({
   deleteLink: { alignItems: 'center', paddingVertical: 4 },
   deleteLinkText: { fontSize: 14, fontWeight: '600', color: color.danger },
   pressed: { opacity: 0.85 },
+  disabled: { opacity: 0.5 },
 });

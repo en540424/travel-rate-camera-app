@@ -24,14 +24,23 @@ export function useAllHistory() {
     load();
   }, [load]);
 
+  /** DB書き込み成功後の再読込。SELECT失敗を書き込み失敗と混同しない（use-history.tsと同じ理由） */
+  const reloadAfterWrite = useCallback(async () => {
+    try {
+      await load();
+    } catch (e) {
+      console.warn('[all-history reload after write]', e);
+    }
+  }, [load]);
+
   async function togglePurchased(id: number, currentValue: 0 | 1) {
     await markPurchased(db, id, currentValue === 0);
-    await load();
+    await reloadAfterWrite();
   }
 
   async function removeEntry(id: number) {
     await deleteHistory(db, id);
-    await load();
+    await reloadAfterWrite();
   }
 
   return { history, tripMap, reload: load, togglePurchased, removeEntry };

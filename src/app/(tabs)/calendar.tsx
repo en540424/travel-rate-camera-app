@@ -212,10 +212,17 @@ export default function CalendarScreen() {
           text: '削除',
           style: 'destructive',
           onPress: async () => {
+            // DB削除が成功してから写真fileを消す（逆順だとDB削除失敗時に記録だけ残り写真が消える）
+            try {
+              await removeEntry(item.id);
+            } catch (err) {
+              console.warn('[calendar delete error]', err);
+              Alert.alert('削除できませんでした', '記録の削除中にエラーが発生しました。もう一度お試しください。', [{ text: 'OK' }]);
+              return;
+            }
             if (item.image_uri && Platform.OS !== 'web') {
               try { await FileSystem.deleteAsync(item.image_uri, { idempotent: true }); } catch {}
             }
-            removeEntry(item.id);
           },
         },
       ],

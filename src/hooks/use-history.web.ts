@@ -116,13 +116,18 @@ export function useHistory() {
     load();
   }
 
-  async function clearAll() {
+  /** native版と同じ契約：削除した記録の写真URIを返す（Webでは写真fileは扱わないが形を揃える） */
+  async function clearAll(): Promise<{ imageUris: string[] }> {
+    const all = loadAll();
+    const target = activeTrip ? all.filter((r) => r.trip_id === activeTrip.id) : all;
+    const imageUris = Array.from(new Set(target.map((r) => r.image_uri).filter((u): u is string => !!u)));
     if (activeTrip) {
-      persistAll(loadAll().filter((r) => r.trip_id !== activeTrip.id));
+      persistAll(all.filter((r) => r.trip_id !== activeTrip.id));
     } else {
       persistAll([]);
     }
     load();
+    return { imageUris };
   }
 
   async function togglePurchased(id: number, currentValue: 0 | 1) {

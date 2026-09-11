@@ -85,6 +85,23 @@ export async function getHistoryCountForTrip(
   return result?.count ?? 0;
 }
 
+/**
+ * 写真URIの一覧（重複なし・NULL除外）。全削除の**後**に写真fileを片付けるために使う。
+ * `tripId`がnullなら全件。表示用の取得上限（500件）に依存せず、削除対象の全行から集める
+ * （上限外の行の写真が孤児fileとして残らないようにする）。
+ */
+export async function getImageUris(db: SQLiteDatabase, tripId: number | null): Promise<string[]> {
+  const rows = tripId == null
+    ? await db.getAllAsync<{ image_uri: string }>(
+        'SELECT DISTINCT image_uri FROM conversion_history WHERE image_uri IS NOT NULL',
+      )
+    : await db.getAllAsync<{ image_uri: string }>(
+        'SELECT DISTINCT image_uri FROM conversion_history WHERE trip_id = ? AND image_uri IS NOT NULL',
+        tripId,
+      );
+  return rows.map((r) => r.image_uri);
+}
+
 /** アクティブ旅行の履歴を削除（他旅行・未分類データは触らない） */
 export async function clearHistoryForTrip(
   db: SQLiteDatabase,

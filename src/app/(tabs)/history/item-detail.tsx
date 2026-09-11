@@ -61,6 +61,10 @@ export default function ItemDetailScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      // フォーカスのたびにfallbackの「取得済み」印を外す。編集画面から戻った時に
+      // 他旅行の記録が古い金額・写真のまま表示され続けないようにする（Codex S2-8）。
+      // 続くreload()でhistoryの参照が変わり、下のeffectが1回だけ再取得する。
+      fetchedFallbackIdRef.current = null;
       reload();
     }, [reload]),
   );
@@ -70,7 +74,7 @@ export default function ItemDetailScreen() {
     // 使われないため、古い値が残っていても実害はなく、明示的にリセットする必要もない）。
     if (Number.isNaN(id) || history.some((r) => r.id === id)) return;
     // 同じidを既に取得済み（結果がnullだった場合を含む）なら、`history`の参照が
-    // reload毎に変わっても再クエリしない。
+    // reload毎に変わっても再クエリしない（取得済み印はフォーカス時に外す）。
     if (fetchedFallbackIdRef.current === id) return;
     fetchedFallbackIdRef.current = id;
     let cancelled = false;
@@ -79,6 +83,8 @@ export default function ItemDetailScreen() {
     });
     return () => {
       cancelled = true;
+      // 完了前に取り消した場合は「取得済み」印を残さない（次の評価で取り直せるようにする）
+      if (fetchedFallbackIdRef.current === id) fetchedFallbackIdRef.current = null;
     };
   }, [id, history, db]);
 
@@ -110,10 +116,17 @@ export default function ItemDetailScreen() {
         text: '削除',
         style: 'destructive',
         onPress: async () => {
+          // DB削除が成功してから写真fileを消す（逆順だとDB削除失敗時に記録だけ残り写真が消える）
+          try {
+            await removeEntry(item.id);
+          } catch (err) {
+            console.warn('[item-detail delete error]', err);
+            Alert.alert('削除できませんでした', '記録の削除中にエラーが発生しました。もう一度お試しください。', [{ text: 'OK' }]);
+            return;
+          }
           if (item.image_uri && Platform.OS !== 'web') {
             try { await FileSystem.deleteAsync(item.image_uri, { idempotent: true }); } catch {}
           }
-          await removeEntry(item.id);
           router.back();
         },
       },

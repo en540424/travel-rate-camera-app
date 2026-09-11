@@ -11,6 +11,7 @@ import {
   getHistoryCount,
   getHistoryCountForTrip,
   getHistoryForTrip,
+  getImageUris,
   insertHistory,
   markPurchased as markPurchasedQuery,
   updateAmount as updateAmountQuery,
@@ -47,6 +48,19 @@ export function useHistory() {
 
   useEffect(() => {
     load().catch(console.error);
+  }, [load]);
+
+  /**
+   * DB書き込み**成功後**の再読込。ここでの失敗（SELECT失敗）は書き込みの成否と無関係なので
+   * 呼び出し側へ投げず記録だけする。投げると「DBは更新済みなのに保存失敗扱い」になり、
+   * 編集画面側で保存済み写真を下書き扱いで削除する経路（Codex S2-4）が成立してしまう。
+   */
+  const reloadAfterWrite = useCallback(async () => {
+    try {
+      await load();
+    } catch (e) {
+      console.warn('[history reload after write]', e);
+    }
   }, [load]);
 
   /**
@@ -91,53 +105,61 @@ export function useHistory() {
     } finally {
       savingRef.current = false;
     }
-    await load();
+    await reloadAfterWrite();
     return { blocked: false };
   }
 
   async function removeEntry(id: number) {
     await deleteHistory(db, id);
-    await load();
+    await reloadAfterWrite();
   }
 
-  async function clearAll() {
-    if (activeTrip) {
-      await clearHistoryForTrip(db, activeTrip.id);
+  /**
+   * 現在の旅行（なければ全件）の履歴を削除する。
+   * 戻り値は削除した記録が参照していた写真URI。**DB削除が成功した後**に呼び出し側がfileを片付ける
+   * （fileを先に消してDB削除が失敗すると「記録は残るのに写真だけ無い」状態になるため、順序を逆にしない）。
+   */
+  async function clearAll(): Promise<{ imageUris: string[] }> {
+    const tripId = activeTrip?.id ?? null;
+    const imageUris = await getImageUris(db, tripId);
+    if (tripId != null) {
+      await clearHistoryForTrip(db, tripId);
     } else {
       await clearHistory(db);
     }
-    await load();
+    await reloadAfterWrite();
+    return { imageUris };
   }
 
   async function togglePurchased(id: number, currentValue: 0 | 1) {
     await markPurchasedQuery(db, id, currentValue === 0);
-    await load();
+    await reloadAfterWrite();
   }
 
   async function updateAmount(id: number, foreignAmount: number, jpyAmount: number) {
     await updateAmountQuery(db, id, foreignAmount, jpyAmount);
-    await load();
+    await reloadAfterWrite();
   }
 
   async function updateMemo(id: number, memo: string | null) {
     await updateMemoQuery(db, id, memo);
-    await load();
+    await reloadAfterWrite();
   }
 
   async function updateEntryDate(id: number, entryDate: string | null) {
     await updateEntryDateQuery(db, id, entryDate);
-    await load();
+    await reloadAfterWrite();
   }
 
   /** カテゴリーを更新（null で未分類へ戻す） */
   async function updateCategory(id: number, category: string | null) {
     await updateCategoryQuery(db, id, category);
-    await load();
+    await reloadAfterWrite();
   }
 
   async function updateImageUri(id: number, imageUri: string | null) {
     await updateImageUriQuery(db, id, imageUri);
-    await load();
+    await reloadAfterWrite();
   }
 
   const isAtFreeLimit = !canSaveEntry(isPro, totalCount);
