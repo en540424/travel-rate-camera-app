@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -31,6 +31,9 @@ export default function TripCreateScreen() {
   const [startDate, setStartDate] = useState(todayStr());
   const [endDate, setEndDate] = useState('');
   const [showTripLimitSheet, setShowTripLimitSheet] = useState(false);
+  // 作成処理中。createTrip内の「件数確認→INSERT」を連打で並行させない（refで即時に弾き、stateでボタンを止める）
+  const [isCreating, setIsCreating] = useState(false);
+  const creatingRef = useRef(false);
 
   const isJpy = currency === 'JPY';
   const rateNum = parseFloat(rate);
@@ -62,6 +65,7 @@ export default function TripCreateScreen() {
   }
 
   async function handleCreate() {
+    if (creatingRef.current) return; // 連打：2回目以降は何もしない
     const nm = name.trim();
     if (!nm) return;
     const cur = currency;
@@ -72,6 +76,8 @@ export default function TripCreateScreen() {
     const dates = validateDates();
     if (dates == null) return;
 
+    creatingRef.current = true;
+    setIsCreating(true);
     // 保存失敗時に何も表示されない箇所があったため try/catch + Alert を追加（P0-08）。
     // 保存ロジック本体（createTrip/editTrip）は変更しない。
     try {
@@ -94,6 +100,9 @@ export default function TripCreateScreen() {
         '旅行の作成中にエラーが発生しました。もう一度お試しください。',
         [{ text: 'OK' }],
       );
+    } finally {
+      creatingRef.current = false;
+      setIsCreating(false);
     }
   }
 
@@ -213,14 +222,14 @@ export default function TripCreateScreen() {
       <View style={styles.footer}>
         <Pressable
           onPress={handleCreate}
-          disabled={!canCreate}
+          disabled={!canCreate || isCreating}
           style={({ pressed }) => [
             styles.createBtn,
-            !canCreate && styles.createBtnDisabled,
-            pressed && canCreate && styles.pressed,
+            (!canCreate || isCreating) && styles.createBtnDisabled,
+            pressed && canCreate && !isCreating && styles.pressed,
           ]}>
-          <ThemedText style={[styles.createBtnText, !canCreate && styles.createBtnTextDisabled]}>
-            旅行を作成
+          <ThemedText style={[styles.createBtnText, (!canCreate || isCreating) && styles.createBtnTextDisabled]}>
+            {isCreating ? '作成中…' : '旅行を作成'}
           </ThemedText>
         </Pressable>
         {!canCreate && <ThemedText style={styles.footerHint}>未入力の項目があります</ThemedText>}

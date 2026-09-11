@@ -1,7 +1,7 @@
 // Web版履歴フック: expo-sqlite を使わず localStorage にフォールバック。
 // Metro は .web.ts を Web ビルドで優先採用するため、
 // use-history.ts（expo-sqlite 使用）は iOS/Android のみで使われる。
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { canSaveEntry } from '@/config/limits';
 import type { CurrencyCode } from '@/constants/currencies';
@@ -50,6 +50,8 @@ export function useHistory() {
   const activeTrip = useTripStore((s) => s.activeTrip);
   const [history, setHistoryState] = useState<HistoryRow[]>([]);
   const [totalCount, setTotalCount] = useState(0);
+  // 保存の直列化（native版と同じ契約。実行中は busy を返す）
+  const savingRef = useRef(false);
 
   const load = useCallback(() => {
     const all = loadAll();
@@ -76,27 +78,35 @@ export function useHistory() {
     imageUri?: string,
     isPurchased?: boolean,
     category?: string | null,
-  ): Promise<{ blocked: boolean }> {
+  ): Promise<{ blocked: boolean; busy?: boolean }> {
     if (!activeTrip) return { blocked: false };
-    if (!canSaveEntry(isPro, totalCount)) return { blocked: true };
-    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
-    const entry: HistoryRow = {
-      id: idCounter++,
-      currency,
-      foreign_amount: foreignAmount,
-      jpy_amount: jpyAmount,
-      rate_used: rateUsed,
-      trip_id: activeTrip.id,
-      is_purchased: isPurchased ? 1 : 0,
-      purchased_at: isPurchased ? now : null,
-      updated_at: now,
-      created_at: now,
-      memo: memo ?? null,
-      image_uri: imageUri ?? null,
-      entry_date: null,
-      category: category ?? null,
-    };
-    persistAll([entry, ...loadAll()]);
+    if (savingRef.current) return { blocked: false, busy: true };
+    savingRef.current = true;
+    try {
+      // 上限判定はstateではなく保存直前の実件数で行う（native版と同じ）
+      const currentCount = loadAll().filter((r) => r.trip_id === activeTrip.id).length;
+      if (!canSaveEntry(isPro, currentCount)) return { blocked: true };
+      const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+      const entry: HistoryRow = {
+        id: idCounter++,
+        currency,
+        foreign_amount: foreignAmount,
+        jpy_amount: jpyAmount,
+        rate_used: rateUsed,
+        trip_id: activeTrip.id,
+        is_purchased: isPurchased ? 1 : 0,
+        purchased_at: isPurchased ? now : null,
+        updated_at: now,
+        created_at: now,
+        memo: memo ?? null,
+        image_uri: imageUri ?? null,
+        entry_date: null,
+        category: category ?? null,
+      };
+      persistAll([entry, ...loadAll()]);
+    } finally {
+      savingRef.current = false;
+    }
     load();
     return { blocked: false };
   }

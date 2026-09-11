@@ -102,6 +102,7 @@ export default function CameraScreen() {
     }
     const currencyToSave: CurrencyCode = isJpyMode ? 'JPY' : selectedCurrency;
     const result = await addEntry(currencyToSave, foreignAmount, jpyAmount, rate, memo.trim() || undefined);
+    if (result.busy) return; // 別の保存が進行中。成功扱いにしない
     if (result.blocked) {
       setShowSaveLimitSheet(true);
       return;

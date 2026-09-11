@@ -1,5 +1,5 @@
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { canSaveEntry } from '@/config/limits';
 import type { CurrencyCode } from '@/constants/currencies';
@@ -30,6 +30,8 @@ export function useHistory() {
 
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [totalCount, setTotalCount] = useState(0);
+  // 保存の直列化。setStateの反映を待たずに即判定するためrefで持つ（購入処理のpurchasingRefと同じ考え方）。
+  const savingRef = useRef(false);
 
   const load = useCallback(async () => {
     // 初回MVPは保存上限を露出しない方針のため、表示件数はFREE_HISTORY_LIMIT（FREE_LIMITS.saves）で切らない（P0-04）。
@@ -47,7 +49,15 @@ export function useHistory() {
     load().catch(console.error);
   }, [load]);
 
-  /** 無料版は保存件数がFREE_LIMITS.saves以上ならブロックする（Proは無制限）。保存処理の唯一の入口。 */
+  /**
+   * 無料版は保存件数がFREE_LIMITS.saves以上ならブロックする（Proは無制限）。保存処理の唯一の入口。
+   *
+   * ■ 連打・並行呼び出し
+   *   実行中にもう一度呼ばれた場合はDBへ触らず`{ blocked: false, busy: true }`を返す
+   *   （呼び出し側は保存成功として扱わない）。上限判定はReact stateの`totalCount`ではなく、
+   *   INSERT直前にDBから読み直した件数で行う（stateの反映遅れによる上限突破を防ぐ）。
+   *   数える対象（現在の旅行の件数＝`getHistoryCountForTrip`）はこれまでと同じで変更しない。
+   */
   async function addEntry(
     currency: CurrencyCode,
     foreignAmount: number,
@@ -57,23 +67,30 @@ export function useHistory() {
     imageUri?: string,
     isPurchased?: boolean,
     category?: string | null,
-  ): Promise<{ blocked: boolean }> {
+  ): Promise<{ blocked: boolean; busy?: boolean }> {
     if (!activeTrip) return { blocked: false };
-    if (!canSaveEntry(isPro, totalCount)) return { blocked: true };
-    await insertHistory(
-      db,
-      {
-        currency,
-        foreign_amount: foreignAmount,
-        jpy_amount: jpyAmount,
-        rate_used: rateUsed,
-        trip_id: activeTrip.id,
-      },
-      memo,
-      imageUri,
-      isPurchased,
-      category,
-    );
+    if (savingRef.current) return { blocked: false, busy: true };
+    savingRef.current = true;
+    try {
+      const currentCount = await getHistoryCountForTrip(db, activeTrip.id);
+      if (!canSaveEntry(isPro, currentCount)) return { blocked: true };
+      await insertHistory(
+        db,
+        {
+          currency,
+          foreign_amount: foreignAmount,
+          jpy_amount: jpyAmount,
+          rate_used: rateUsed,
+          trip_id: activeTrip.id,
+        },
+        memo,
+        imageUri,
+        isPurchased,
+        category,
+      );
+    } finally {
+      savingRef.current = false;
+    }
     await load();
     return { blocked: false };
   }

@@ -129,6 +129,10 @@ export default function CameraScreen() {
   const [showManualInput, setShowManualInput] = useState(false);
   const [photoSheetVisible, setPhotoSheetVisible] = useState(false);
   const [showSaveLimitSheet, setShowSaveLimitSheet] = useState(false);
+  // 保存処理中（写真copy〜DB INSERT〜reload）。連打で同じ記録が二重保存されないよう、
+  // refで即時に弾き、stateでボタンをloading表示にする（購入処理と同じ二段構え）。
+  const [isSaving, setIsSaving] = useState(false);
+  const savingRef = useRef(false);
   // カメラ表示の切替：true=大きいライブカメラ / false=撮影済みOCR写真プレビュー（表示専用）
   const [cameraLive, setCameraLive] = useState(true);
   // 撮影済みOCR写真を拡大表示するモーダル
@@ -340,7 +344,8 @@ export default function CameraScreen() {
   // → カメラ表示中・スキャン中・商品写真モード中・OCR失敗時は出さない。
   const showFooter = !isWeb && isPriceOcrMode && phase === 'result' && ocrSuccess;
   // 価格未選択（＝金額未確定）なら保存ボタンだけ disabled。手入力で金額が入れば canSave で有効化される。
-  const saveDisabled = !canSave;
+  // 保存処理中も押せない（二重保存防止）。
+  const saveDisabled = !canSave || isSaving;
 
   function switchInputMode(mode: ConversionDirection) {
     setInputMode(mode);
@@ -770,11 +775,27 @@ export default function CameraScreen() {
 
   async function handleSaveCandidate() {
     if (!canSave || !activeTrip) return;
+    if (savingRef.current) return; // 連打：2回目以降は何もしない
     if (!canSaveEntry(isPro, totalCount)) {
       setShowSaveLimitSheet(true);
       return;
     }
+    savingRef.current = true;
+    setIsSaving(true);
+    try {
+      await doSaveCandidate();
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
+    }
+  }
+
+  async function doSaveCandidate() {
+    if (!activeTrip) return;
     let savedPhotoUri: string | undefined;
+    // 写真のcopyに失敗した場合、記録自体は写真なしで保存する（従来どおり）が、
+    // 「写真付きで保存できた」と誤認させないようトーストで明示する。
+    let photoSaveFailed = false;
     // 「写真なしで保存」が選ばれている時は、保存対象写真があってもコピーしない（既存の写真なし保存と同じ扱い）。
     if (pendingPhotoUri && !excludePhotoFromSave && Platform.OS !== 'web') {
       try {
@@ -789,6 +810,7 @@ export default function CameraScreen() {
         }
       } catch (e) {
         console.warn('[photo save]', e);
+        photoSaveFailed = true;
       }
     }
     const currencyToSave = activeTrip.base_currency;
@@ -809,6 +831,7 @@ export default function CameraScreen() {
         setShowSaveLimitSheet(true);
         return; // 入力値を保持したまま終了
       }
+      if (result.busy) return; // 別の保存が進行中。成功扱いにせず入力値を保持する
     } catch (e) {
       console.warn('[save error]', e);
       Alert.alert(
@@ -820,7 +843,7 @@ export default function CameraScreen() {
     }
     // 保存成功トースト（候補/購入済みの文言はリセット前のsaveAsPurchasedで決める）
     setToastMessage(saveAsPurchased ? '購入済みに保存しました' : '候補に保存しました');
-    setToastCaption('履歴で確認できます');
+    setToastCaption(photoSaveFailed ? '写真は保存できませんでした（記録は保存済み）' : '履歴で確認できます');
     // 保存成功時のみリセット
     setNativeAmount('');
     setMemo('');
@@ -1887,6 +1910,7 @@ export default function CameraScreen() {
                   }
                   onPress={handleSaveCandidate}
                   disabled={saveDisabled}
+                  loading={isSaving}
                 />
               )}
 
@@ -1959,6 +1983,7 @@ export default function CameraScreen() {
             }
             onPress={handleSaveCandidate}
             disabled={saveDisabled}
+            loading={isSaving}
           />
           {ocrResult != null && (
             <TouchableOpacity

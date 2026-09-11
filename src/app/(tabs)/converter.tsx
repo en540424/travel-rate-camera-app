@@ -44,6 +44,9 @@ export default function ConverterScreen() {
   const { rates } = useRates();
   const { setPendingCameraAmount } = useSettingsStore();
   const { totalCount, addEntry } = useHistory();
+  // 保存処理中（連打防止）。refで即時に弾き、stateでボタンを止める
+  const [isSaving, setIsSaving] = useState(false);
+  const savingRef = useRef(false);
   const { activeTrip } = useTrips();
   const isPro = useIsPro();
 
@@ -86,10 +89,23 @@ export default function ConverterScreen() {
 
   async function handleSave() {
     if (!hasResult || isReverse || !tripCurrency) return;
+    if (savingRef.current) return; // 連打：2回目以降は何もしない
     if (!canSaveEntry(isPro, totalCount)) {
       setShowSaveLimitSheet(true);
       return;
     }
+    savingRef.current = true;
+    setIsSaving(true);
+    try {
+      await doSave();
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
+    }
+  }
+
+  async function doSave() {
+    if (!tripCurrency) return;
     let savedUri: string | undefined;
     if (selectedImageUri && Platform.OS !== 'web') {
       savedUri = await copySelectedImageToPhotos(selectedImageUri);
@@ -102,6 +118,7 @@ export default function ConverterScreen() {
         setShowSaveLimitSheet(true);
         return; // 入力値を保持したまま終了
       }
+      if (saveOutcome.busy) return; // 別の保存が進行中。成功扱いにしない
     } catch (e) {
       console.warn('[converter save error]', e);
       Alert.alert(
@@ -351,7 +368,8 @@ export default function ConverterScreen() {
               <PrimaryButton
                 title={`💾 ${formatJpy(result)} を${saveAsPurchased ? '購入済み' : '候補'}として保存`}
                 onPress={handleSave}
-                disabled={!hasResult}
+                disabled={!hasResult || isSaving}
+                loading={isSaving}
               />
             </>
           )}
