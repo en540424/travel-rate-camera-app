@@ -342,21 +342,35 @@ function invokeStart(speech: SpeechRecognitionModule, session: ActiveSession): v
 }
 
 /**
+ * 開始要求の世代。`abortRecognition()`（画面離脱等）のたびに進み、`startRecognition`は
+ * 開始前のawait（native読込・直前セッションの破棄）を跨いで世代が変わっていたら`start`を投げない
+ * （離脱後に遅れて認識が始まり、マイクindicatorとAVAudioSessionが残る競合の防止）。
+ * 既存の`session.id`は**開始済み**セッションの古いイベントを捨てるためのもので、開始前の取消は担わない。
+ */
+let startGeneration = 0;
+
+/**
  * 音声認識を開始する。
  *
  * 既に動作中のセッションがあれば先に破棄してから開始する（二重startを防ぐ）。
- * 開始できなかった場合は`false`を返し、`onEnd`は呼ばれない。
+ * 開始できなかった場合（開始前に`abortRecognition()`が呼ばれた場合を含む）は`false`を返し、`onEnd`は呼ばれない。
  */
 export async function startRecognition(
   params: StartRecognitionParams,
   callbacks: RecognitionCallbacks,
 ): Promise<boolean> {
+  // 入口で世代を進めて控える。以後のawait中に`abortRecognition()`／後続の`startRecognition`が入ると失効する
+  startGeneration += 1;
+  const generationAtEntry = startGeneration;
+
   const native = await loadNative();
   if (!native) return false;
   const speech = native.ExpoSpeechRecognitionModule;
 
-  // 直前のセッションが残っていれば確実に畳む（購読も解除される）
-  await abortRecognition();
+  // 直前のセッションが残っていれば確実に畳む（購読も解除される）。
+  // 自分の世代を進めないよう内部用のabortを使う（公開版は世代を進める）
+  await abortActiveSession();
+  if (generationAtEntry !== startGeneration) return false;
 
   sessionCounter += 1;
   const session: ActiveSession = {
@@ -473,8 +487,15 @@ export async function stopRecognition(): Promise<void> {
  *
  * 画面離脱時に使う。購読を解除し、AVAudioSessionを解放し、`onEnd`は通知しない
  * （画面が既に離れているため、state更新を走らせない）。
+ * 開始前（`startRecognition`のawait中）の要求も失効させる。
  */
 export async function abortRecognition(): Promise<void> {
+  startGeneration += 1;
+  await abortActiveSession();
+}
+
+/** 動作中セッションの破棄本体（世代は進めない）。`startRecognition`内部の直前破棄用 */
+async function abortActiveSession(): Promise<void> {
   const session = activeSession;
   if (!session) {
     // セッションが無くてもsessionが残っている可能性があるため解放だけは行う

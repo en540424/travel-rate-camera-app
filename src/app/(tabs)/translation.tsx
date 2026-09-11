@@ -175,6 +175,13 @@ export default function TranslationScreen() {
    */
   const generationRef = useRef(0);
   const slowHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * マイク開始要求の世代。権限ダイアログ（`requestSpeechPermissions`のawait）中に画面を離れた場合、
+   * 戻ってきた権限結果で認識を開始しない（離脱後にマイクが勝手に立ち上がる競合の防止）。
+   * 翻訳の`generationRef`は翻訳・クリアでも進むため流用せず、マイク専用に持つ
+   * （流用すると権限確認中の正当な翻訳操作でマイク開始が捨てられる）。
+   */
+  const micRequestRef = useRef(0);
 
   // MARK: - フォーカス連動（TranslationHostのマウント条件）
 
@@ -202,6 +209,8 @@ export default function TranslationScreen() {
         setIsListening(false);
         setInterimText('');
         setIsSpeaking(false);
+        // 権限確認のawait中に離脱した場合、戻ってきた結果で開始させない
+        micRequestRef.current += 1;
         void abortRecognition();
         void stopSpeaking();
       };
@@ -441,7 +450,11 @@ export default function TranslationScreen() {
 
     setSpeechError(null);
 
+    const micRequest = micRequestRef.current + 1;
+    micRequestRef.current = micRequest;
     const permission = await requestSpeechPermissions();
+    // 権限ダイアログ中に画面を離れた／別のマイク操作があった場合は、この要求を破棄する
+    if (micRequestRef.current !== micRequest) return;
     if (permission.status === 'unavailable') {
       setSpeechError({ kind: 'recognition', code: 'failed' });
       return;
@@ -524,9 +537,12 @@ export default function TranslationScreen() {
         },
       },
     );
-    if (!started) {
+    if (started === 'failed') {
       setIsSpeaking(false);
       setSpeakFailed(true);
+    } else if (started === 'cancelled') {
+      // 開始前に停止操作・離脱があった。失敗ではないのでエラー表示しない
+      setIsSpeaking(false);
     }
   }
 

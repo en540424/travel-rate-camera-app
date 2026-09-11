@@ -40,6 +40,21 @@ function loadNative(): Promise<SpeechNative | null> {
 /** 画面が扱う読み上げエラー。細かい原因は利用者に区別できないため畳む */
 export type SpeechSynthesisErrorCode = 'unsupported_voice' | 'failed';
 
+/**
+ * `speakText`の開始結果。
+ * - `started`: 読み上げを開始した（以後は`SpeakCallbacks`で通知）
+ * - `cancelled`: 開始前（native読込・直前停止のawait中）に`stopSpeaking()`が呼ばれたため開始しなかった。
+ *   利用者の停止操作・画面離脱・シート閉鎖が正しく効いた結果なので、**失敗として表示しない**
+ * - `failed`: 空文字／nativeなし／`speak`例外
+ */
+export type SpeakStartResult = 'started' | 'cancelled' | 'failed';
+
+/**
+ * 停止世代。`stopSpeaking()`のたびに進み、`speakText`は開始前のawaitを跨いで
+ * 世代が変わっていたら`native.speak`を呼ばない（停止後に遅れて読み上げが始まる競合の防止）。
+ */
+let stopGeneration = 0;
+
 export type SpeechSynthesisEnvironment = {
   /** この環境で読み上げを提供できるか */
   available: boolean;
@@ -110,19 +125,27 @@ export type SpeakParams = {
  * 開始前に必ず`stopSpeaking()`を通すため、**二重tapでも二重再生にならない**
  * （`Speech.speak`は読み上げ中に呼ぶとキューへ積まれる仕様のため、明示的に潰す）。
  *
- * 空文字は何もせず`false`を返す（無音のまま「読み上げ中」表示になるのを防ぐ）。
+ * 空文字は何もせず`'failed'`を返す（無音のまま「読み上げ中」表示になるのを防ぐ）。
+ * 開始前のawait中に`stopSpeaking()`が呼ばれた場合は`'cancelled'`（失敗ではない）。
  */
 export async function speakText(
   params: SpeakParams,
   callbacks: SpeakCallbacks,
-): Promise<boolean> {
-  if (params.text.trim() === '') return false;
+): Promise<SpeakStartResult> {
+  if (params.text.trim() === '') return 'failed';
+
+  // 入口で世代を進めて控える。以後のawait中に外から`stopSpeaking()`が呼ばれる、
+  // または後続の`speakText`が入る（二重tap）と世代が変わり、この呼び出しは開始しない
+  stopGeneration += 1;
+  const generationAtEntry = stopGeneration;
 
   const native = await loadNative();
-  if (!native) return false;
+  if (!native) return 'failed';
 
-  // 直前の読み上げが残っていれば潰してから始める（キュー積み上げ防止）
-  await stopSpeaking();
+  // 直前の読み上げが残っていれば潰してから始める（キュー積み上げ防止）。
+  // 自分自身のこの停止で世代を進めない（進めると必ず自分が失効してしまう）ため、内部用のstopを使う。
+  await stopNative(native);
+  if (generationAtEntry !== stopGeneration) return 'cancelled';
 
   let finished = false;
   /** `onDone` / `onStopped` / `onError`のどれが先に来ても1回だけ通知する */
@@ -151,22 +174,29 @@ export async function speakText(
         callbacks.onError('failed');
       },
     });
-    return true;
+    return 'started';
   } catch {
-    return false;
+    return 'failed';
+  }
+}
+
+/** nativeの停止だけを行う（世代は進めない）。`speakText`内部の直前停止用 */
+async function stopNative(native: SpeechNative): Promise<void> {
+  try {
+    await native.stop();
+  } catch {
+    // 読み上げ中でない場合等。二重停止でも落とさないのがこの層の契約
   }
 }
 
 /**
  * 読み上げを停止する。**冪等**。
  * 再tapによるtoggle停止と、画面離脱時のcleanupの両方から呼ばれる。
+ * 開始前（`speakText`のawait中）の読み上げも失効させる（停止後に遅れて始まらない）。
  */
 export async function stopSpeaking(): Promise<void> {
+  stopGeneration += 1;
   const native = await loadNative();
   if (!native) return;
-  try {
-    await native.stop();
-  } catch {
-    // 読み上げ中でない場合等。二重停止でも落とさないのがこの層の契約
-  }
+  await stopNative(native);
 }
