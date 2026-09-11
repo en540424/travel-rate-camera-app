@@ -1,15 +1,30 @@
 import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import type { PurchasesPackage } from 'react-native-purchases';
 
 import { ThemedText } from '@/components/themed-text';
 import { ErrorMessage, GhostButton, PrimaryButton } from '@/components/ui';
+import { EXTERNAL_LINKS } from '@/config/external-links';
 import { SHOW_PRO } from '@/config/feature-flags';
 import { usePurchases } from '@/hooks/use-purchases';
 import { color, radius, shadow } from '@/theme/tokens';
 
 type PlanKey = 'monthly' | 'annual';
+
+/** 規約・ポリシーへの外部リンク（app-info.tsxと同じ開き方。失敗時は同じ文言で案内） */
+async function openLegalUrl(label: string, url: string) {
+  try {
+    const canOpen = await Linking.canOpenURL(url);
+    if (!canOpen) {
+      Alert.alert('開けませんでした', `${label}のページを開けませんでした。時間をおいて再度お試しください。`);
+      return;
+    }
+    await Linking.openURL(url);
+  } catch {
+    Alert.alert('開けませんでした', `${label}のページを開けませんでした。時間をおいて再度お試しください。`);
+  }
+}
 
 interface IncludedFeature {
   label: string;
@@ -150,11 +165,20 @@ export default function PurchaseConfirmScreen() {
           高性能OCRなどのクラウド機能は、今回のProには含まれません。
         </ThemedText>
 
-        {/* 自動更新の明記 */}
+        {/* 自動更新の明記＋規約・ポリシーへの直接導線（購入前に確認できる位置に置く） */}
         <View style={styles.noteCard}>
           <ThemedText style={styles.noteText}>
-            期間終了時に自動更新されます。いつでもキャンセル可。お支払いは Apple ID に請求されます。
+            期間終了時に自動更新されます。解約はiOSの設定（サブスクリプション）からいつでも行えます。お支払いは Apple ID に請求されます。
           </ThemedText>
+          <View style={styles.legalRow}>
+            <Pressable onPress={() => openLegalUrl('利用規約', EXTERNAL_LINKS.terms)} hitSlop={6}>
+              <ThemedText style={styles.legalLink}>利用規約</ThemedText>
+            </Pressable>
+            <ThemedText style={styles.legalSep}>・</ThemedText>
+            <Pressable onPress={() => openLegalUrl('プライバシーポリシー', EXTERNAL_LINKS.privacyPolicy)} hitSlop={6}>
+              <ThemedText style={styles.legalLink}>プライバシーポリシー</ThemedText>
+            </Pressable>
+          </View>
         </View>
 
         {noPackagesAvailable && (
@@ -309,5 +333,8 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   noteText: { fontSize: 12.5, fontWeight: '500', color: color.body, lineHeight: 19 },
+  legalRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+  legalLink: { fontSize: 12.5, fontWeight: '700', color: color.primaryDark, textDecorationLine: 'underline' },
+  legalSep: { fontSize: 12.5, color: color.muted, marginHorizontal: 4 },
   actions: { gap: 10, marginTop: 4 },
 });
