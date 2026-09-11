@@ -13,7 +13,11 @@ export interface SaveLimitBannerProps {
   style?: StyleProp<ViewStyle>;
 }
 
-/** 無料版の保存件数（FREE_LIMITS.saves）に対する現在の保存数を示すバナー */
+/**
+ * 無料版の保存件数（FREE_LIMITS.saves）に対する現在の保存数を示すバナー。
+ * 上限は「1つの旅行につき10件」（旅行ごと。端末全体ではない。2026-09-11 Human確定）なので、
+ * `currentCount`には現在の旅行の件数（`getHistoryCountForTrip`）を渡し、ラベルもその旅行の件数だと分かる表現にする。
+ */
 export function SaveLimitBanner({ currentCount, limit = FREE_LIMITS.saves, isPro = false, style }: SaveLimitBannerProps) {
   if (isPro) {
     return null;
@@ -25,7 +29,7 @@ export function SaveLimitBanner({ currentCount, limit = FREE_LIMITS.saves, isPro
   return (
     <View style={[styles.container, style]}>
       <View style={styles.headerRow}>
-        <Text style={styles.label}>保存件数</Text>
+        <Text style={styles.label}>この旅行の保存件数</Text>
         <Text style={[styles.count, isNearLimit && styles.countWarn]}>
           {currentCount} / {limit} 件
         </Text>

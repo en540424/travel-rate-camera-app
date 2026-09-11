@@ -16,6 +16,8 @@ export interface SaveLimitSheetProps {
 
 /**
  * 保存上限シート（design 濃いタブ「保存上限」）。責めず「もっと使いたいならPro」。
+ * 上限は「1つの旅行につき10件」（旅行ごと。端末全体ではない。2026-09-11 Human確定）。
+ * 文言は「この旅行の件数」だと分かるようにし、全体上限と誤読させない。
  * ※トリガーは保存フロー側。ここはUI部品のみ（接続は保護領域につき別途）。
  */
 export function SaveLimitSheet({ visible, onClose, onUpgrade, saved, limit = FREE_LIMITS.saves }: SaveLimitSheetProps) {
@@ -24,13 +26,13 @@ export function SaveLimitSheet({ visible, onClose, onUpgrade, saved, limit = FRE
   return (
     <ActionSheet visible={visible} onClose={onClose}>
       <View style={styles.iconWrap}><ThemedText style={styles.icon}>🗂</ThemedText></View>
-      <ThemedText style={styles.title}>無料版の保存上限に達しました</ThemedText>
+      <ThemedText style={styles.title}>この旅行の保存上限に達しました</ThemedText>
       <ThemedText style={styles.body}>
-        Proにすると、旅行中の買い物を制限なく保存できます。保存済みの記録はそのまま残ります。
+        無料版は1つの旅行につき{limit}件まで保存できます。Proにすると、旅行中の買い物を制限なく保存できます。保存済みの記録はそのまま残ります。
       </ThemedText>
 
       <View style={styles.quota}>
-        <ThemedText style={styles.quotaLabel}>無料版の保存件数</ThemedText>
+        <ThemedText style={styles.quotaLabel}>この旅行の保存件数</ThemedText>
         <ThemedText style={styles.quotaValue}>{count} / {limit}件</ThemedText>
       </View>
       <View style={styles.barTrack}>

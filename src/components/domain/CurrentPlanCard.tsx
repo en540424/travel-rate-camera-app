@@ -43,7 +43,8 @@ export function CurrentPlanCard() {
     actionText = '契約内容を確認';
   } else {
     statusTitle = '無料プランをご利用中';
-    statusBody = `保存${FREE_LIMITS.saves}件・旅行は同時に${FREE_LIMITS.trips}件まで無料。Proで無制限に。`;
+    // 保存上限は「1つの旅行につき」・旅行数は「同時に」（累積ではない）。全体上限と誤読させない
+    statusBody = `1つの旅行につき保存${FREE_LIMITS.saves}件・同時に管理できる旅行${FREE_LIMITS.trips}件まで無料。Proで無制限に。`;
     actionText = 'Proを見る';
   }
 

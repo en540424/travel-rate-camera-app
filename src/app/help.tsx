@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { FREE_LIMITS } from '@/config/limits';
 import { color, radius, shadow } from '@/theme/tokens';
 
 // 6ステップの軽いオンボーディング（説明は短く）
@@ -25,6 +26,8 @@ interface FaqItem {
  * - 記録・写真・旅行は端末内のみ。OCR（Apple Vision）・翻訳（Apple Translation）は端末上で処理
  * - 例外は課金（App Store／RevenueCat）と音声入力（Apple音声認識。端末内で処理できない場合はAppleのサーバー）
  *   の2つで、「すべて端末内・外部送信なし」とは書かない
+ * - 無料版の上限は「1つの旅行につきFREE_LIMITS.saves件」「同時に管理できる旅行FREE_LIMITS.trips件」（2026-09-11 Human確定）。
+ *   端末全体の保存上限・累積の旅行数と誤読させない。数値は`config/limits.ts`から取る
  */
 const FAQ: FaqItem[] = [
   {
@@ -38,6 +41,10 @@ const FAQ: FaqItem[] = [
   {
     q: 'データはどこに保存されますか？',
     a: '旅行・記録・写真は、この端末内にのみ保存されます。値札の文字認識や翻訳も端末上で処理します。独自のサーバーやクラウドへ記録を送信することはありません。',
+  },
+  {
+    q: '無料版とProの違いは？',
+    a: `無料版は、1つの旅行につき${FREE_LIMITS.saves}件まで保存でき、同時に管理できる旅行は${FREE_LIMITS.trips}件です。旅行をアーカイブすれば新しい旅行を作成でき、アーカイブ済みの旅行の記録もそのまま見られます。Proにすると保存件数の制限がなくなり、複数の旅行を同時に管理できるほか、カテゴリーの絞り込み・分析とCSV書き出しが使えます。`,
   },
   {
     q: '外部と通信する機能はありますか？',
