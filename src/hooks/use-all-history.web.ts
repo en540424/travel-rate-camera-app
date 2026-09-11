@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { CurrencyCode } from '@/constants/currencies';
 import type { HistoryRow } from '@/db/queries/history';
 import type { TripRow } from '@/db/queries/trips';
+import { budgetTotalsByTripFromGroupRows, type BudgetTotals } from '@/utils/budget-core';
 
 const HISTORY_KEY = 'travelrate:history';
 const TRIPS_KEY   = 'travelrate:trips';
@@ -66,12 +67,24 @@ function persistHistory(rows: HistoryRow[]) {
 export function useAllHistory() {
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [tripMap, setTripMap] = useState<Map<number, TripRow>>(new Map());
+  // 旅行ごとの集計（native版のSQL集計と同じ形。全行から作る）
+  const [totalsByTrip, setTotalsByTrip] = useState<Map<number, BudgetTotals>>(new Map());
 
   const load = useCallback(() => {
     const rows = loadAllHistory();
     const trips = loadAllTrips();
     setHistory(rows);
     setTripMap(new Map(trips.map((t) => [t.id, t])));
+    setTotalsByTrip(
+      budgetTotalsByTripFromGroupRows(
+        rows.map((r) => ({
+          trip_id: r.trip_id,
+          is_purchased: r.is_purchased,
+          count: 1,
+          total: Number.isFinite(r.jpy_amount) ? Math.round(r.jpy_amount) : 0,
+        })),
+      ),
+    );
   }, []);
 
   useEffect(() => {
@@ -101,5 +114,5 @@ export function useAllHistory() {
     load();
   }
 
-  return { history, tripMap, reload: load, togglePurchased, removeEntry };
+  return { history, tripMap, totalsByTrip, reload: load, togglePurchased, removeEntry };
 }

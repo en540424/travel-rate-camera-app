@@ -65,7 +65,7 @@ export default function HistoryScreen() {
     });
   }, []);
 
-  const { history, totalCount, reload } = useHistory();
+  const { history, totalCount, budgetTotals, reload } = useHistory();
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   /** カテゴリー絞り込み（Pro機能）。`null`は絞り込みなし */
   const [categoryFilter, setCategoryFilter] = useState<CategoryId | null>(null);
@@ -76,8 +76,8 @@ export default function HistoryScreen() {
   const tripBudgetJpy = activeTrip?.budget_jpy ?? FALLBACK_BUDGET_JPY;
 
   const stats = useMemo(
-    () => getTripStatsForDisplay(history, tripBudgetJpy, activeTrip?.id),
-    [history, totalCount, tripBudgetJpy, activeTrip?.id],
+    () => getTripStatsForDisplay(budgetTotals, tripBudgetJpy, activeTrip?.id),
+    [budgetTotals, tripBudgetJpy, activeTrip?.id],
   );
 
   const counts = useMemo(() => {

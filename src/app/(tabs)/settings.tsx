@@ -48,7 +48,7 @@ export default function SettingsScreen() {
 
   const { selectedCurrency } = useSettingsStore();
   const { activeTrip, loadTrips, switchTrip } = useTrips();
-  const { history, totalCount } = useHistory();
+  const { totalCount, budgetTotals } = useHistory();
 
   const [trips, setTrips] = useState<TripRow[]>([]);
   const [showSwitch, setShowSwitch] = useState(false);
@@ -62,8 +62,8 @@ export default function SettingsScreen() {
 
   const tripBudgetJpy = activeTrip?.budget_jpy ?? FALLBACK_BUDGET_JPY;
   const stats = useMemo(
-    () => getTripStatsForDisplay(history, tripBudgetJpy, activeTrip?.id),
-    [history, tripBudgetJpy, activeTrip?.id],
+    () => getTripStatsForDisplay(budgetTotals, tripBudgetJpy, activeTrip?.id),
+    [budgetTotals, tripBudgetJpy, activeTrip?.id],
   );
 
   // 旅行切替失敗時に無言で終わらないよう try/catch + Alert を追加（S-08）。切替処理本体は変更しない。

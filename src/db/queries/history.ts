@@ -2,6 +2,12 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { FREE_LIMITS } from '@/config/limits';
 import type { CurrencyCode } from '@/constants/currencies';
+import {
+  budgetTotalsByTripFromGroupRows,
+  EMPTY_BUDGET_TOTALS,
+  type BudgetGroupRow,
+  type BudgetTotals,
+} from '@/utils/budget-core';
 
 export interface HistoryRow {
   id: number;
@@ -83,6 +89,30 @@ export async function getHistoryCountForTrip(
     tripId,
   );
   return result?.count ?? 0;
+}
+
+/**
+ * 旅行ごとの候補/購入済み件数・合計をSQLで集計する（表示用の取得上限に依存しない）。
+ * 端数は`sumBudgetTotals`と同じく行ごとに丸める（`ROUND`）。
+ */
+const BUDGET_GROUP_SQL = `
+  SELECT trip_id, is_purchased, COUNT(*) AS count, SUM(ROUND(jpy_amount)) AS total
+  FROM conversion_history`;
+
+export async function getBudgetTotalsByTrip(db: SQLiteDatabase): Promise<Map<number, BudgetTotals>> {
+  const rows = await db.getAllAsync<BudgetGroupRow>(
+    `${BUDGET_GROUP_SQL} WHERE trip_id IS NOT NULL GROUP BY trip_id, is_purchased`,
+  );
+  return budgetTotalsByTripFromGroupRows(rows);
+}
+
+/** 1旅行分の集計。行が無ければ全て0 */
+export async function getBudgetTotalsForTrip(db: SQLiteDatabase, tripId: number): Promise<BudgetTotals> {
+  const rows = await db.getAllAsync<BudgetGroupRow>(
+    `${BUDGET_GROUP_SQL} WHERE trip_id = ? GROUP BY trip_id, is_purchased`,
+    tripId,
+  );
+  return budgetTotalsByTripFromGroupRows(rows).get(tripId) ?? { ...EMPTY_BUDGET_TOTALS };
 }
 
 /**

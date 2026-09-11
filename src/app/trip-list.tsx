@@ -8,15 +8,8 @@ import type { TripRow } from '@/db/queries/trips';
 import { useAllHistory } from '@/hooks/use-all-history';
 import { useTrips } from '@/hooks/use-trips';
 import { color, radius, shadow } from '@/theme/tokens';
+import { computeBudgetStatsFromTotals, EMPTY_BUDGET_TOTALS } from '@/utils/budget-core';
 import { formatJpy } from '@/utils/format';
-
-interface TripStat {
-  candidateCount: number;
-  candidateJpy: number;
-  purchasedCount: number;
-  purchasedJpy: number;
-  used: number;
-}
 
 function monthLabel(t: TripRow): string {
   const src = t.started_at ?? t.created_at;
@@ -26,7 +19,8 @@ function monthLabel(t: TripRow): string {
 
 export default function TripListScreen() {
   const { activeTrip, switchTrip } = useTrips();
-  const { history, tripMap, reload } = useAllHistory();
+  // 集計は表示用2000件ではなくSQL集計（totalsByTrip）を使う。残り予算＝予算−購入済み（候補は差し引かない）
+  const { tripMap, totalsByTrip, reload } = useAllHistory();
 
   // 旅行切替失敗時に無言で終わらないよう try/catch + Alert を追加（S-08）。切替処理本体は変更しない。
   async function handleSwitchTrip(id: number) {
@@ -48,20 +42,6 @@ export default function TripListScreen() {
     }, [reload]),
   );
 
-  const statByTrip = useMemo(() => {
-    const m = new Map<number, TripStat>();
-    for (const r of history) {
-      if (r.trip_id == null) continue;
-      const s = m.get(r.trip_id) ?? { candidateCount: 0, candidateJpy: 0, purchasedCount: 0, purchasedJpy: 0, used: 0 };
-      const jpy = Math.round(r.jpy_amount);
-      if ((r.is_purchased ?? 0) === 1) { s.purchasedCount += 1; s.purchasedJpy += jpy; }
-      else { s.candidateCount += 1; s.candidateJpy += jpy; }
-      s.used += jpy;
-      m.set(r.trip_id, s);
-    }
-    return m;
-  }, [history]);
-
   const trips = useMemo(() => {
     const all = [...tripMap.values()];
     const live = all.filter((t) => t.archived_at == null).sort((a, b) => b.is_active - a.is_active);
@@ -71,8 +51,6 @@ export default function TripListScreen() {
 
   const active = trips.find((t) => t.id === activeTrip?.id) ?? null;
   const others = trips.filter((t) => t.id !== active?.id);
-
-  const emptyStat: TripStat = { candidateCount: 0, candidateJpy: 0, purchasedCount: 0, purchasedJpy: 0, used: 0 };
 
   return (
     <View style={styles.screen}>
@@ -88,8 +66,8 @@ export default function TripListScreen() {
 
         {/* アクティブ旅行（大カード） */}
         {active && (() => {
-          const s = statByTrip.get(active.id) ?? emptyStat;
-          const remaining = Math.max(0, active.budget_jpy - s.used);
+          const s = totalsByTrip.get(active.id) ?? EMPTY_BUDGET_TOTALS;
+          const remaining = computeBudgetStatsFromTotals(s, active.budget_jpy).remainingBudget;
           const cur = active.base_currency;
           return (
             <View style={styles.activeCard}>
@@ -126,11 +104,11 @@ export default function TripListScreen() {
               <View style={styles.statBoxes}>
                 <View style={[styles.statBox, styles.statBoxCandidate]}>
                   <ThemedText style={styles.statBoxLabel}>候補 {s.candidateCount}</ThemedText>
-                  <ThemedText style={[styles.statBoxValue, { color: color.candidateText }]}>{formatJpy(s.candidateJpy)}</ThemedText>
+                  <ThemedText style={[styles.statBoxValue, { color: color.candidateText }]}>{formatJpy(s.candidateTotalJpy)}</ThemedText>
                 </View>
                 <View style={[styles.statBox, styles.statBoxPurchased]}>
                   <ThemedText style={styles.statBoxLabel}>購入済み {s.purchasedCount}</ThemedText>
-                  <ThemedText style={[styles.statBoxValue, { color: color.purchasedText }]}>{formatJpy(s.purchasedJpy)}</ThemedText>
+                  <ThemedText style={[styles.statBoxValue, { color: color.purchasedText }]}>{formatJpy(s.purchasedTotalJpy)}</ThemedText>
                 </View>
               </View>
               <View style={styles.activeActions}>
@@ -154,9 +132,9 @@ export default function TripListScreen() {
           <>
             <ThemedText style={styles.sectionLabel}>ほかの旅行</ThemedText>
             {others.map((t) => {
-              const s = statByTrip.get(t.id) ?? emptyStat;
+              const s = totalsByTrip.get(t.id) ?? EMPTY_BUDGET_TOTALS;
               const archived = t.archived_at != null;
-              const remaining = Math.max(0, t.budget_jpy - s.used);
+              const remaining = computeBudgetStatsFromTotals(s, t.budget_jpy).remainingBudget;
               const cur = t.base_currency;
               return (
                 <Pressable
@@ -175,8 +153,9 @@ export default function TripListScreen() {
                       )}
                     </View>
                   </View>
+                  {/* アーカイブ済みの「使用」は購入済み合計（候補は支出ではない） */}
                   <ThemedText style={styles.otherBudget}>
-                    {archived ? `使用 ${formatJpy(s.used)}` : t.budget_jpy > 0 ? `残り ${formatJpy(remaining)}` : '予算未設定'}
+                    {archived ? `使用 ${formatJpy(s.purchasedTotalJpy)}` : t.budget_jpy > 0 ? `残り ${formatJpy(remaining)}` : '予算未設定'}
                   </ThemedText>
                   <ThemedText style={styles.otherMeta}>
                     候補{s.candidateCount}・購入{s.purchasedCount}{monthLabel(t) !== '' ? `・${monthLabel(t)}` : ''}

@@ -2,7 +2,12 @@ import { Platform } from 'react-native';
 
 import type { CurrencyCode } from '@/constants/currencies';
 import type { HistoryRow } from '@/db/queries/history';
-import { computeBudgetStats } from '@/utils/budget-core';
+import {
+  computeBudgetStats,
+  computeBudgetStatsFromTotals,
+  sumBudgetTotals,
+  type BudgetTotals,
+} from '@/utils/budget-core';
 
 const WEB_HISTORY_STORAGE_KEY = 'travelrate:history';
 
@@ -47,22 +52,24 @@ export function getTripStats(rows: HistoryRow[], budgetJpy: number): TripStats {
 }
 
 /**
- * 画面表示用。Web は hook の slice 済み state ではなく localStorage 全件から集計し、
- * タブ間でズレないようにする。activeTripId が渡された場合は旅行スコープでフィルタする。
+ * 画面表示用。
+ *
+ * nativeは`useHistory().budgetTotals`（SQLで対象全件を集計した合計）を受け取り、
+ * 表示用の500件上限に依存しない残り予算を出す。
+ * Web は hook の state ではなく localStorage 全件から集計し、タブ間でズレないようにする
+ * （activeTripId が渡された場合は旅行スコープでフィルタする）。
  */
 export function getTripStatsForDisplay(
-  hookRows: HistoryRow[],
+  hookTotals: BudgetTotals,
   budgetJpy: number,
   activeTripId?: number | null,
 ): TripStats {
-  let rows: HistoryRow[];
   if (Platform.OS === 'web') {
     const all = loadAllFromWebStorage();
-    rows = activeTripId != null
+    const rows = activeTripId != null
       ? all.filter((r) => r.trip_id === activeTripId)
       : all;
-  } else {
-    rows = hookRows;
+    return computeBudgetStatsFromTotals(sumBudgetTotals(rows), budgetJpy);
   }
-  return getTripStats(rows, budgetJpy);
+  return computeBudgetStatsFromTotals(hookTotals, budgetJpy);
 }

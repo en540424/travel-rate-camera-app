@@ -7,6 +7,7 @@ import {
   clearHistory,
   clearHistoryForTrip,
   deleteHistory,
+  getBudgetTotalsForTrip,
   getHistory,
   getHistoryCount,
   getHistoryCountForTrip,
@@ -23,6 +24,7 @@ import {
 import type { HistoryRow } from '@/db/queries/history';
 import { useIsPro } from '@/hooks/use-purchases';
 import { useTripStore } from '@/stores/trip-store';
+import { EMPTY_BUDGET_TOTALS, sumBudgetTotals, type BudgetTotals } from '@/utils/budget-core';
 
 export function useHistory() {
   const db = useSQLiteContext();
@@ -31,6 +33,11 @@ export function useHistory() {
 
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [totalCount, setTotalCount] = useState(0);
+  /**
+   * 現在の旅行の候補/購入済み件数・合計。表示用の`history`（最新500件）ではなく
+   * SQL集計（全件）から作る。購入合計・残り予算はこちらを使う（501件目以降が集計から落ちない）。
+   */
+  const [budgetTotals, setBudgetTotals] = useState<BudgetTotals>(EMPTY_BUDGET_TOTALS);
   // 保存の直列化。setStateの反映を待たずに即判定するためrefで持つ（購入処理のpurchasingRefと同じ考え方）。
   const savingRef = useRef(false);
 
@@ -38,12 +45,15 @@ export function useHistory() {
     // 初回MVPは保存上限を露出しない方針のため、表示件数はFREE_HISTORY_LIMIT（FREE_LIMITS.saves）で切らない（P0-04）。
     // Pro側と同じ上限(500)を無料版でも使う。FREE_LIMITS.saves自体は変更しない。
     const limit = 500;
-    const [rows, count] = await Promise.all([
+    const [rows, count, totals] = await Promise.all([
       activeTrip ? getHistoryForTrip(db, activeTrip.id, limit) : getHistory(db, limit),
       activeTrip ? getHistoryCountForTrip(db, activeTrip.id) : getHistoryCount(db),
+      // 旅行未選択時は保存もできないため、表示行からの集計で足りる
+      activeTrip ? getBudgetTotalsForTrip(db, activeTrip.id) : null,
     ]);
     setHistory(rows);
     setTotalCount(count);
+    setBudgetTotals(totals ?? sumBudgetTotals(rows));
   }, [db, activeTrip]);
 
   useEffect(() => {
@@ -167,6 +177,7 @@ export function useHistory() {
   return {
     history,
     totalCount,
+    budgetTotals,
     isAtFreeLimit,
     addEntry,
     removeEntry,

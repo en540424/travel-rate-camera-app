@@ -8,9 +8,13 @@ import { deepEqual, equal } from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  budgetTotalsByTripFromGroupRows,
   computeBudgetStats,
+  computeBudgetStatsFromTotals,
+  EMPTY_BUDGET_TOTALS,
   remainingSaveSlots,
   shouldShowNearSaveLimit,
+  sumBudgetTotals,
 } from './budget-core.ts';
 
 const purchased = (amount) => ({ jpy_amount: amount, is_purchased: 1 });
@@ -120,4 +124,59 @@ test('remainingSaveSlots: 上限までの残り件数', () => {
 
 test('remainingSaveSlots: 上限超過でも負値を出さない（既存超過ユーザー対策）', () => {
   equal(remainingSaveSlots(25, 10), 0);
+});
+
+// ── 合計層（SQL集計→残り予算）。表示上限（500/2000件）に依存しない集計の固定 ──────────
+// Fable 5.1 / Codex独立監査（2026-09-11、HEAD dbd99ce）S2-5・S2-10の再発防止。
+
+test('sumBudgetTotals: 候補/購入済みの件数と合計を分けて返す（行ごとに丸める）', () => {
+  deepEqual(sumBudgetTotals([purchased(10.6), purchased(10.6), candidate(5.4)]), {
+    candidateCount: 1,
+    candidateTotalJpy: 5,
+    purchasedCount: 2,
+    purchasedTotalJpy: 22,
+  });
+});
+
+test('computeBudgetStatsFromTotals: 残り予算 = 予算 − 購入済み合計（候補は差し引かない）', () => {
+  const stats = computeBudgetStatsFromTotals(
+    { candidateCount: 3, candidateTotalJpy: 18192, purchasedCount: 2, purchasedTotalJpy: 33407 },
+    50000,
+  );
+  equal(stats.remainingBudget, 16593);
+  equal(stats.candidateTotalJpy, 18192);
+  equal(stats.purchasedTotalJpy, 33407);
+});
+
+test('computeBudgetStatsFromTotals: 空の合計は残り予算が予算そのまま、0未満にはならない', () => {
+  equal(computeBudgetStatsFromTotals(EMPTY_BUDGET_TOTALS, 50000).remainingBudget, 50000);
+  equal(computeBudgetStatsFromTotals({ ...EMPTY_BUDGET_TOTALS, purchasedTotalJpy: 60000 }, 50000).remainingBudget, 0);
+});
+
+test('computeBudgetStats は sumBudgetTotals→computeBudgetStatsFromTotals と同じ結果を返す', () => {
+  const rows = [purchased(33407), candidate(18192), candidate(100.5)];
+  deepEqual(computeBudgetStats(rows, 50000), computeBudgetStatsFromTotals(sumBudgetTotals(rows), 50000));
+});
+
+test('budgetTotalsByTripFromGroupRows: GROUP BY結果を旅行ごとの合計へ畳む', () => {
+  const map = budgetTotalsByTripFromGroupRows([
+    { trip_id: 1, is_purchased: 1, count: 501, total: 50100 },
+    { trip_id: 1, is_purchased: 0, count: 2, total: 300 },
+    { trip_id: 2, is_purchased: 0, count: 1, total: 1000 },
+    { trip_id: null, is_purchased: 1, count: 9, total: 9999 }, // 未分類は旅行画面で使わない
+  ]);
+  deepEqual(map.get(1), { candidateCount: 2, candidateTotalJpy: 300, purchasedCount: 501, purchasedTotalJpy: 50100 });
+  deepEqual(map.get(2), { candidateCount: 1, candidateTotalJpy: 1000, purchasedCount: 0, purchasedTotalJpy: 0 });
+  equal(map.has(0), false);
+  equal(map.size, 2);
+});
+
+test('budgetTotalsByTripFromGroupRows: 501件×100円／予算10万円 → 残り49,900円（500件で切ると50,000円になる不具合の固定）', () => {
+  const map = budgetTotalsByTripFromGroupRows([{ trip_id: 7, is_purchased: 1, count: 501, total: 50100 }]);
+  equal(computeBudgetStatsFromTotals(map.get(7), 100000).remainingBudget, 49900);
+});
+
+test('budgetTotalsByTripFromGroupRows: total=null（行なし相当）やis_purchased=nullは安全に扱う', () => {
+  const map = budgetTotalsByTripFromGroupRows([{ trip_id: 3, is_purchased: null, count: 1, total: null }]);
+  deepEqual(map.get(3), { candidateCount: 1, candidateTotalJpy: 0, purchasedCount: 0, purchasedTotalJpy: 0 });
 });

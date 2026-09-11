@@ -187,7 +187,7 @@ export default function CameraScreen() {
   const { rates } = useRates();
   const { selectedCurrency, setSelectedCurrency } = useSettingsStore();
   const isPro = useIsPro();
-  const { history, totalCount, addEntry, reload } = useHistory();
+  const { history, totalCount, budgetTotals, addEntry, reload } = useHistory();
   const { activeTrip } = useTrips();
 
   const tripName = activeTrip?.name ?? FALLBACK_TRIP_NAME;
@@ -237,9 +237,10 @@ export default function CameraScreen() {
   const inputNum = parseFloat(nativeAmount) || 0;
   const foreignAmount = isJpyMode ? inputNum : (isReverse ? convert(inputNum, rate, 'FROM_JPY') : inputNum);
   const jpyAmount = isJpyMode ? inputNum : (isReverse ? inputNum : convert(inputNum, rate, 'TO_JPY'));
+  // 有限でない金額（Infinity等）は保存対象にしない（集計側でも0扱いだが、入口で明示的に拒否する）
   const canSave = isJpyMode
-    ? !!activeTrip && inputNum > 0
-    : !!activeTrip && rate > 0 && foreignAmount > 0 && jpyAmount > 0;
+    ? !!activeTrip && inputNum > 0 && Number.isFinite(inputNum)
+    : !!activeTrip && rate > 0 && foreignAmount > 0 && jpyAmount > 0 && Number.isFinite(jpyAmount);
   const c = CURRENCIES[currencyForDisplay];
 
   // 価格候補セクションを畳んだときの見出しサブ情報用（選択済み金額の円換算・表示専用）
@@ -275,8 +276,8 @@ export default function CameraScreen() {
   );
 
   const stats = useMemo(
-    () => getTripStatsForDisplay(history, tripBudgetJpy, activeTrip?.id),
-    [history, totalCount, tripBudgetJpy, activeTrip?.id],
+    () => getTripStatsForDisplay(budgetTotals, tripBudgetJpy, activeTrip?.id),
+    [budgetTotals, tripBudgetJpy, activeTrip?.id],
   );
 
   const remainingIfSaved = canSave

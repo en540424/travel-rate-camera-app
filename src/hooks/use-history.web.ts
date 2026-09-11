@@ -8,6 +8,7 @@ import type { CurrencyCode } from '@/constants/currencies';
 import type { HistoryRow } from '@/db/queries/history';
 import { useIsPro } from '@/hooks/use-purchases';
 import { useTripStore } from '@/stores/trip-store';
+import { EMPTY_BUDGET_TOTALS, sumBudgetTotals, type BudgetTotals } from '@/utils/budget-core';
 
 const STORAGE_KEY = 'travelrate:history';
 
@@ -50,6 +51,8 @@ export function useHistory() {
   const activeTrip = useTripStore((s) => s.activeTrip);
   const [history, setHistoryState] = useState<HistoryRow[]>([]);
   const [totalCount, setTotalCount] = useState(0);
+  // 現在の旅行の全件から集計（native版のSQL集計と同じ意味）
+  const [budgetTotals, setBudgetTotals] = useState<BudgetTotals>(EMPTY_BUDGET_TOTALS);
   // 保存の直列化（native版と同じ契約。実行中は busy を返す）
   const savingRef = useRef(false);
 
@@ -59,6 +62,7 @@ export function useHistory() {
       ? all.filter((r) => r.trip_id === activeTrip.id)
       : all;
     setTotalCount(rows.length);
+    setBudgetTotals(sumBudgetTotals(rows));
     // 初回MVPは保存上限を露出しない方針のため、表示件数はFREE_HISTORY_LIMIT（FREE_LIMITS.saves）で切らない（P0-04）。
     const limit = 500;
     setHistoryState(rows.slice(0, limit));
@@ -206,6 +210,7 @@ export function useHistory() {
   return {
     history,
     totalCount,
+    budgetTotals,
     isAtFreeLimit,
     addEntry,
     removeEntry,

@@ -2,22 +2,30 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useState } from 'react';
 
 import type { HistoryRow } from '@/db/queries/history';
-import { deleteHistory, getHistory, markPurchased } from '@/db/queries/history';
+import { deleteHistory, getBudgetTotalsByTrip, getHistory, markPurchased } from '@/db/queries/history';
 import type { TripRow } from '@/db/queries/trips';
 import { getAllTrips } from '@/db/queries/trips';
+import type { BudgetTotals } from '@/utils/budget-core';
 
 export function useAllHistory() {
   const db = useSQLiteContext();
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [tripMap, setTripMap] = useState<Map<number, TripRow>>(new Map());
+  /**
+   * 旅行ごとの候補/購入済み件数・合計（SQL集計・全件）。旅行一覧・切替シートの残り予算はこれを使う。
+   * `history`は表示用（最新2000件）であり、集計に使うと2001件目以降が黙って落ちる。
+   */
+  const [totalsByTrip, setTotalsByTrip] = useState<Map<number, BudgetTotals>>(new Map());
 
   const load = useCallback(async () => {
-    const [rows, trips] = await Promise.all([
+    const [rows, trips, totals] = await Promise.all([
       getHistory(db, 2000),
       getAllTrips(db),
+      getBudgetTotalsByTrip(db),
     ]);
     setHistory(rows);
     setTripMap(new Map(trips.map((t) => [t.id, t])));
+    setTotalsByTrip(totals);
   }, [db]);
 
   useEffect(() => {
@@ -43,5 +51,5 @@ export function useAllHistory() {
     await reloadAfterWrite();
   }
 
-  return { history, tripMap, reload: load, togglePurchased, removeEntry };
+  return { history, tripMap, totalsByTrip, reload: load, togglePurchased, removeEntry };
 }

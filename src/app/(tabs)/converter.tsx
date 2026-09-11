@@ -69,7 +69,8 @@ export default function ConverterScreen() {
   const isReverse = !!activeTrip && !isJpyMode && direction === 'FROM_JPY';
   const result = !activeTrip ? 0 : isJpyMode ? amount : convert(amount, effectiveRate, direction);
   const hasRate = isJpyMode || effectiveRate > 0;
-  const hasResult = !!activeTrip && amount > 0 && hasRate;
+  // 有限でない金額（Infinity等）は保存対象にしない
+  const hasResult = !!activeTrip && amount > 0 && hasRate && Number.isFinite(result);
 
   function switchDirection(next: ConversionDirection) {
     setDirection(next);

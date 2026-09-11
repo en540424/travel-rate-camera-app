@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -7,6 +6,7 @@ import { CurrencyFlagImage } from '@/components/domain/CurrencyFlagImage';
 import type { TripRow } from '@/db/queries/trips';
 import { useAllHistory } from '@/hooks/use-all-history';
 import { color, radius } from '@/theme/tokens';
+import { computeBudgetStatsFromTotals, EMPTY_BUDGET_TOTALS } from '@/utils/budget-core';
 import { formatJpy } from '@/utils/format';
 
 export interface ActiveTripSwitchSheetProps {
@@ -21,19 +21,11 @@ export interface ActiveTripSwitchSheetProps {
  * アクティブ旅行切り替えシート（design: アクティブ切替）。
  * 既存の switchTrip を呼ぶだけ（旅行切り替えロジックは変更しない）。
  * 各行にレートと残予算（アーカイブ済みは使用額）を併記。
+ * 残り予算＝予算−購入済み合計（候補は差し引かない）。集計はSQL（totalsByTrip）で表示上限に依存しない。
  */
 export function ActiveTripSwitchSheet({ visible, onClose, trips, activeTripId, onSelect }: ActiveTripSwitchSheetProps) {
-  const { history } = useAllHistory();
+  const { totalsByTrip } = useAllHistory();
   const { height: windowHeight } = useWindowDimensions();
-
-  const usedByTrip = useMemo(() => {
-    const m = new Map<number, number>();
-    for (const r of history) {
-      if (r.trip_id == null) continue;
-      m.set(r.trip_id, (m.get(r.trip_id) ?? 0) + Math.round(r.jpy_amount));
-    }
-    return m;
-  }, [history]);
 
   return (
     <ActionSheet visible={visible} onClose={onClose}>
@@ -47,8 +39,9 @@ export function ActiveTripSwitchSheet({ visible, onClose, trips, activeTripId, o
         {trips.map((t) => {
           const selected = t.id === activeTripId;
           const archived = t.archived_at != null;
-          const used = usedByTrip.get(t.id) ?? 0;
-          const remaining = Math.max(0, t.budget_jpy - used);
+          const totals = totalsByTrip.get(t.id) ?? EMPTY_BUDGET_TOTALS;
+          const used = totals.purchasedTotalJpy;
+          const remaining = computeBudgetStatsFromTotals(totals, t.budget_jpy).remainingBudget;
           const ratePart = t.base_currency === 'JPY' ? '国内' : `¥${t.manual_rate}`;
           const moneyPart = archived
             ? `使用 ${formatJpy(used)}`
