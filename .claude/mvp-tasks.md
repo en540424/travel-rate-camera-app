@@ -18,8 +18,10 @@
   - Pro：保存無制限・複数旅行を同時管理・カテゴリー絞り込み/分析・CSV
   - **価格：月額¥500／年額¥4,000**（自動更新・買い切りなし。アプリ内は`priceString`表示。**App Store Connect／RevenueCatの実設定がこの値になっているかはHuman確認**。以前の記録にある¥400/¥3,000・¥480/¥3,800は旧価格）
   - UI文言を上記へ整合済み（`SaveLimitBanner`／`SaveLimitSheet`／`CurrentPlanCard`／`pro.tsx`／`pro-features.tsx`／`help.tsx` FAQ追加）
-- **次のアクション**：**最新HEADでPreview Build（EAS `preview`）を1回実行 → `TEST_CHECKLIST.md`（2026-09-11現行版・54項目）で実機/Sandbox確認**。前回Preview Build（`f2a4a64`）は旧HEADのため、`8b145c5`以降の修正は新Buildでないと実機に載らない（OTA未使用）
-- その後：LP全面再構築（旧構成・色・素材・旧機能説明の刷新。別テーマ。Privacy/Terms/Supportは現行文言を壊さない）は実機確認の後または並行候補
+- **【2026-09-12更新】Preview Build完了**：Build ID `fa58940a-03c5-4d70-8d4b-16bc588cc1a5`／対象commit `ba2153a`／status FINISHED／app 1.0.0・buildNumber 1・SDK 56.0.0。install：https://expo.dev/accounts/en540424/projects/travel-rate-camera-app/builds/fa58940a-03c5-4d70-8d4b-16bc588cc1a5
+- **次のアクション（Human）**：上記Buildを実機へinstallし、`TEST_CHECKLIST.md`（54項目）で実機/Sandbox確認。**このBuild以外で確認しない**（旧Build `4f6ef24b` には17commit分の監査統合修正が未搭載。OTA未使用）
+- **【2026-09-12更新】LP全面再構築 完了**：LP `b24451b`。アプリ`src/theme/tokens.ts`由来のティール配色へ統一（旧LPは青で別ブランドだった）。未実装の「自動レート取得」のPro掲載を是正、価格（月額¥500／年額¥4,000）を明記しPricingを復活、翻訳/STT/TTS/カテゴリー/CSVを追加。掲載仕様は`src/lib/appSpec.ts`へ単一ソース化。Privacy/Terms/Contact/Licensesは本文不変（リンク色のみ）。**masterへのpush＝Vercel自動デプロイのため本番反映済み**
+- **【2026-09-12更新】production Build前の技術設定監査 完了**：`RELEASE_PREP.md`（新規）。最大論点は**buildNumber未設定**（`ios.buildNumber`なし・`autoIncrement`なし・現在値1）で、このままだと2回目以降のsubmitが弾かれる。`eas.json` productionへ`autoIncrement: true`追加を推奨。**方針Human未確定のため設定は未変更**
 - 最終App Store submission（App Store Connect入力・App Privacy申告・スクショ・buildNumber方針・production Build・提出）は**Human作業**。提出文書：Vault `旅レートカメラ_AppStore提出文書セット_2026-09-11.md`
 
 ## 現在の開発フェーズ（2026-07-01時点の記述・履歴）
