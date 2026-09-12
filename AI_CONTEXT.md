@@ -22,7 +22,7 @@
 | repo側の技術設定（`app.json`／`eas.json`／credentials／環境変数／icon・splash・権限・production前提） | `RELEASE_PREP.md` |
 | 現行デザイントークン（実コード） | `src/theme/tokens.ts` |
 | 無料版上限・Pro回数（実コード） | `src/config/limits.ts`（現行値は `trips = 1` / `saves = 10`。2026-08-28のFree/Pro設計再整理でsavesを30→10へ変更済み。2026-09-11に`design/旅レートカメラ_実装引き継ぎ資料.md`・`.claude/design-sync-v2-plan.md`・`design-handoff/`各資料の記載も10へ整合済み。**数値は必ず`src/config/limits.ts`を正とする**）。**scope（2026-09-11 Human確定）：`saves`は「1つの旅行につき10件」（旅行ごと。端末全体ではない。判定は`getHistoryCountForTrip`）、`trips`は「同時に管理できる旅行1件」（非アーカイブ数で判定。アーカイブ後の新規作成・復元は同じ境界）。UI文言もこの表現へ整合済み** |
-| Pro購入・復元・課金設定（実コード） | `src/config/revenuecat.ts`・`src/config/feature-flags.ts`（実装済み・`SHOW_PRO = true`。外部ダッシュボード設定はVault `旅レートカメラ_RevenueCat・AppStoreConnect課金設定メモ.md`） |
+| Pro購入・復元・課金設定（実コード） | `src/config/revenuecat.ts`・`src/config/feature-flags.ts`（実装済み・`SHOW_PRO = true`。外部ダッシュボード設定はVault `旅レートカメラ_RevenueCat・AppStoreConnect課金設定メモ.md`。**ただし同メモの価格欄は旧価格（¥480/¥3,800）。確定価格は月額¥500／年額¥4,000で、正本はVault提出パッケージ2026-09-12 §C-4**） |
 | 多言語OCR・翻訳・テキスト入力（中核構想） | Vault `AI-Workflow-System/07_project-kits/tabirate-camera/旅レートカメラ_多言語OCR・翻訳・テキスト入力_中核構想設計書_v1.md`（2026-07-22決定済み構想。2026-08-14時点：Apple TranslationをRelease正式経路へ接続済み。Release build実証・iOS16.4〜17.x weak-link実証は未実施。オンデバイス方式が第一候補、無料/Pro境界は未決定。詳細な現在地は`.claude/mvp-tasks.md`の該当節を参照） |
 | KRW/JPY価格OCR改善（実コード） | `src/utils/extract-prices.ts`・`src/utils/extract-prices.test.mjs`。2026-08-15時点：**条件付き合格・Release候補として採用**（`.claude/mvp-tasks.md`の該当節を参照。OCR完全解決・100%認識という位置づけではない） |
 
@@ -32,6 +32,8 @@
 - `.claude/design-references/token-comparison.md` — 旧トークン（`src/constants/designTokens.ts` / DT）を基準にした比較表
 - `src/constants/designTokens.ts`（DT） — `design-sync-v2-plan.md` と `src/theme/tokens.ts` のヘッダーコメントの両方で「段階移行中の旧トークン」と明記されている
 - `design-handoff-v1-before-sync/` 一式（独自の `CLAUDE.md` を含む） — v2同期前のv1スナップショット。比較材料として保持されており、廃止物ではないが現行の正でもない
+- Vault `旅レートカメラ_AppStore提出文書セット_2026-09-11.md` / `_2026-07-07.md` — **どちらもsuperseded（2026-09-12）**。09-11版は説明文・キーワード・スクショを07-07版へ委譲した差分文書で、その07-07版は「純無料・課金なし・Pro露出ゼロ・保存30件」という**現在と逆の前提**。提出には必ず `旅レートカメラ_AppStore提出パッケージ_2026-09-12.md` を使う
+- Vault `旅レートカメラ_RevenueCat・AppStoreConnect課金設定メモ.md` の**価格欄のみ旧価格**（¥480/¥3,800）。設定手順としては有効だが、**価格は提出パッケージ§C-4（月額¥500／年額¥4,000）が正**
 
 ## 絶対に勝手に触らないもの
 
