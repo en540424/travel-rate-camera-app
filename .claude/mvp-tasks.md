@@ -23,7 +23,10 @@
 - **【2026-09-12更新】LP全面再構築 完了**：LP `b24451b`。アプリ`src/theme/tokens.ts`由来のティール配色へ統一（旧LPは青で別ブランドだった）。未実装の「自動レート取得」のPro掲載を是正、価格（月額¥500／年額¥4,000）を明記しPricingを復活、翻訳/STT/TTS/カテゴリー/CSVを追加。掲載仕様は`src/lib/appSpec.ts`へ単一ソース化。Privacy/Terms/Contact/Licensesは本文不変（リンク色のみ）。**masterへのpush＝Vercel自動デプロイのため本番反映済み**
 - **【2026-09-12更新】production Build前の技術設定監査 完了**：`RELEASE_PREP.md`（新規）。最大論点は**buildNumber未設定**（`ios.buildNumber`なし・`autoIncrement`なし・現在値1）で、このままだと2回目以降のsubmitが弾かれる。`eas.json` productionへ`autoIncrement: true`追加を推奨
 - **【2026-09-12更新】buildNumber方針 Human確定・適用済み**：`eas.json` production profileへ`autoIncrement: true`を追加（preview等の他profile・`app.json`・`cli.appVersionSource`は無変更）。`eas config --profile production --platform ios`で解決結果を確認済み。詳細：`RELEASE_PREP.md`§1
-- 最終App Store submission（App Store Connect入力・App Privacy申告・スクショ・production Build・提出）は**Human作業**。提出文書：Vault `旅レートカメラ_AppStore提出文書セット_2026-09-11.md`
+- **【2026-09-12更新】App Store提出準備 完了（Human-only作業を除く）**：Vault `旅レートカメラ_AppStore提出パッケージ_2026-09-12.md`（**新設・提出文言の正本**）。旧`提出文書セット_2026-09-11.md`は**差分文書**で、説明文・キーワード・スクショを旧07-07版（＝「純無料・課金なし・保存30件」という現在と逆の前提）へ委譲しており提出に使えなかったため、**コピペ可能な確定文言として1冊に統合**しsupersededにした。内容：ASC全項目の入力値（文字数実測つき）／App Privacyファクトシート（コード実測）／RevenueCat整合／Age Rating回答ファクト／App Review Notes／スクショ8枚設計
+- **【2026-09-12更新】icon/splash/権限・production前提の追加監査**：`RELEASE_PREP.md`§7・§8。**production Build自体を技術的に止める要因はゼロ**。submitは**ASCアプリレコード未作成**のため不可（＝Humanのクリティカルパス）。iOS splashは**画像なし・背景`#208AEF`（青）でブランド色ティール`#0E9488`と不一致**（release blockerではないため未変更・Human判断）
+- **【2026-09-12更新】`TEST_CHECKLIST.md`に確認順の優先度（P0 24項目／P1 29項目）を追加**。**項目番号は不変**（`#27〜#36`等の相互参照を壊さないため）
+- 最終App Store submission（App Store Connect入力・App Privacy申告・スクショ撮影・production Build・提出）は**Human作業**。提出文書：Vault `旅レートカメラ_AppStore提出パッケージ_2026-09-12.md`
 
 ## 現在の開発フェーズ（2026-07-01時点の記述・履歴）
 

@@ -36,6 +36,43 @@
 
 ---
 
+## 確認順の優先度（P0先行・2026-09-12追加）
+
+> [!note] これは**どれを先に確認するか**の索引であり、末尾の「問題発見時の優先順位」（＝
+> 見つかった不具合の**深刻度**）とは別の軸。項目番号は**一切変更していない**
+> （`#27〜#36` 等が他文書から参照されているため）。全54項目をやめる索引ではなく、
+> **時間が足りないときに何から潰すか**を決めるためのもの。
+
+### P0：App Store submissionへ直結（ここがNGなら提出しない）
+
+| 分類 | 項目# |
+|---|---|
+| 起動・install | #1 上書きinstall／#2 新規install／#4 起動 |
+| migration・データ保持 | #3 migration／既存データ保持 |
+| OCR | #6 OCR |
+| 保存 | #8 商品写真／#9 保存（候補／購入済み） |
+| 無料gate | #11 1旅行10件／#13 10/10到達／#15 旅行作成制限／#17 restore gate |
+| 価格表示 | #27 RevenueCat価格／#28 月額¥500／#29 年額¥4,000 |
+| 購入 | #30 purchase／#36 purchase完了後 entitlement反映 |
+| 復元・失効 | #32 restore／#33 Pro失効 |
+| 法務リンク | #37 Privacy／Termsリンク |
+| 音声 | #39 STT／#41 TTS |
+| 写真・削除 | #48 写真削除／#49 データ全削除 |
+| 提出物 | #52 アプリアイコン |
+
+**P0がすべて `[x]` になるまで production Build へ進まない。**
+特に #27〜#29（価格）はApp Store Connect／RevenueCatの設定と一致している必要があり、
+提出文言（Vault提出パッケージ §A-4 の説明文に記載した ¥500／¥4,000）とも突き合わせる。
+
+### P1：release品質（提出は止めないが、出す前に確認したい）
+
+上記P0以外の全項目（#5・#7・#10・#12・#14・#16・#18〜#26・#31・#34・#35・#38・#40・#42〜#47・#50・#51・#53）。
+
+特に #34 offline起動→online復帰 と #35 Offering再取得 は、
+価格が取得できない状況での見え方に関わるため、時間があれば優先的に確認する。
+
+---
+
 ## A. 環境準備（install・起動）
 
 ### 1. 上書きinstall（既存Preview Build → 新Preview Build）
@@ -393,8 +430,10 @@
 - [ ] 本チェックリストのA〜Gに`[!]`が残っていない（または対応方針が決まっている）
 - [ ] `eas.json` productionの`autoIncrement: true`（【2026-09-12】Human確定・適用済み。詳細`RELEASE_PREP.md`§1）が意図通り効いていることをproduction Build実物で確認
 - [ ] App Store Connect：Pro商品（月額¥500／年額¥4,000）とEntitlement `pro`／Offering `default`の紐付け、価格、契約同意、Banking/Tax
-- [ ] App Privacy申告が提出文書§10の事実と一致（RevenueCat購入履歴・Apple音声認識）
-- [ ] 最終IPAのInfo.plist権限文言・icon alpha・暗号申告（`ITSAppUsesNonExemptEncryption: false`）・`PrivacyInfo.xcprivacy`
+- [ ] App Privacy申告がVault提出パッケージ **§B** の事実と一致（RevenueCat購入履歴・Apple音声認識）。**§B-3の公式確認5件を先に済ませる**
+- [ ] ASCの各入力欄がVault提出パッケージ **§D-2** の値と一致（説明文・キーワード・カテゴリ・Copyright）
+- [ ] Age Rating回答が **§D-3** のファクトと一致（Web Access: No／UGC: No／Tracking: No）
+- [ ] 最終IPAのInfo.plist権限文言・icon alpha・暗号申告（`ITSAppUsesNonExemptEncryption: false`）・`PrivacyInfo.xcprivacy`（詳細な確認観点は`RELEASE_PREP.md`§7-4）
 - [ ] スクショ（releaseビルド・実UI・価格が写る場合はASC設定と一致）
 - [ ] 公開Privacy／Terms／SupportのURLが有効で現行版
 - 実機：—／Sandbox：—（App Store Connect作業）

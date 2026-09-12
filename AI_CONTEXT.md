@@ -17,7 +17,9 @@
 | 現行デザイン移行方針 | `.claude/design-sync-v2-plan.md` |
 | DB保護 | `.claude/agents/db-guardian.md` |
 | リリース判断 | `.claude/agents/release-reviewer.md` |
-| 実機QA | `TEST_CHECKLIST.md` |
+| 実機QA | `TEST_CHECKLIST.md`（確認順の優先度は同ファイル「確認順の優先度（P0先行）」。項目番号は不変） |
+| App Store提出文言・App Privacy・ASC入力値・スクショ設計 | Vault `AI-Workflow-System/07_project-kits/tabirate-camera/旅レートカメラ_AppStore提出パッケージ_2026-09-12.md`（**2026-09-12新設・コピペ可能な確定版**。旧`…提出文書セット_2026-09-11.md`／`_2026-07-07.md`はsuperseded） |
+| repo側の技術設定（`app.json`／`eas.json`／credentials／環境変数／icon・splash・権限・production前提） | `RELEASE_PREP.md` |
 | 現行デザイントークン（実コード） | `src/theme/tokens.ts` |
 | 無料版上限・Pro回数（実コード） | `src/config/limits.ts`（現行値は `trips = 1` / `saves = 10`。2026-08-28のFree/Pro設計再整理でsavesを30→10へ変更済み。2026-09-11に`design/旅レートカメラ_実装引き継ぎ資料.md`・`.claude/design-sync-v2-plan.md`・`design-handoff/`各資料の記載も10へ整合済み。**数値は必ず`src/config/limits.ts`を正とする**）。**scope（2026-09-11 Human確定）：`saves`は「1つの旅行につき10件」（旅行ごと。端末全体ではない。判定は`getHistoryCountForTrip`）、`trips`は「同時に管理できる旅行1件」（非アーカイブ数で判定。アーカイブ後の新規作成・復元は同じ境界）。UI文言もこの表現へ整合済み** |
 | Pro購入・復元・課金設定（実コード） | `src/config/revenuecat.ts`・`src/config/feature-flags.ts`（実装済み・`SHOW_PRO = true`。外部ダッシュボード設定はVault `旅レートカメラ_RevenueCat・AppStoreConnect課金設定メモ.md`） |

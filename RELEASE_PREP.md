@@ -9,7 +9,7 @@ Preview Build `fa58940a-03c5-4d70-8d4b-16bc588cc1a5`（commit `ba2153a`）時点
 
 | 内容 | 正本 |
 |---|---|
-| アプリ名・サブタイトル・説明文・キーワード・スクショ構成／文言・App Privacy申告事実・サポートページ・審査注意事項 | Vault `AI-Workflow-System/07_project-kits/tabirate-camera/旅レートカメラ_AppStore提出文書セット_2026-09-11.md` |
+| アプリ名・サブタイトル・説明文・キーワード・スクショ構成／文言・App Privacy申告事実・ASC入力値・審査注意事項 | Vault `AI-Workflow-System/07_project-kits/tabirate-camera/旅レートカメラ_AppStore提出パッケージ_2026-09-12.md`（**2026-09-12新設**。旧`…提出文書セット_2026-09-11.md`はsuperseded） |
 | 公開URL・連絡先 | Vault `旅レートカメラ_公開用連絡先・URL管理メモ.md`（アプリ側の実体は `src/config/external-links.ts`） |
 | 実機／Sandbox確認手順 | 本repo `TEST_CHECKLIST.md` |
 | 仕様 | `design/旅レートカメラ_実装引き継ぎ資料.md` |
@@ -59,8 +59,8 @@ App Storeは、**同一`version`内で`buildNumber`（CFBundleVersion）が一�
 | Provisioning Profile | active・期限 2027-06-05（**ad hoc**） | preview用。store配信用はEASが別途作る |
 | 登録デバイス | 1台（`00008140-...001C`） | preview用。production(store)には不要 |
 | `ITSAppUsesNonExemptEncryption` | `false` を明示済み | OK（輸出コンプライアンス質問に自動回答） |
-| icon | `./assets/images/icon.png` 存在 | OK |
-| splash | `expo-splash-screen`・`splash-icon.png` 存在 | OK |
+| icon | `./assets/images/icon.png`（**1024×1024 / colortype 6 = RGBA**） | 要IPA確認（§7-1） |
+| splash（iOS） | **画像なし・背景色`#208AEF`のみ** | 仕様どおり動くが**ブランド不一致**（§7-2） |
 | SDK / RN | Expo 56.0.0 / RN 0.85.3 | OK |
 | `eas.json` の `submit.production` | **空 `{}`** | 要設定（§3） |
 | EAS環境変数 `preview` | `EXPO_PUBLIC_REVENUECAT_IOS_KEY` 設定済み（sensitive） | OK（値は未表示） |
@@ -69,13 +69,18 @@ App Storeは、**同一`version`内で`buildNumber`（CFBundleVersion）が一�
 ### 権限（Info.plist usage description）
 
 4種すべて日本語で設定済み。審査で理由不足を指摘されにくい記述になっている。
+ただし**設定されている経路が2通りある**（2026-09-12実測で判明）。最終的な有無は
+**ビルド後のIPAのInfo.plistでしか確認できない**点に注意。
 
-| 権限 | 文言 |
-|---|---|
-| カメラ | カメラで価格タグを撮影して円換算します |
-| フォトライブラリ | カメラロールの画像を買い物候補に紐付けます |
-| マイク | 音声入力で話した内容を翻訳するためにマイクを使用します |
-| 音声認識 | 話した内容を文字に変換して翻訳するために音声認識を使用します |
+| 権限 | 文言 | 設定経路 |
+|---|---|---|
+| カメラ | カメラで価格タグを撮影して円換算します | `expo-camera` plugin props → **prebuild時に注入** |
+| フォトライブラリ | カメラロールの画像を買い物候補に紐付けます | `expo-image-picker` plugin props → **prebuild時に注入** |
+| マイク | 音声入力で話した内容を翻訳するためにマイクを使用します | `expo-speech-recognition` plugin → **評価済みconfigに出現**（`eas config`で実測確認済み） |
+| 音声認識 | 話した内容を文字に変換して翻訳するために音声認識を使用します | 同上 |
+
+> マイク権限は「自動注入されていないか」を心配する対象ではなく、**翻訳ページの音声入力のために
+> 意図して注入している**もの（用途文言つき）。旧チェック項目の懸念はこれで解消している。
 
 ---
 
@@ -148,3 +153,91 @@ LPはVercelで公開済み。2026-09-12 時点で全URL **HTTP 200** を確認:
 
 **1〜5がすべて揃い、HumanがGOを出すまで production Build は実行しない。**
 App Store submission も同様にHuman承認後。
+
+---
+
+## 7. icon / splash / 権限の詳細監査（2026-09-12 追加）
+
+### 7-1. icon のalpha（**release blockerではないが要IPA確認**）
+
+- 実測：`assets/images/icon.png` は **1024×1024・PNG colortype 6（RGBA）＝alphaチャンネルあり**
+- App Storeは**alpha付きのApp Iconを受け付けない**（アップロード時に弾かれる）
+- ただしこのprojectは **CNG（`ios/`ディレクトリを持たない managed構成）** のため、
+  prebuild時にExpoがicon生成処理でalphaを合成・除去する。**そのまま提出できる想定**
+- **判定：blockerではない。** ただし「想定」であって実測ではないため、
+  production Build後のIPAで最終確認する（下記7-4）
+
+### 7-2. iOS splashに画像が設定されていない（**ブランド不一致・Human判断**）
+
+実測で判明した事実：
+
+- `app.json` の `expo-splash-screen` 設定は `backgroundColor: "#208AEF"` と **`android.image`** のみ
+- iOS側の解決ロジック（`node_modules/expo-splash-screen/plugin/build/getIosSplashConfig.js`）は
+  `{ ios = {}, ...rest }` をマージする。**top-levelに`image`が無く`ios`ブロックも無い**ため、
+  `root.image` は `undefined` → **iOSのsplashは「画像なし・単色背景」になる**
+- さらにその背景色 `#208AEF` は**青**だが、アプリのブランド色は
+  `src/theme/tokens.ts` の `primary: '#0E9488'`（**ティール**）
+- LPは2026-09-12に「旧LPは青で別ブランドだった」として**ティールへ統一済み**。
+  splashの青は、その**旧ブランドの取り残し**と考えられる
+
+**影響**：起動時に最初に見える画面が、ロゴなしの青一色になる。審査でのリジェクト要因ではないが、
+第一印象とブランド一貫性の問題。
+
+**判定：release blockerではないため、今回は変更していない**（`AGENTS.md`：確定済みUIの破壊的変更・
+デザイン変更を勝手に行わない）。Humanが選ぶ:
+
+| 案 | 変更内容 | 影響 |
+|---|---|---|
+| A（最小） | `backgroundColor` を `#208AEF` → `#0E9488` | 1行。ブランド色に統一されるがロゴは出ない |
+| B | 上記に加え `image`（または `ios.image`）へ `splash-icon.png` を指定 | ロゴが出る。ただし現行`splash-icon.png`は**228×213**でExpoロゴ相当の素材のため、**専用素材の用意が要る** |
+| C | 現状維持 | 起動画面は青一色のまま |
+
+### 7-3. PrivacyInfo.xcprivacy（CNG構成での扱い）
+
+- 本repoに `ios/` ディレクトリは**存在しない**（CNG＝prebuildで都度生成）。
+  したがって**repo内にアプリ側の`PrivacyInfo.xcprivacy`が無いのは正常**で、欠落ではない
+- 依存ライブラリが同梱しているマニフェストは**9件**（実測）：
+  `expo-constants` / `expo-device` / `expo-file-system` / `expo-system-ui` /
+  `react-native`（React・cxxreact・boost・glog・RCT-Folly）
+- **`react-native-purchases`（RevenueCat）と `expo-text-extractor` は同梱していない**
+- → Appleの要求対象SDKに該当するかは**Humanが公式資料で確認**する
+  （Vault提出パッケージ §B-3-3 / §B-3-4 と同じ項目）
+
+### 7-4. IPAでしか確認できない項目（production Build後にHumanが確認）
+
+- [ ] App Iconにalphaが残っていない（7-1）
+- [ ] Info.plistに4種の権限文言が入っている（カメラ／フォト／マイク／音声認識）
+- [ ] `ITSAppUsesNonExemptEncryption: false` が入っている
+- [ ] アプリ側`PrivacyInfo.xcprivacy`が生成されている（7-3）
+
+---
+
+## 8. 「いま production Build を実行したら詰まる要因」（2026-09-12 実測）
+
+production Buildは**未実行**。実行前に詰まる要因だけを洗い出した結果：
+
+| 項目 | 実測値 | Buildが通るか | submitが通るか |
+|---|---|---|---|
+| `eas.json` production profile | `distribution: store` / `autoIncrement: true` / `resourceClass: default` / `credentialsSource: remote` | ✅ 通る | ✅ |
+| buildNumber | `autoIncrement: true`（§1） | ✅ | ✅ 2回目以降も詰まらない |
+| `app.json` version | `1.0.0` | ✅ | ✅ |
+| bundle identifier | `com.estep.travelratecamera` | ✅ | ✅ |
+| Distribution Certificate | 有効（2027-06-05まで） | ✅ | ✅ |
+| store用 Provisioning Profile | **未作成**（現存はad hoc＝preview用） | ✅ **EASが自動生成する** | ✅ |
+| EAS環境変数 `production` | `EXPO_PUBLIC_REVENUECAT_IOS_KEY` 設定済み（sensitive・値は未表示） | ✅ | ✅ |
+| 暗号申告 | `ITSAppUsesNonExemptEncryption: false` | ✅ | ✅ 質問されない想定 |
+| **`submit.production`** | **空 `{}`** | ✅ Buildには無関係 | ⚠️ **`eas submit`が対話で Apple ID・`ascAppId` を聞く** |
+| **ASCアプリレコード** | **未作成** | ✅ Buildには無関係 | ❌ **`ascAppId`が存在しないため submit できない** |
+
+### 結論
+
+- **production Build 自体は、いま実行しても技術的に詰まる要因は無い。**
+  止めているのは技術要因ではなく、§6の前提条件2・3（Human実機／Sandbox確認）
+- **submitは、ASCアプリレコードが作られるまで実行できない。** これが
+  Human作業のクリティカルパス（§3）
+
+`eas config --profile production --platform ios` の解決結果（read-only・2026-09-12実測）:
+
+```json
+{ "credentialsSource": "remote", "distribution": "store", "autoIncrement": true, "resourceClass": "default" }
+```
