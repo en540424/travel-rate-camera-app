@@ -17,48 +17,35 @@ Preview Build `fa58940a-03c5-4d70-8d4b-16bc588cc1a5`（commit `ba2153a`）時点
 本ファイルが扱うのは、上記のどれにも属さない **`app.json`／`eas.json`／EAS credentials／
 環境変数といったrepo側の技術設定**に限る。重複正本を作らないため、文言類はここに書かない。
 
-> ここに書かれた**推奨はまだ適用していない。** `app.json`・`eas.json`は
-> buildNumber方針がHuman未確定のため、今回一切変更していない。
+> **【2026-09-12更新】buildNumber方針はHuman確定済み・`eas.json`へ適用済み。**
+> 詳細は§1参照。`app.json`は今回も変更していない（`version`・`ios.buildNumber`とも無変更）。
 
 ---
 
-## 1. buildNumber（最大の論点・要Human判断）
+## 1. buildNumber（【2026-09-12更新】Human確定・適用済み）
+
+**決定：案A（EAS `autoIncrement`）を採用。** `eas.json` production profileへ
+`"autoIncrement": true`を追加済み（他profileには追加していない）。目的は、App Store提出のたびに
+同一CFBundleVersionが再利用されて2回目以降のupload/submissionが詰まるのを防ぐこと。
 
 | 項目 | 現状 |
 |---|---|
-| `expo.version` | `1.0.0` |
-| `expo.ios.buildNumber` | **未設定**（`app.json`にキー自体が無い） |
-| `eas.json` production の `autoIncrement` | **未設定**（既定は無効） |
-| 今回のPreview Buildの buildNumber | `1`（EASが既定値として付与） |
+| `expo.version` | `1.0.0`（無変更） |
+| `expo.ios.buildNumber` | 無変更（`app.json`にキー自体が無い） |
+| `eas.json` production の `autoIncrement` | **`true`（設定済み）** |
+| `cli.appVersionSource` | 無変更（今回Human承認外のため未設定のまま） |
+| 今回のPreview Buildの buildNumber | `1`（EASが既定値として付与。このBuildより前の状態） |
 
-### 何が起きるか
+`eas config --profile production --platform ios` で解決結果を確認済み：
+`{"credentialsSource":"remote","distribution":"store","autoIncrement":true,"resourceClass":"default"}`。
+`preview`／`development`profileには`autoIncrement`は付いていないことも確認済み。
+
+### 何が起きるか（背景・参考）
 
 App Storeは、**同一`version`内で`buildNumber`（CFBundleVersion）が一意かつ増加**していることを要求する。
-現状のまま production Build → submit を**2回以上**行うと、2回目以降が
-「この build number は既に使われています」で**弾かれる**。
-
-初回提出1回だけなら通るが、審査リジェクト後の再提出・TestFlightの入れ直しで必ず踏む。
-
-### 推奨（Human確定が必要）
-
-**案A（推奨）：`eas.json` の production profile に `"autoIncrement": true` を足す**
-
-```jsonc
-"production": {
-  "distribution": "store",
-  "autoIncrement": true,      // ← この1行だけ追加
-  "ios": { "resourceClass": "default" }
-}
-```
-
-- EASがリモート側でbuildNumberを保持し、production Buildのたびに自動で+1する
-- `app.json`に数値を書かないので、**手で上げ忘れる事故が構造的に起きない**
-- `version`（`1.0.0`）は変えない。マーケティング版数はHumanが上げたいときだけ上げる
-
-**案B：`app.json`に`ios.buildNumber`を明示して手動管理**
-提出のたびにHumanが手で上げる必要があり、上げ忘れが起きやすいので非推奨。
-
-**方針未確定のため今回は未適用。** Humanが案A／案Bを決めた後に反映する。
+`autoIncrement`により、EASがリモート側でbuildNumberを保持し、production Buildのたびに自動で+1する。
+`app.json`に数値を書かないため、手で上げ忘れる事故が構造的に起きない。`version`（`1.0.0`）は
+この変更では変わらない（マーケティング版数はHumanが上げたいときだけ上げる）。
 
 ---
 
@@ -157,7 +144,7 @@ LPはVercelで公開済み。2026-09-12 時点で全URL **HTTP 200** を確認:
 | 2 | Human実機確認でrelease blockerなし | ⬜ **未**（`TEST_CHECKLIST.md` 54項目） |
 | 3 | Sandbox購入／復元がOK | ⬜ **未**（同 #27〜#36） |
 | 4 | production config確認完了 | **✅ 本ファイルで完了**（残りは#5） |
-| 5 | buildNumber方針確定 | ⬜ **未**（本ファイル§1・Human判断） |
+| 5 | buildNumber方針確定・`eas.json`適用 | **✅ 完了**（本ファイル§1・2026-09-12） |
 
 **1〜5がすべて揃い、HumanがGOを出すまで production Build は実行しない。**
 App Store submission も同様にHuman承認後。

@@ -391,7 +391,7 @@
 
 ### 54. production提出前確認
 - [ ] 本チェックリストのA〜Gに`[!]`が残っていない（または対応方針が決まっている）
-- [ ] `ios.buildNumber`／EAS `autoIncrement`の方針を決めた（同一versionの再アップロード前に必須）
+- [ ] `eas.json` productionの`autoIncrement: true`（【2026-09-12】Human確定・適用済み。詳細`RELEASE_PREP.md`§1）が意図通り効いていることをproduction Build実物で確認
 - [ ] App Store Connect：Pro商品（月額¥500／年額¥4,000）とEntitlement `pro`／Offering `default`の紐付け、価格、契約同意、Banking/Tax
 - [ ] App Privacy申告が提出文書§10の事実と一致（RevenueCat購入履歴・Apple音声認識）
 - [ ] 最終IPAのInfo.plist権限文言・icon alpha・暗号申告（`ITSAppUsesNonExemptEncryption: false`）・`PrivacyInfo.xcprivacy`
