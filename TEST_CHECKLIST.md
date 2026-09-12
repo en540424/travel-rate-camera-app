@@ -2,8 +2,17 @@
 
 **確認日**:
 **確認者**:
-**ビルド**: Preview Build（EAS `preview` profile）／対象HEAD：**`8b145c5`以降の最新HEAD**（本ファイル更新commit以降）
-**前提**: 第三者監査（Fable 5.1／Codex）統合修正後の実機確認。**旧Preview Build（`f2a4a64`等）は対象外**（OTA更新は使っていないため、新Buildでないと修正が実機に載らない）。
+**ビルド**: Preview Build（EAS `preview` profile）
+- **Build ID**：`fa58940a-03c5-4d70-8d4b-16bc588cc1a5`
+- **対象commit**：`ba2153a2b9387a4e8fb617d7b5ef5f5870bb8e03`（`ba2153a`）
+- **Build日時**：2026-09-12 09:03〜09:09（JST）／status FINISHED
+- **install**：https://expo.dev/accounts/en540424/projects/travel-rate-camera-app/builds/fa58940a-03c5-4d70-8d4b-16bc588cc1a5
+- **app version / buildNumber**：1.0.0 / 1（SDK 56.0.0・distribution internal）
+
+**前提**: 第三者監査（Fable 5.1／Codex）統合修正後の実機確認。**旧Preview Buildは対象外**（OTA更新は使っていないため、新Buildでないと修正が実機に載らない）。
+
+> **このBuild以外で確認しない。** 第三者監査の統合修正（S1全件・S2 A〜I）は`ba2153a`時点で入っており、
+> 直前の2026-09-10 Preview Build（commit `4f6ef24b`）には**17commit分の修正が載っていない**。
 
 > 旧版（2026-07-03の「公開前P0コードバッチ」等、Pro非公開・保存30件・Pro導線非表示を前提とした項目）は本版で全面差し替え。旧内容はgit履歴を参照。
 
@@ -407,7 +416,12 @@
 
 ## 機械的確認（Build前にClaude Code側で実行済みであること）
 
-- [ ] `npx tsc --noEmit` pass
-- [ ] `npm test` 331 pass以上／0 fail
-- [ ] `npm run lint` baseline（16 errors／4 warnings）から増えていない
-- [ ] `git diff --check` clean
+Build対象commit `ba2153a` 時点での実測値（2026-09-12・Build前に実行）:
+
+- [x] `npx tsc --noEmit` pass（エラー0）
+- [x] `npm test` **331 pass / 0 fail**
+- [x] `npm run lint` **20 problems（16 errors / 4 warnings）** ＝ baselineと同一・新規増加なし
+- [x] `git diff --check` clean
+
+> 注：`AGENTS.md`のlint baseline記載は「23 problems（16 errors / 7 warnings）」だが、
+> 実測は20 problems（16 errors / 4 warnings）。**実測値が正**（warningが3件解消済み）。
