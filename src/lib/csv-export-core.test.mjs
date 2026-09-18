@@ -11,6 +11,7 @@ import { Buffer } from 'node:buffer';
 import { test } from 'node:test';
 
 import { getCategoryLabel } from '../config/categories.ts';
+import { sumBudgetTotals } from '../utils/budget-core.ts';
 import {
   CSV_HEADERS,
   UTF8_BOM,
@@ -220,8 +221,9 @@ test('buildHistoryCsv: 外貨行の換算金額(円)列をSUMすると生値合�
   ];
   const excelSum = jpyColumn(buildHistoryCsv(rows, OPTS)).reduce((sum, v) => sum + v, 0);
   equal(excelSum, 6180.05); // 生値合計（分析・カレンダーの集計と同じ入力）
-  const perRowRounded = rows.reduce((sum, r) => sum + Math.round(r.jpyAmount), 0);
-  equal(perRowRounded, 6181); // 残り予算側の行ごと丸め合計。CSVの列SUMとは端数で1円ずれる（既知・仕様）
+  // 残り予算側は本物の`sumBudgetTotals`（行ごと`Math.round`）で求める。CSVの列SUMとは端数で1円ずれる（既知・仕様）
+  const budgetSide = sumBudgetTotals(rows.map((r) => ({ jpy_amount: r.jpyAmount, is_purchased: 1 })));
+  equal(budgetSide.purchasedTotalJpy, 6181);
   equal(Math.round(excelSum), 6180);
 });
 
