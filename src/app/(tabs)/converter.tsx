@@ -72,7 +72,8 @@ export default function ConverterScreen() {
   const result = !activeTrip ? 0 : isJpyMode ? normalizeJpyInput(amount) : convert(amount, effectiveRate, direction);
   const hasRate = isJpyMode || effectiveRate > 0;
   // 有限でない金額（Infinity等）は保存対象にしない。JPYは正規化後の値が0（"0.4"等）でも保存対象にしない
-  const hasResult = !!activeTrip && amount > 0 && result > 0 && hasRate && Number.isFinite(result);
+  // （外貨側の判定は従来どおり。逆方向表示を含め挙動を変えない）
+  const hasResult = !!activeTrip && amount > 0 && (!isJpyMode || result > 0) && hasRate && Number.isFinite(result);
 
   function switchDirection(next: ConversionDirection) {
     setDirection(next);
