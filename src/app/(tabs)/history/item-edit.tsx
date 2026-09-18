@@ -17,6 +17,7 @@ import { getHistoryById } from '@/db/queries/history';
 import { useHistory } from '@/hooks/use-history';
 import { useUnsavedChangesStore } from '@/stores/unsaved-changes-store';
 import { color, radius, shadow } from '@/theme/tokens';
+import { resolveEditedAmount } from '@/utils/edit-amount-core';
 import { formatJpy } from '@/utils/format';
 
 export default function ItemEditScreen() {
@@ -349,6 +350,25 @@ export default function ItemEditScreen() {
    * 写真を最初に確定し、確定した瞬間に台帳から外すことでその経路を塞ぐ。
    */
   async function doSave(current: HistoryRow) {
+    // 金額は**何も書き込む前に**判定する。旧実装は不正な金額を途中で黙ってスキップし、
+    // それでも最後の未保存フラグ解除と`router.back()`は無条件に走っていたため、
+    // 「金額欄を空にして保存 → メモ等だけ保存され、金額は旧値のまま画面が閉じる」という
+    // ユーザーへ何も伝えない不整合があった。不正ならDBへ一切触らず、画面に留まって知らせる。
+    const amountResolution = resolveEditedAmount({
+      currency: current.currency,
+      text: amount,
+      currentForeignAmount: current.foreign_amount,
+      currentJpyAmount: current.jpy_amount,
+      rateUsed: current.rate_used,
+    });
+    if (!amountResolution.ok) {
+      Alert.alert(
+        '金額を確認してください',
+        '金額は0より大きい数値で入力してください。',
+        [{ text: 'OK' }],
+      );
+      return;
+    }
     const previousPhotoUri = originalPhotoUri;
     const photoChanged = draftPhotoUri !== previousPhotoUri;
     try {
@@ -359,19 +379,10 @@ export default function ItemEditScreen() {
         createdFilesRef.current = [];
         setOriginalPhotoUri(draftPhotoUri);
       }
-      // 2) 金額（不正な金額は従来どおり保存しない。その場合は基準を進めず「未保存のまま」を維持する）
-      if (current.currency === 'JPY') {
-        const n = parseInt(amount.trim(), 10);
-        if (isFinite(n) && n > 0 && n !== current.jpy_amount) {
-          await updateAmount(current.id, n, n);
-          originalAmountRef.current = amount;
-        }
-      } else {
-        const f = parseFloat(amount.trim());
-        if (isFinite(f) && f > 0 && f !== current.foreign_amount) {
-          await updateAmount(current.id, f, Math.round(f * current.rate_used));
-          originalAmountRef.current = amount;
-        }
+      // 2) 金額（有効性は上で判定済み。変更があった時だけ書く）
+      if (amountResolution.changed) {
+        await updateAmount(current.id, amountResolution.foreignAmount, amountResolution.jpyAmount);
+        originalAmountRef.current = amount;
       }
       // 3) メモ
       await updateMemo(current.id, memo.trim() || null);
