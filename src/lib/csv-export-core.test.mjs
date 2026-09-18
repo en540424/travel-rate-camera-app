@@ -145,6 +145,58 @@ test('buildHistoryCsv: 候補/購入済みが状態列に出る（分析の絞�
   ok(lines[2].includes('候補'));
 });
 
+// ── 金額列（JPY建ては整数円、外貨は生値） ────────────────
+
+/** 「元金額」「換算金額(円)」「レート」の3セルを取り出す */
+function amountCells(csv) {
+  const cells = csv.split('\r\n')[1].split(',');
+  return cells.slice(7, 10);
+}
+
+test('buildHistoryCsv: JPY建て記録の既存小数（1200.5）は画面と同じ整数円（1201）で書き出す', () => {
+  // 2026-09-18以前の保存でDBに残り得る小数JPY。JPY記録は元金額にも同じ円が入っている
+  const csv = buildHistoryCsv([row({ currency: 'JPY', foreignAmount: 1200.5, jpyAmount: 1200.5, rateUsed: 1 })], OPTS);
+  deepEqual(amountCells(csv), ['1201', '1201', '1']);
+});
+
+test('buildHistoryCsv: JPY建て記録の整数はそのまま', () => {
+  const csv = buildHistoryCsv([row({ currency: 'JPY', foreignAmount: 1201, jpyAmount: 1201, rateUsed: 1 })], OPTS);
+  deepEqual(amountCells(csv), ['1201', '1201', '1']);
+});
+
+test('buildHistoryCsv: JPY建ての丸めはMath.round（formatJpyと同じ。.5は切り上げ・.4は切り捨て）', () => {
+  equal(amountCells(buildHistoryCsv([row({ currency: 'JPY', foreignAmount: 99.4, jpyAmount: 99.4, rateUsed: 1 })], OPTS))[1], '99');
+  equal(amountCells(buildHistoryCsv([row({ currency: 'JPY', foreignAmount: 99.5, jpyAmount: 99.5, rateUsed: 1 })], OPTS))[1], '100');
+});
+
+test('buildHistoryCsv: 外貨記録は元金額の小数を保持する（38.5 USD）', () => {
+  const csv = buildHistoryCsv([row({ currency: 'USD', foreignAmount: 38.5, jpyAmount: 5979.05, rateUsed: 155.3 })], OPTS);
+  deepEqual(amountCells(csv), ['38.5', '5979.05', '155.3']);
+});
+
+test('buildHistoryCsv: 外貨記録の換算金額(円)は内部換算値の小数のまま（JPY建てだけを丸める）', () => {
+  // 外貨→円の換算値は`toJpy`が丸めない契約（`currency.ts`）。CSVでも従来どおり生値を出す
+  const csv = buildHistoryCsv([row({ currency: 'EUR', foreignAmount: 10.55, jpyAmount: 1635.25, rateUsed: 155 })], OPTS);
+  deepEqual(amountCells(csv), ['10.55', '1635.25', '155']);
+});
+
+test('buildHistoryCsv: レート列はJPY建てでも外貨でも丸めない', () => {
+  equal(amountCells(buildHistoryCsv([row({ currency: 'KRW', rateUsed: 0.1095 })], OPTS))[2], '0.1095');
+  equal(amountCells(buildHistoryCsv([row({ currency: 'JPY', foreignAmount: 100, jpyAmount: 100, rateUsed: 1.0 })], OPTS))[2], '1');
+});
+
+test('buildHistoryCsv: JPY建てでも非有限の金額は空セル（0を書き出さない）', () => {
+  const csv = buildHistoryCsv([row({ currency: 'JPY', foreignAmount: Number.NaN, jpyAmount: Number.NaN, rateUsed: 1 })], OPTS);
+  deepEqual(amountCells(csv), ['', '', '1']);
+});
+
+test('buildHistoryCsv: JPY建ての丸めは見出し行・列数を変えない', () => {
+  const csv = buildHistoryCsv([row({ currency: 'JPY', foreignAmount: 1200.5, jpyAmount: 1200.5, rateUsed: 1 })], OPTS);
+  const lines = csv.split('\r\n');
+  equal(lines[0], CSV_HEADERS.join(','));
+  equal(lines[1].split(',').length, CSV_HEADERS.length);
+});
+
 // ── category（本物のgetCategoryLabelを注入） ────────────────
 
 test('buildHistoryCsv: categoryのslugを日本語ラベルへ変換する', () => {

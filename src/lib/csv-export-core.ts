@@ -70,6 +70,15 @@ export function formatNumberCell(value: number | null | undefined): string {
   return String(value);
 }
 
+/**
+ * JPY建て記録の金額を整数円へ丸める（表示の`formatJpy`と同じ`Math.round`）。
+ * 非有限値はそのまま返し、空セル化の判断は`formatNumberCell`に任せる（`Math.round(NaN)`もNaNのまま）。
+ * `utils/currency.ts`の`normalizeJpyInput`は非有限を0にするため、ここでは流用しない（0を書き出さない）。
+ */
+function roundJpy(value: number): number {
+  return Number.isFinite(value) ? Math.round(value) : value;
+}
+
 /** 1行分のセル配列をCSVの1行にする（各セルは整形済みであること） */
 export function toCsvLine(cells: readonly string[]): string {
   return cells.join(DELIMITER);
@@ -135,6 +144,13 @@ export function buildHistoryCsv(
   const lines: string[] = [toCsvLine(CSV_HEADERS.map((header) => escapeCsvField(header)))];
 
   for (const row of rows ?? []) {
+    // JPY建て記録は整数円が正本（`formatJpy`・`normalizeJpyInput`・SQL `ROUND(jpy_amount)`と同じ`Math.round`）。
+    // 2026-09-18以前に保存された小数JPY（例: 1200.5）がDBに残り得るが、画面は常に¥1,201なので
+    // CSVも同じ値にする（DBは書き換えない。書き出し時の表現だけ）。JPY記録は`foreign_amount`にも同じ円が
+    // 入っているため「元金額」も揃えて丸める。**外貨記録は元金額・換算円とも生値のまま**（内部換算値の契約は変えない）。
+    const isJpyRecord = row.currency === 'JPY';
+    const foreignAmount = isJpyRecord ? roundJpy(row.foreignAmount) : row.foreignAmount;
+    const jpyAmount = isJpyRecord ? roundJpy(row.jpyAmount) : row.jpyAmount;
     lines.push(
       toCsvLine([
         escapeCsvField(row.createdAt),
@@ -144,8 +160,8 @@ export function buildHistoryCsv(
         escapeCsvField(row.memo),
         escapeCsvField(row.isPurchased ? '購入済み' : '候補'),
         escapeCsvField(row.currency),
-        formatNumberCell(row.foreignAmount),
-        formatNumberCell(row.jpyAmount),
+        formatNumberCell(foreignAmount),
+        formatNumberCell(jpyAmount),
         formatNumberCell(row.rateUsed),
       ]),
     );
