@@ -40,8 +40,9 @@ test('有効だが現在値と同じなら changed:false（DBへ触らない）'
 
 test('JPYは整数で foreign=jpy の同値を返す', () => {
   deepEqual(jpy('1500'), { ok: true, changed: true, foreignAmount: 1500, jpyAmount: 1500 });
-  // 旧実装と同じparseInt規則（小数点以下は切り捨て。規則自体はこの修正で変えない）
-  deepEqual(jpy('12.5'), { ok: true, changed: true, foreignAmount: 12, jpyAmount: 12 });
+  // JPYは Math.round で整数円へ（2026-09-18に parseInt＝切り捨て から変更。repo全体の丸め規則に合わせた）
+  deepEqual(jpy('12.5'), { ok: true, changed: true, foreignAmount: 13, jpyAmount: 13 });
+  deepEqual(jpy('12.4'), { ok: true, changed: true, foreignAmount: 12, jpyAmount: 12 });
 });
 
 test('外貨は記録ごとのrate_usedで円換算する（旅行の現在レートではない）', () => {
@@ -88,10 +89,15 @@ test('外貨で入力が同値なら rate_used の値に関わらず changed:fal
   }
 });
 
-test('JPYは同値判定も parseInt 規則（小数点以下切り捨て後に比較）。previewJpy と同じ見え方になる', () => {
-  // 画面のプレビューも parseInt で ¥1200 と表示するので、表示とDB値は一致する（規則自体はこの修正で変えない）
-  deepEqual(jpy('1200.7'), { ok: true, changed: false });
-  deepEqual(jpy('1200.9'), { ok: true, changed: false });
+test('JPYは同値判定も Math.round 規則（丸めた後に比較）。previewJpy・一覧の formatJpy と同じ見え方になる', () => {
+  // 画面のプレビュー（previewJpy）も一覧（formatJpy）も Math.round で表示するので、表示とDB値は一致する
+  // （2026-09-18に parseInt＝切り捨て から変更。number-pad では小数点を入力できないため実機では到達しない経路）
+  deepEqual(jpy('1200.4'), { ok: true, changed: false });
+  deepEqual(jpy('1200.7'), { ok: true, changed: true, foreignAmount: 1201, jpyAmount: 1201 });
+  deepEqual(jpy('1200.9'), { ok: true, changed: true, foreignAmount: 1201, jpyAmount: 1201 });
+  // 丸めた結果が0になる値は不正（"0.4"→0）。"0.5"は1円として有効
+  deepEqual(jpy('0.4'), { ok: false });
+  deepEqual(jpy('0.5'), { ok: true, changed: true, foreignAmount: 1, jpyAmount: 1 });
   // 外貨は parseFloat なので小数の差は変更として扱う
   deepEqual(usd('38.5', 38), { ok: true, changed: true, foreignAmount: 38.5, jpyAmount: 5775 });
 });
@@ -99,4 +105,30 @@ test('JPYは同値判定も parseInt 規則（小数点以下切り捨て後に�
 test('同値でない入力は表記に関係なく changed:true（同値判定が必要な更新を抑止しないこと）', () => {
   deepEqual(jpy('01201'), { ok: true, changed: true, foreignAmount: 1201, jpyAmount: 1201 });
   deepEqual(usd('38.01', 38), { ok: true, changed: true, foreignAmount: 38.01, jpyAmount: 5702 });
+});
+
+/**
+ * 【2026-09-18・既知不具合3件目】既存の小数JPY記録（`jpy_amount = 1200.5`）を開き、金額欄を触らずに保存した場合。
+ * 旧実装は JPY を `parseInt` で評価するため `"1200.5"` → 1200 となり、現在値 1200.5 と一致せず `changed:true`
+ * を返していた。呼び出し側（`item-edit.tsx doSave`）は `changed:true` なら無条件に `updateAmount` を実行するので、
+ * メモだけ直したつもりでも `jpy_amount` が 1200.5 → 1200 へ黙って書き換わる。
+ * JPYの丸め規則は repo 全体で `Math.round`（`formatJpy`・`budget-core`・SQL `ROUND`・外貨編集の円換算）なので、
+ * 編集欄の解析・同値判定もそれに合わせる（初期値 "1200.5" でも、丸めた初期値 "1201" でも changed:false）。
+ */
+test('既存の小数JPY記録を金額未変更のまま保存しても changed:false（jpy_amountを黙って書き換えない）', () => {
+  deepEqual(jpy('1200.5', 1200.5), { ok: true, changed: false });
+  deepEqual(jpy('1201', 1200.5), { ok: true, changed: false });
+  deepEqual(jpy('1200.4', 1200.4), { ok: true, changed: false });
+  deepEqual(jpy('1200', 1200.4), { ok: true, changed: false });
+  // 外貨側は従来どおり foreign_amount 同士の比較（jpy_amount の小数は関与しない）
+  deepEqual(
+    resolveEditedAmount({ currency: 'USD', text: '38', currentForeignAmount: 38, currentJpyAmount: 5787.4, rateUsed: 152.3 }),
+    { ok: true, changed: false },
+  );
+});
+
+test('小数JPY記録の金額を明示的に変えた場合は整数円で changed:true', () => {
+  deepEqual(jpy('1300', 1200.5), { ok: true, changed: true, foreignAmount: 1300, jpyAmount: 1300 });
+  // 丸めると現在値の丸めと一致しない値は変更として扱う
+  deepEqual(jpy('1200', 1200.5), { ok: true, changed: true, foreignAmount: 1200, jpyAmount: 1200 });
 });

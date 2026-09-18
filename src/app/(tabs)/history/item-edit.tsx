@@ -136,7 +136,9 @@ export default function ItemEditScreen() {
   useEffect(() => {
     if (item && initedRef.current !== item.id) {
       initedRef.current = item.id;
-      const initialAmount = item.currency === 'JPY' ? String(item.jpy_amount) : String(item.foreign_amount);
+      // JPYは整数円で表示・編集する（一覧の`formatJpy`と同じ`Math.round`）。DBに小数JPYが残っている既存記録でも
+      // 欄には丸めた値を出し、金額を触らなければ`resolveEditedAmount`が同値と判定してDBの値は書き換えない。
+      const initialAmount = item.currency === 'JPY' ? String(Math.round(item.jpy_amount)) : String(item.foreign_amount);
       const initialMemo = item.memo ?? '';
       const initialIsPurchased = (item.is_purchased ?? 0) === 1;
       const initialPhotoUri = item.image_uri ?? null;
@@ -280,7 +282,9 @@ export default function ItemEditScreen() {
       const f = parseFloat(amount);
       return isFinite(f) && f > 0 ? Math.round(f * item.rate_used) : null;
     }
-    const n = parseInt(amount, 10);
+    // JPYは`resolveEditedAmount`と同じ規則（parseFloat→Math.round）で見せる。保存される値とプレビューを一致させる
+    const parsed = parseFloat(amount);
+    const n = isFinite(parsed) ? Math.round(parsed) : NaN;
     return isFinite(n) && n > 0 ? n : null;
   })();
 

@@ -35,7 +35,7 @@ import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { color, radius, shadow, spacing, statusColor, typography } from '@/theme/tokens';
-import { convert } from '@/utils/currency';
+import { convert, normalizeJpyInput } from '@/utils/currency';
 import { extractMemoLines, extractPriceCandidates } from '@/utils/extract-prices';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
 import { mergeMemoCandidates, resolveMemoCandidateDisplay } from '@/utils/memo-candidate-display';
@@ -235,11 +235,14 @@ export default function CameraScreen() {
   const rate = activeTrip ? (isJpyMode ? 1 : tripRate) : globalRate;
   const isReverse = !isJpyMode && inputMode === 'FROM_JPY';
   const inputNum = parseFloat(nativeAmount) || 0;
-  const foreignAmount = isJpyMode ? inputNum : (isReverse ? convert(inputNum, rate, 'FROM_JPY') : inputNum);
-  const jpyAmount = isJpyMode ? inputNum : (isReverse ? inputNum : convert(inputNum, rate, 'TO_JPY'));
+  // JPY旅行は入力を整数円へ正規化してから扱う（`normalizeJpyInput`）。decimal-pad＋parseFloatで小数が入っても
+  // 表示（formatJpy）と同じ値を保存し、小数JPYを新たにDBへ入れない。外貨→円の換算値はここでは丸めない（従来どおり）
+  const foreignAmount = isJpyMode ? normalizeJpyInput(inputNum) : (isReverse ? convert(inputNum, rate, 'FROM_JPY') : inputNum);
+  const jpyAmount = isJpyMode ? normalizeJpyInput(inputNum) : (isReverse ? inputNum : convert(inputNum, rate, 'TO_JPY'));
   // 有限でない金額（Infinity等）は保存対象にしない（集計側でも0扱いだが、入口で明示的に拒否する）
+  // JPYは正規化後の値で判定する（"0.4"→0円は保存不可）
   const canSave = isJpyMode
-    ? !!activeTrip && inputNum > 0 && Number.isFinite(inputNum)
+    ? !!activeTrip && jpyAmount > 0 && Number.isFinite(jpyAmount)
     : !!activeTrip && rate > 0 && foreignAmount > 0 && jpyAmount > 0 && Number.isFinite(jpyAmount);
   const c = CURRENCIES[currencyForDisplay];
 
@@ -1616,7 +1619,7 @@ export default function CameraScreen() {
                       onChangeText={setNativeAmount}
                       placeholder="0"
                       placeholderTextColor={DT.colors.textMuted}
-                      keyboardType="decimal-pad"
+                      keyboardType={isJpyMode ? 'number-pad' : 'decimal-pad'}
                       selectTextOnFocus
                       returnKeyType="done"
                       onSubmitEditing={() => Keyboard.dismiss()}

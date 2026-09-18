@@ -22,7 +22,7 @@ import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { color, radius, shadow, spacing } from '@/theme/tokens';
-import { convert } from '@/utils/currency';
+import { convert, normalizeJpyInput } from '@/utils/currency';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
 
 async function copySelectedImageToPhotos(uri: string): Promise<string | undefined> {
@@ -67,10 +67,12 @@ export default function ConverterScreen() {
       : (tripRate > 0 ? tripRate : (rates[tripCurrency as CurrencyCode] ?? 0));
   const amount = parseFloat(amountText) || 0;
   const isReverse = !!activeTrip && !isJpyMode && direction === 'FROM_JPY';
-  const result = !activeTrip ? 0 : isJpyMode ? amount : convert(amount, effectiveRate, direction);
+  // JPY旅行は入力を整数円へ正規化する（`normalizeJpyInput`）。保存する`foreign_amount`/`jpy_amount`も
+  // この値を使い、小数JPYを新たにDBへ入れない。外貨→円の換算値はここでは丸めない（従来どおり）
+  const result = !activeTrip ? 0 : isJpyMode ? normalizeJpyInput(amount) : convert(amount, effectiveRate, direction);
   const hasRate = isJpyMode || effectiveRate > 0;
-  // 有限でない金額（Infinity等）は保存対象にしない
-  const hasResult = !!activeTrip && amount > 0 && hasRate && Number.isFinite(result);
+  // 有限でない金額（Infinity等）は保存対象にしない。JPYは正規化後の値が0（"0.4"等）でも保存対象にしない
+  const hasResult = !!activeTrip && amount > 0 && result > 0 && hasRate && Number.isFinite(result);
 
   function switchDirection(next: ConversionDirection) {
     setDirection(next);
@@ -114,7 +116,8 @@ export default function ConverterScreen() {
     // 保存失敗時に何も表示されない箇所があったため try/catch + Alert を追加（P0-08）。
     // 保存ロジック本体（addEntry）は変更しない。
     try {
-      const saveOutcome = await addEntry(tripCurrency, amount, result, effectiveRate, undefined, savedUri, saveAsPurchased);
+      // JPY旅行は foreign_amount にも正規化後の整数円（result）を入れる（旧実装は parseFloat の生値だった）
+      const saveOutcome = await addEntry(tripCurrency, isJpyMode ? result : amount, result, effectiveRate, undefined, savedUri, saveAsPurchased);
       if (saveOutcome.blocked) {
         setShowSaveLimitSheet(true);
         return; // 入力値を保持したまま終了
@@ -253,8 +256,8 @@ export default function ConverterScreen() {
               onChangeText={setAmountText}
               placeholder="0"
               placeholderTextColor={color.faint2}
-              keyboardType="decimal-pad"
-              inputMode="decimal"
+              keyboardType={isJpyMode ? 'number-pad' : 'decimal-pad'}
+              inputMode={isJpyMode ? 'numeric' : 'decimal'}
               returnKeyType="done"
               selectTextOnFocus
             />

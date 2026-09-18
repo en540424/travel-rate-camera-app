@@ -11,8 +11,14 @@
  *   という、ユーザーへ何も伝えない不整合が起きていた（コード内コメントの「未保存のまま維持」とも矛盾）。
  *   ここで事前に判定し、不正なら**DBへ一切書かず**画面に留まる。
  *
- * ■ 解析規則は旧実装と同じ（JPYは`parseInt`、外貨は`parseFloat`。有限かつ0より大きい値のみ有効）。
- *   0や負数を許すかどうかは仕様の話であり、この修正では変えない。
+ * ■ 解析規則：外貨は`parseFloat`（小数を保持）。JPYは`parseFloat`した値を`Math.round`で整数円へ丸め、
+ *   現在値も同じ規則で丸めてから比較する（2026-09-18変更。旧実装は`parseInt`＝切り捨て）。
+ *   JPYの丸め規則は repo 全体で`Math.round`（`formatJpy`・`budget-core`・SQL `ROUND(jpy_amount)`・下の外貨→円換算）
+ *   であり、編集欄だけが切り捨てだと、`jpy_amount = 1200.5`のような既存の小数JPY記録を開いて金額を触らずに
+ *   保存した時に `parseInt("1200.5") = 1200 ≠ 1200.5` → `changed:true` となり、メモだけ直したつもりでも
+ *   `jpy_amount`が1200へ黙って書き換わっていた。現在値を丸めて比較するので、既存の小数値はこの関数からは
+ *   書き換わらない（明示的に別の金額を入れた時だけ整数円で更新される）。
+ *   有限かつ丸めた後で0より大きい値のみ有効。0や負数を許すかどうかは仕様の話であり、この修正では変えない。
  */
 
 export type EditedAmountResolution =
@@ -38,9 +44,11 @@ export interface EditedAmountInput {
 export function resolveEditedAmount(input: EditedAmountInput): EditedAmountResolution {
   const text = input.text.trim();
   if (input.currency === 'JPY') {
-    const n = parseInt(text, 10);
-    if (!isFinite(n) || n <= 0) return { ok: false };
-    if (n === input.currentJpyAmount) return { ok: true, changed: false };
+    const parsed = parseFloat(text);
+    if (!isFinite(parsed)) return { ok: false };
+    const n = Math.round(parsed);
+    if (n <= 0) return { ok: false };
+    if (n === Math.round(input.currentJpyAmount)) return { ok: true, changed: false };
     return { ok: true, changed: true, foreignAmount: n, jpyAmount: n };
   }
   const f = parseFloat(text);
