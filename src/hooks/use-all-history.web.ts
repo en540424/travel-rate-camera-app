@@ -6,6 +6,7 @@ import type { CurrencyCode } from '@/constants/currencies';
 import type { HistoryRow } from '@/db/queries/history';
 import type { TripRow } from '@/db/queries/trips';
 import { budgetTotalsByTripFromGroupRows, type BudgetTotals } from '@/utils/budget-core';
+import { isDateKeyInRange, rowToDateKey, type DateKeyRange } from '@/utils/history-date-core';
 
 const HISTORY_KEY = 'travelrate:history';
 const TRIPS_KEY   = 'travelrate:trips';
@@ -64,7 +65,14 @@ function persistHistory(rows: HistoryRow[]) {
   } catch {}
 }
 
-export function useAllHistory() {
+export interface UseAllHistoryOptions {
+  /** native版（`use-all-history.ts`）と同じ。省略時は`history`を空にする */
+  dateRange?: DateKeyRange;
+}
+
+export function useAllHistory(options: UseAllHistoryOptions = {}) {
+  const rangeFrom = options.dateRange?.from;
+  const rangeTo = options.dateRange?.to;
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [tripMap, setTripMap] = useState<Map<number, TripRow>>(new Map());
   // 旅行ごとの集計（native版のSQL集計と同じ形。全行から作る）
@@ -73,7 +81,12 @@ export function useAllHistory() {
   const load = useCallback(() => {
     const rows = loadAllHistory();
     const trips = loadAllTrips();
-    setHistory(rows);
+    // native版は期間内に入り得る行をSQLで返す。Webは全行から同じ日付キー規則で絞る（集計は全行のまま）
+    setHistory(
+      rangeFrom !== undefined && rangeTo !== undefined
+        ? rows.filter((r) => isDateKeyInRange(rowToDateKey(r), { from: rangeFrom, to: rangeTo }))
+        : [],
+    );
     setTripMap(new Map(trips.map((t) => [t.id, t])));
     setTotalsByTrip(
       budgetTotalsByTripFromGroupRows(
@@ -85,7 +98,7 @@ export function useAllHistory() {
         })),
       ),
     );
-  }, []);
+  }, [rangeFrom, rangeTo]);
 
   useEffect(() => {
     load();

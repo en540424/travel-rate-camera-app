@@ -8,6 +8,11 @@ import {
   type BudgetGroupRow,
   type BudgetTotals,
 } from '@/utils/budget-core';
+import {
+  HISTORY_DATE_KEY_RANGE_WHERE_SQL,
+  historyDateKeyRangeParams,
+  type DateKeyRange,
+} from '@/utils/history-date-core';
 
 export interface HistoryRow {
   id: number;
@@ -30,7 +35,7 @@ export interface HistoryRow {
 /** 無料版の最大保存件数（config/limits.ts の FREE_LIMITS.saves を正とする） */
 export const FREE_HISTORY_LIMIT = FREE_LIMITS.saves;
 
-/** 履歴を新しい順で取得（全件） */
+/** 履歴を新しい順で取得（`limit`件まで。表示用） */
 export async function getHistory(
   db: SQLiteDatabase,
   limit: number = 50,
@@ -47,7 +52,7 @@ export async function getHistory(
  * `item-detail.tsx` / `item-edit.tsx`のfallback専用。calendarタブは`useAllHistory()`で
  * 全旅行の記録を表示するが、詳細/編集画面は`useHistory()`（activeTripで絞り込み済み）から
  * idを探すため、activeTrip以外の旅行の記録を開くと見つからない。その場合だけこの関数で
- * 1件読み直す（`useAllHistory()`を丸ごと使うと2000件+全旅行の取得が毎回走ってしまうため、
+ * 1件読み直す（`useAllHistory()`を丸ごと使うと期間分の履歴+全旅行+全件集計の取得が毎回走ってしまうため、
  * 「見つからなかった時だけ」の単発読み取りに留める）。
  */
 export async function getHistoryById(db: SQLiteDatabase, id: number): Promise<HistoryRow | null> {
@@ -56,6 +61,25 @@ export async function getHistoryById(db: SQLiteDatabase, id: number): Promise<Hi
     id,
   );
   return row ?? null;
+}
+
+/**
+ * 全旅行の履歴のうち、表示日付キー（`entry_date ?? created_at`のローカル日付）が`range`に入り得る行を
+ * 新しい順で取得する。**件数上限なし**（取得量は期間内の件数で決まる）。
+ *
+ * 分析・カレンダー用（`useAllHistory({ dateRange })`）。旧実装の`getHistory(db, 2000)`は2001件目以降が
+ * 集計・表示から黙って落ちていた（2026-09-18・候補C）。SQL側は`created_at`のUTC/ローカル差を吸収するため
+ * 前後1日広めに取るので、呼び出し側は従来どおり`rowToDateKey`で厳密に絞ること
+ * （条件の根拠は`utils/history-date-core.ts`先頭）。
+ */
+export async function getHistoryInDateKeyRange(
+  db: SQLiteDatabase,
+  range: DateKeyRange,
+): Promise<HistoryRow[]> {
+  return db.getAllAsync<HistoryRow>(
+    `SELECT * FROM conversion_history WHERE ${HISTORY_DATE_KEY_RANGE_WHERE_SQL} ORDER BY created_at DESC`,
+    ...historyDateKeyRangeParams(range),
+  );
 }
 
 /** 履歴の総件数を取得（全件） */

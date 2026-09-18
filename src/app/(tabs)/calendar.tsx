@@ -15,20 +15,12 @@ import { useAllHistory } from '@/hooks/use-all-history';
 import { useTrips } from '@/hooks/use-trips';
 import { color, radius, shadow } from '@/theme/tokens';
 import { formatJpy, formatRate } from '@/utils/format';
+import { monthDateKeyRange, rowToDateKey, toDateKey } from '@/utils/history-date-core';
 import { deleteStoredPhotoFile } from '@/utils/resolve-image-uri';
 import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
 
 // ─── 日付ユーティリティ ──────────────────────────────────────────
-
-function toDateKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function rowToDateKey(row: HistoryRow): string {
-  if (row.entry_date) return row.entry_date;
-  const iso = row.created_at.includes('T') ? row.created_at : `${row.created_at.replace(' ', 'T')}Z`;
-  return toDateKey(new Date(iso));
-}
+// `toDateKey` / `rowToDateKey`は`utils/history-date-core.ts`（分析画面と共通・純粋関数）
 
 function formatDateLabel(dateKey: string): string {
   const [, m, d] = dateKey.split('-');
@@ -121,7 +113,14 @@ export default function CalendarScreen() {
     });
   }, []);
 
-  const { history, tripMap, togglePurchased, removeEntry, reload } = useAllHistory();
+  // 表示月に入り得る履歴だけをDBから読む（件数上限なし）。
+  // 以前は最新2000件の窓で、2001件目以降の古い月の記録がカレンダーに出なかった。
+  // 下の`grouped`／`monthRows`は従来どおり`rowToDateKey`で厳密に日付へ割り当てる（SQL側は前後1日広め）。
+  const dateRange = useMemo(
+    () => monthDateKeyRange(displayYear, displayMonth + 1),
+    [displayYear, displayMonth],
+  );
+  const { history, tripMap, togglePurchased, removeEntry, reload } = useAllHistory({ dateRange });
   const { activeTrip } = useTrips();
   const [photoModalUri, setPhotoModalUri] = useState<string | null>(null);
 
@@ -131,7 +130,7 @@ export default function CalendarScreen() {
     }, [reload]),
   );
 
-  // 日付 → 履歴行 のマップ（全旅行）
+  // 日付 → 履歴行 のマップ（全旅行・表示月分）。前後月のはみ出しセルは記録を表示しない（`hasEntries`）
   const grouped = useMemo(() => {
     const map = new Map<string, HistoryRow[]>();
     for (const row of history) {

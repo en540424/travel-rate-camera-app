@@ -9,14 +9,21 @@ import { aggregateByCategory } from '@/config/categories';
 import { SHOW_PRO } from '@/config/feature-flags';
 import { DT } from '@/constants/designTokens';
 import type { CurrencyCode } from '@/constants/currencies';
-import type { HistoryRow } from '@/db/queries/history';
 import { useAllHistory } from '@/hooks/use-all-history';
 import { useIsPro } from '@/hooks/use-purchases';
 import { color } from '@/theme/tokens';
 import { formatJpy } from '@/utils/format';
+import {
+  dateKeyRangeForPeriod,
+  daysInMonth,
+  matchesPeriod,
+  rowToDateKey,
+  toDateKey as toDateKeyFromDate,
+  type AnalyticsPeriod,
+} from '@/utils/history-date-core';
 import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
 
-type Period = 'today' | 'month' | 'year';
+type Period = AnalyticsPeriod;
 
 const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土'];
 const MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
@@ -29,36 +36,6 @@ function barHeightFor(amount: number, max: number): number {
   return amount > 0 ? Math.max(4, Math.round((amount / max) * (CHART_H - 8))) : 3;
 }
 
-function rowToDateKey(row: HistoryRow): string {
-  if (row.entry_date) return row.entry_date;
-  const iso = row.created_at.includes('T')
-    ? row.created_at
-    : `${row.created_at.replace(' ', 'T')}Z`;
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function toDateKeyFromDate(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function daysInMonth(year: number, month: number): number {
-  return new Date(year, month, 0).getDate();
-}
-
-function matchesPeriod(
-  dateKey: string,
-  period: Period,
-  anchorYear: number,
-  anchorMonth: number,
-  todayKey: string,
-): boolean {
-  if (period === 'today') return dateKey === todayKey;
-  const [ry, rm] = dateKey.split('-').map(Number);
-  if (period === 'year') return ry === anchorYear;
-  return ry === anchorYear && rm === anchorMonth;
-}
-
 export default function AnalyticsScreen() {
   // 下タブでこのタブ（分析）を押した時（＝タブ切替で入ってきた時）だけ先頭へ戻す。
   // (tabs)/_layout.tsxのtabPressからtriggerTabScrollResetで呼ばれる。
@@ -69,13 +46,25 @@ export default function AnalyticsScreen() {
     });
   }, []);
 
-  const { history, tripMap, reload } = useAllHistory();
   const isPro = useIsPro();
   const { width: windowWidth } = useWindowDimensions();
   const [period, setPeriod] = useState<Period>('year');
   const [anchorDate, setAnchorDate] = useState(() => new Date());
   const [todayDate] = useState(() => new Date());
   const [selectedBarKey, setSelectedBarKey] = useState<string | null>(null);
+
+  const anchorYear = anchorDate.getFullYear();
+  const anchorMonth = anchorDate.getMonth() + 1;
+  const todayKey = toDateKeyFromDate(todayDate);
+
+  // 選択中の期間（今日／月／年）に入り得る履歴だけをDBから読む（件数上限なし）。
+  // 以前は最新2000件の窓をJS側で集計しており、2001件目以降が合計・グラフから黙って落ちていた。
+  // 下の各useMemoは従来どおり`matchesPeriod(rowToDateKey(row), ...)`で厳密に絞る（SQL側は前後1日広め）。
+  const dateRange = useMemo(
+    () => dateKeyRangeForPeriod(period, anchorYear, anchorMonth, todayKey),
+    [period, anchorYear, anchorMonth, todayKey],
+  );
+  const { history, tripMap, reload } = useAllHistory({ dateRange });
 
   // 月表示の1日あたりの列幅：画面幅から「scroll」「card」の左右paddingを引いた
   // 実際に見える横幅を10等分し、初期表示でだいたい1〜10日が見えるようにする
@@ -87,10 +76,6 @@ export default function AnalyticsScreen() {
       reload();
     }, [reload]),
   );
-
-  const anchorYear = anchorDate.getFullYear();
-  const anchorMonth = anchorDate.getMonth() + 1;
-  const todayKey = toDateKeyFromDate(todayDate);
 
   function changePeriod(next: Period) {
     setPeriod(next);
