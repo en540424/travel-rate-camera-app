@@ -1,7 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, View } from 'react-native';
-import * as FileSystem from 'expo-file-system/legacy';
 
 import { ThemedText } from '@/components/themed-text';
 import { SettingRow, SettingSection } from '@/components/ui';
@@ -13,6 +12,7 @@ import { useTrips } from '@/hooks/use-trips';
 import { buildCsvFilename, buildHistoryCsv, withUtf8Bom } from '@/lib/csv-export-core';
 import { shareCsv } from '@/lib/csv-export-service';
 import { color, radius, shadow } from '@/theme/tokens';
+import { deleteStoredPhotoFile } from '@/utils/resolve-image-uri';
 
 function StatCard({ label, value, tone }: { label: string; value: string; tone?: 'candidate' | 'purchased' }) {
   const valueColor = tone === 'candidate' ? color.candidateText : tone === 'purchased' ? color.purchasedText : color.text;
@@ -58,7 +58,7 @@ export default function DataManagementScreen() {
     await Promise.all(
       uris.map(async (uri) => {
         try {
-          await FileSystem.deleteAsync(uri, { idempotent: true });
+          await deleteStoredPhotoFile(uri);
         } catch {}
       }),
     );

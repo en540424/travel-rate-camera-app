@@ -18,6 +18,7 @@ import { useHistory } from '@/hooks/use-history';
 import { useUnsavedChangesStore } from '@/stores/unsaved-changes-store';
 import { color, radius, shadow } from '@/theme/tokens';
 import { resolveEditedAmount } from '@/utils/edit-amount-core';
+import { deleteStoredPhotoFile } from '@/utils/resolve-image-uri';
 import { formatJpy } from '@/utils/format';
 
 export default function ItemEditScreen() {
@@ -412,7 +413,7 @@ export default function ItemEditScreen() {
     // 失敗時にここへ来ないことが重要（DBは旧URIのままなのにfileだけ消える状態を作らない）。
     if (photoChanged && previousPhotoUri) {
       try {
-        await FileSystem.deleteAsync(previousPhotoUri, { idempotent: true });
+        await deleteStoredPhotoFile(previousPhotoUri);
       } catch {}
     }
     allowLeaveRef.current = true;
@@ -442,7 +443,7 @@ export default function ItemEditScreen() {
           if (Platform.OS !== 'web') {
             await cleanupCreatedFiles();
             if (item.image_uri) {
-              try { await FileSystem.deleteAsync(item.image_uri, { idempotent: true }); } catch {}
+              try { await deleteStoredPhotoFile(item.image_uri); } catch {}
             }
           }
           setHasUnsavedChanges(false);

@@ -2,7 +2,6 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import * as FileSystem from 'expo-file-system/legacy';
 
 import { PhotoModal } from '@/components/photo-modal';
 import { ResilientPhoto } from '@/components/resilient-photo';
@@ -15,6 +14,7 @@ import { useHistory } from '@/hooks/use-history';
 import { useTrips } from '@/hooks/use-trips';
 import { color, radius, shadow } from '@/theme/tokens';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
+import { deleteStoredPhotoFile } from '@/utils/resolve-image-uri';
 
 function formatSavedAt(row: HistoryRow): string {
   const iso = row.created_at.includes('T') ? row.created_at : `${row.created_at.replace(' ', 'T')}Z`;
@@ -125,7 +125,7 @@ export default function ItemDetailScreen() {
             return;
           }
           if (item.image_uri && Platform.OS !== 'web') {
-            try { await FileSystem.deleteAsync(item.image_uri, { idempotent: true }); } catch {}
+            try { await deleteStoredPhotoFile(item.image_uri); } catch {}
           }
           router.back();
         },

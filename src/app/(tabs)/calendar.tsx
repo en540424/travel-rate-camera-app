@@ -1,4 +1,3 @@
-import * as FileSystem from 'expo-file-system/legacy';
 import { router, useFocusEffect } from 'expo-router';
 import { Image } from 'expo-image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -16,6 +15,7 @@ import { useAllHistory } from '@/hooks/use-all-history';
 import { useTrips } from '@/hooks/use-trips';
 import { color, radius, shadow } from '@/theme/tokens';
 import { formatJpy, formatRate } from '@/utils/format';
+import { deleteStoredPhotoFile } from '@/utils/resolve-image-uri';
 import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
 
 // ─── 日付ユーティリティ ──────────────────────────────────────────
@@ -221,7 +221,7 @@ export default function CalendarScreen() {
               return;
             }
             if (item.image_uri && Platform.OS !== 'web') {
-              try { await FileSystem.deleteAsync(item.image_uri, { idempotent: true }); } catch {}
+              try { await deleteStoredPhotoFile(item.image_uri); } catch {}
             }
           },
         },
