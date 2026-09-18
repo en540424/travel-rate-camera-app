@@ -185,6 +185,57 @@ test('buildHistoryCsv: レート列はJPY建てでも外貨でも丸めない', 
   equal(amountCells(buildHistoryCsv([row({ currency: 'JPY', foreignAmount: 100, jpyAmount: 100, rateUsed: 1.0 })], OPTS))[2], '1');
 });
 
+/** 換算金額(円)列（index 8）を数値で全行分取り出す（Excel/Sheetsで列をSUMする操作の代わり） */
+function jpyColumn(csv) {
+  return csv
+    .trim()
+    .split('\r\n')
+    .slice(1)
+    .map((line) => Number(line.split(',')[8]));
+}
+
+test('buildHistoryCsv: 外貨記録の換算金額(円)は元金額×レートの生値（丸め境界の.4/.5でも整数化しない）', () => {
+  // 2026-09-19判定：外貨の`jpy_amount`は`toJpy`（丸めない）の内部換算値であり整数円の仕様は無い。
+  // CSVは「保存履歴の書き出し」として`foreign_amount × rate_used`を再計算できる生値を保つ（仕様どおり・バグではない）
+  const csv = buildHistoryCsv(
+    [
+      row({ currency: 'USD', foreignAmount: 0.65, jpyAmount: 100.4, rateUsed: 154.46 }),
+      row({ currency: 'EUR', foreignAmount: 0.5, jpyAmount: 100.5, rateUsed: 201 }),
+    ],
+    OPTS,
+  );
+  deepEqual(jpyColumn(csv), [100.4, 100.5]);
+  const lines = csv.trim().split('\r\n').slice(1);
+  deepEqual(lines.map((l) => l.split(',')[7]), ['0.65', '0.5']);
+  deepEqual(lines.map((l) => l.split(',')[9]), ['154.46', '201']);
+});
+
+test('buildHistoryCsv: 外貨行の換算金額(円)列をSUMすると生値合計になる（行ごと丸め集計の残り予算とは端数で異なりうる）', () => {
+  // アプリ内は集計方式が1つではない：残り予算・購入済み合計は行ごと`Math.round`／`SUM(ROUND())`、
+  // 分析・カレンダーは生値をSUMしてから`formatJpy`で丸める。CSVはどちらにも寄せず生値を出す契約
+  const rows = [
+    row({ currency: 'USD', foreignAmount: 38.5, jpyAmount: 5979.05, rateUsed: 155.3 }),
+    row({ currency: 'EUR', foreignAmount: 0.5, jpyAmount: 100.5, rateUsed: 201 }),
+    row({ currency: 'EUR', foreignAmount: 0.5, jpyAmount: 100.5, rateUsed: 201 }),
+  ];
+  const excelSum = jpyColumn(buildHistoryCsv(rows, OPTS)).reduce((sum, v) => sum + v, 0);
+  equal(excelSum, 6180.05); // 生値合計（分析・カレンダーの集計と同じ入力）
+  const perRowRounded = rows.reduce((sum, r) => sum + Math.round(r.jpyAmount), 0);
+  equal(perRowRounded, 6181); // 残り予算側の行ごと丸め合計。CSVの列SUMとは端数で1円ずれる（既知・仕様）
+  equal(Math.round(excelSum), 6180);
+});
+
+test('buildHistoryCsv: JPY建てと外貨が混在しても、丸めはJPY行だけに掛かる', () => {
+  const csv = buildHistoryCsv(
+    [
+      row({ currency: 'JPY', foreignAmount: 1200.5, jpyAmount: 1200.5, rateUsed: 1 }),
+      row({ currency: 'USD', foreignAmount: 38.5, jpyAmount: 5979.05, rateUsed: 155.3 }),
+    ],
+    OPTS,
+  );
+  deepEqual(jpyColumn(csv), [1201, 5979.05]);
+});
+
 test('buildHistoryCsv: JPY建てでも非有限の金額は空セル（0を書き出さない）', () => {
   const csv = buildHistoryCsv([row({ currency: 'JPY', foreignAmount: Number.NaN, jpyAmount: Number.NaN, rateUsed: 1 })], OPTS);
   deepEqual(amountCells(csv), ['', '', '1']);
