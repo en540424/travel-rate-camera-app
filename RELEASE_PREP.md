@@ -59,7 +59,7 @@ App Storeは、**同一`version`内で`buildNumber`（CFBundleVersion）が一�
 | Provisioning Profile | active・期限 2027-06-05（**ad hoc**） | preview用。store配信用はEASが別途作る |
 | 登録デバイス | 1台（`00008140-...001C`） | preview用。production(store)には不要 |
 | `ITSAppUsesNonExemptEncryption` | `false` を明示済み | OK（輸出コンプライアンス質問に自動回答） |
-| icon | `./assets/images/icon.png`（**1024×1024 / colortype 6 = RGBA**） | 要IPA確認（§7-1） |
+| icon | `./assets/images/icon.png`（**2026-10-01に正式採用iconへ置換：1024×1024 / colortype 2 = RGB・alphaなし**） | 実機の見え方はPreview `be61a603`でHuman確認待ち（§7-1） |
 | splash（iOS） | **画像なし・背景色`#208AEF`のみ** | 仕様どおり動くが**ブランド不一致**（§7-2） |
 | SDK / RN | Expo 56.0.0 / RN 0.85.3 | OK |
 | `eas.json` の `submit.production` | **空 `{}`** | 要設定（§3） |
@@ -159,6 +159,8 @@ App Store submission も同様にHuman承認後。
 ## 7. icon / splash / 権限の詳細監査（2026-09-12 追加）
 
 ### 7-1. icon のalpha（**release blockerではないが要IPA確認**）
+
+> **2026-10-01更新**：正式採用iconへ置換し、元ファイル自体を**RGB（colortype 2）・alphaなし**にした。下記の「Expoがalphaを除去する想定」に依存しなくなった（IPAでの最終確認項目としては残す）。
 
 - 実測：`assets/images/icon.png` は **1024×1024・PNG colortype 6（RGBA）＝alphaチャンネルあり**
 - App Storeは**alpha付きのApp Iconを受け付けない**（アップロード時に弾かれる）
