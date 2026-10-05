@@ -74,8 +74,8 @@ App Storeは、**同一`version`内で`buildNumber`（CFBundleVersion）が一�
 
 | 権限 | 文言 | 設定経路 |
 |---|---|---|
-| カメラ | カメラで価格タグを撮影して円換算します | `expo-camera` plugin props → **prebuild時に注入** |
-| フォトライブラリ | カメラロールの画像を買い物候補に紐付けます | `expo-image-picker` plugin props → **prebuild時に注入** |
+| カメラ | カメラで値札やメニューを読み取り、円換算や翻訳に使用します（2026-10-05：スマートカメラ・カメラ翻訳追加に伴い更新） | `expo-camera` plugin props → **prebuild時に注入** |
+| フォトライブラリ | カメラロールの画像を買い物候補に紐付けたり、写真の文章を翻訳したりするために使用します（2026-10-05：写真翻訳追加に伴い更新） | `expo-image-picker` plugin props → **prebuild時に注入** |
 | マイク | 音声入力で話した内容を翻訳するためにマイクを使用します | `expo-speech-recognition` plugin → **評価済みconfigに出現**（`eas config`で実測確認済み） |
 | 音声認識 | 話した内容を文字に変換して翻訳するために音声認識を使用します | 同上 |
 
