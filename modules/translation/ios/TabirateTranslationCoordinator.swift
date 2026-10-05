@@ -39,6 +39,16 @@ internal final class TabirateTranslationCoordinator: ObservableObject {
   /// ホストViewが画面上に存在する間だけtrue。falseの間はsessionを一切触らない。
   private var isHostAlive = false
 
+  /// 実行中の`drain`の数。0より大きい間に届いたジョブは`pending`へ積むだけにする。
+  ///
+  /// 処理中の`translations(from:)`の下でconfigurationを差し替える（invalidate含む）と、
+  /// そのjobはキャンセル扱いになり、Apple公式の「configuration変更後のsession使用」にも近づく。
+  /// リアルタイム翻訳（スマートカメラ）とメモ候補翻訳は同じホストへ重ねて要求しうるため、
+  /// drain中の要求は積むだけにして、同じ言語ペアなら同じdrainのループが拾い、
+  /// 別ペアならdrain終了時の`applyConfiguration`で次のtranslationTaskへ引き継ぐ。
+  /// （古いtaskの終了と新しいtaskの開始が重なりうるため、真偽値ではなく数で持つ）
+  private var activeDrainCount = 0
+
   // MARK: - JS側からの受付
 
   func submit(_ job: Job) {
@@ -47,6 +57,7 @@ internal final class TabirateTranslationCoordinator: ObservableObject {
       return
     }
     pending.append(job)
+    guard activeDrainCount == 0 else { return }
     applyConfiguration(source: job.source, target: job.target)
   }
 
@@ -68,6 +79,9 @@ internal final class TabirateTranslationCoordinator: ObservableObject {
   /// 現在のconfigurationと同じ言語ペアのジョブだけを処理する。
   /// 別ペアのジョブが残っていれば、設定を切り替えて次のtranslationTask実行へ引き継ぐ。
   func drain(using session: TranslationSession) async {
+    activeDrainCount += 1
+    defer { activeDrainCount -= 1 }
+
     let source = configuration?.source
     let target = configuration?.target
 
@@ -79,7 +93,13 @@ internal final class TabirateTranslationCoordinator: ObservableObject {
       await run(job, using: session)
     }
 
-    if isHostAlive, !Task.isCancelled, let next = pending.first {
+    // 通常はここで別ペアの残りへ引き継ぐ。
+    // taskがキャンセルされたのにホストが生きていてjobが残る場合（drain中に積まれた分）も、
+    // 設定を当て直さないと誰もdrainせずPromiseが永久にsettleしなくなるため、同じく引き継ぐ。
+    // ただし他のdrainがまだ動いている（このdrain自身を含めて2以上）なら、そちらの処理中の
+    // 翻訳を無効化しないよう触らない（残りはそのdrainのループか終了時の引き継ぎが拾う）。
+    // （ホスト消失時はhostDidDisappearがpendingを全て失敗させるので、ここには来ない）
+    if isHostAlive, activeDrainCount == 1, let next = pending.first {
       applyConfiguration(source: next.source, target: next.target)
     }
   }
