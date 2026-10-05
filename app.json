@@ -46,13 +46,13 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "カメラで価格タグを撮影して円換算します"
+          "cameraPermission": "カメラで値札やメニューを読み取り、円換算や翻訳に使用します"
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "カメラロールの画像を買い物候補に紐付けます"
+          "photosPermission": "カメラロールの画像を買い物候補に紐付けたり、写真の文章を翻訳したりするために使用します"
         }
       ],
       [

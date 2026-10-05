@@ -22,14 +22,25 @@
  *   - `clearTranslationCaches()` … カメラ画面と共有しているcacheまで消える
  *   - `translateBatch`への独自timeout … 初回のモデルDLは正当に数十秒かかりうる
  * stale結果の遮断は`generationRef`の一致判定のみで行う。
+ *
+ * ■ 入力方法（2026-10-05 写真・カメラを追加）
+ *   - テキスト／音声 … 従来どおり（入力カード＋マイク）
+ *   - 写真 … 写真を撮る／選ぶ → 静止画OCR → 段落ごとに翻訳（長文・メニューを落ち着いて読む）
+ *   - カメラ … かざした文字をその場で翻訳し、元の文字付近へ重ねる。シャッターで写真翻訳へ
+ * 写真・カメラも同じApple Translation（同じ`TranslationHost`）を使い、翻訳処理を別実装しない。
+ * カメラはフォーカス中かつカメラ選択中だけマウントする（メインカメラとsessionを同時に動かさない）。
  */
+import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
+import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
+import { isLiveTextPlatformSupported } from '@/components/live-text/LiveTextScanner';
+import { LiveTranslationCamera } from '@/components/live-text/LiveTranslationCamera';
+import { PhotoTranslationPanel } from '@/components/live-text/PhotoTranslationPanel';
 import { TranslationHost, isTranslationPlatformSupported } from '@/components/translation-host';
 import { EmptyState, ErrorMessage, GhostButton, PrimaryButton, SectionCard, Toast } from '@/components/ui';
 import { VoiceSelectSheet } from '@/components/domain/VoiceSelectSheet';
@@ -42,6 +53,7 @@ import {
 } from '@/config/speech-locales';
 import { getLanguageDisplayName } from '@/config/translation-language-names';
 import { getTranslationSourceLanguage } from '@/config/translation-languages';
+import { usePhotoTranslation } from '@/hooks/use-photo-translation';
 import { useTrips } from '@/hooks/use-trips';
 import type { SpeechRecognitionErrorCode } from '@/lib/speech-recognition-service';
 import {
@@ -104,6 +116,25 @@ type SpeechScreenError =
   | { kind: 'permission_prompt_denied' }
   | { kind: 'recognition'; code: SpeechRecognitionErrorCode };
 
+/** 翻訳の入力方法。音声はテキスト入力カードのマイクから使う */
+type InputMode = 'text' | 'photo' | 'camera';
+
+const INPUT_MODE_ITEMS: {
+  mode: InputMode;
+  label: string;
+  icon: NonNullable<SymbolViewProps['name']>;
+}[] = [
+  { mode: 'text', label: 'テキスト・音声', icon: { ios: 'keyboard', android: 'keyboard', web: 'keyboard' } },
+  { mode: 'photo', label: '写真', icon: { ios: 'photo.on.rectangle', android: 'image', web: 'image' } },
+  { mode: 'camera', label: 'カメラ', icon: { ios: 'camera.viewfinder', android: 'photo_camera', web: 'photo_camera' } },
+];
+
+const INPUT_MODE_SUBTITLE: Record<InputMode, string> = {
+  text: '入力した文章や話した言葉を翻訳します',
+  photo: 'メニューや説明文を写真から読み取って翻訳します',
+  camera: 'カメラを向けた文字をその場で翻訳します',
+};
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -148,6 +179,7 @@ export default function TranslationScreen() {
 
   // UI
   const [toast, setToast] = useState<string | null>(null);
+  const [inputMode, setInputMode] = useState<InputMode>('text');
 
   // 音声入力（STT）。翻訳のstate群とは独立して持ち、既存の翻訳フローへ影響させない
   const [speechAvailable, setSpeechAvailable] = useState(false);
@@ -273,6 +305,9 @@ export default function TranslationScreen() {
 
   const source = languageOverride?.source ?? initialLanguages?.source ?? null;
   const target = languageOverride?.target ?? initialLanguages?.target ?? null;
+
+  // 写真翻訳（写真を撮る／選ぶ → 静止画OCR → 段落ごとに翻訳）。翻訳元・翻訳先を変えると同じ写真で訳し直す
+  const photo = usePhotoTranslation({ sourceLanguage: source, targetLanguage: target });
 
   // MARK: - 言語選択画面からの戻り値（route params）を消費する
 
@@ -423,15 +458,84 @@ export default function TranslationScreen() {
     setErrorCode(result.errorCode ?? 'translation_failed');
   }
 
-  async function handleCopy() {
-    if (resultText == null || resultText === '') return;
+  async function handleCopy(text: string | null = resultText) {
+    if (text == null || text === '') return;
     try {
       const Clipboard = await import('expo-clipboard');
-      await Clipboard.setStringAsync(resultText);
+      await Clipboard.setStringAsync(text);
       setToast('コピーしました');
     } catch {
       // native module未搭載のBuild等でも画面をクラッシュさせない
     }
+  }
+
+  // MARK: - 入力方法（テキスト・音声／写真／カメラ）
+
+  function handleChangeInputMode(next: InputMode) {
+    if (next === inputMode) return;
+    // 音声入力中・読み上げ中のまま別の入力方法へ移らない（マイク・audio sessionを残さない）
+    if (isListening) {
+      setIsListening(false);
+      setInterimText('');
+      micRequestRef.current += 1;
+      void abortRecognition();
+    }
+    if (isSpeaking) {
+      setIsSpeaking(false);
+      void stopSpeaking();
+    }
+    setInputMode(next);
+  }
+
+  /** 写真翻訳：カメラで撮る（OSのカメラ画面）。写真はアプリのキャッシュにだけ置き、保存しない */
+  async function handleTakePhotoForTranslation() {
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(
+          'カメラを使用できません',
+          '写真を撮って翻訳するには、設定アプリでカメラへのアクセスを許可してください。',
+          permission.canAskAgain
+            ? [{ text: 'OK' }]
+            : [{ text: 'あとで', style: 'cancel' }, { text: '設定を開く', onPress: () => { void Linking.openSettings(); } }],
+        );
+        return;
+      }
+      const captured = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9, allowsEditing: false });
+      if (captured.canceled || !captured.assets[0]) return;
+      setInputMode('photo');
+      photo.start(captured.assets[0].uri);
+    } catch (error) {
+      if (__DEV__) console.warn('[PhotoTranslation] camera', error);
+    }
+  }
+
+  /** 写真翻訳：写真ライブラリから選ぶ（選んだ写真のコピーを読むだけで、元の写真は変更しない） */
+  async function handlePickPhotoForTranslation() {
+    try {
+      const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9, allowsEditing: false });
+      if (picked.canceled || !picked.assets[0]) return;
+      setInputMode('photo');
+      photo.start(picked.assets[0].uri);
+    } catch (error) {
+      if (__DEV__) console.warn('[PhotoTranslation] library', error);
+    }
+  }
+
+  /** カメラ翻訳のシャッター：撮った写真を写真翻訳へ渡す */
+  function handleLiveCameraCapture(uri: string) {
+    setInputMode('photo');
+    photo.start(uri);
+  }
+
+  /** 写真から読み取った原文をテキスト入力へ移す（誤読を直してから翻訳し直せるように） */
+  function handleUsePhotoTextAsInput(text: string) {
+    generationRef.current += 1;
+    stopSlowHintTimer();
+    setIsTranslating(false);
+    clearResult();
+    setInputText(clampInputLength(text));
+    setInputMode('text');
   }
 
   // MARK: - 音声入力（STT）
@@ -509,13 +613,13 @@ export default function TranslationScreen() {
   // MARK: - 読み上げ（TTS）
 
   /** スピーカーtap。読み上げ中なら停止（同じアイコンでtoggle。専用stopボタンは増やさない） */
-  async function handleSpeakerPress() {
+  async function handleSpeakerPress(text: string | null = resultText) {
     if (isSpeaking) {
       await stopSpeaking();
       setIsSpeaking(false);
       return;
     }
-    if (resultText == null || resultText === '') return;
+    if (text == null || text === '') return;
 
     // manual設定（保存identifier）を優先し、現在のvoices一覧に無ければ自動選択（Enhanced優先）へ
     // fallbackする。試聴（VoiceSelectSheet）と同じ関数を経由し、解決結果を一致させる。
@@ -527,7 +631,7 @@ export default function TranslationScreen() {
     // 言語別の体感速度差をrateで補正する（Human実機確認ベース。voice選択とは独立）
     const rate = resolveTtsRate(target);
     const started = await speakText(
-      { text: resultText, language: selection.language, voiceIdentifier: selection.voiceIdentifier, rate },
+      { text, language: selection.language, voiceIdentifier: selection.voiceIdentifier, rate },
       {
         onStart: () => setIsSpeaking(true),
         onFinish: () => setIsSpeaking(false),
@@ -639,7 +743,7 @@ export default function TranslationScreen() {
           {/* タイトル（下タブ画面はheaderShown:falseのため画面内に描く） */}
           <View style={styles.titleRow}>
             <ThemedText style={styles.title}>翻訳</ThemedText>
-            <ThemedText style={styles.subtitle}>入力した文章をその場で翻訳します</ThemedText>
+            <ThemedText style={styles.subtitle}>{INPUT_MODE_SUBTITLE[inputMode]}</ThemedText>
           </View>
 
           {/* 旅行設定バッジ。国名は推測で作らず、旅行名と通貨コードだけを出す */}
@@ -697,225 +801,285 @@ export default function TranslationScreen() {
             <ErrorMessage message="この端末で利用できる翻訳言語を取得できませんでした。アプリを再起動してもう一度お試しください。" />
           )}
 
-          {/* 入力カード */}
-          <SectionCard padding={0} style={styles.inputCard}>
-            <TextInput
-              style={[styles.input, Platform.OS === 'web' && ({ outlineStyle: 'none' } as object)]}
-              value={inputText}
-              onChangeText={handleChangeInput}
-              placeholder="テキストを入力または貼り付けてください"
-              placeholderTextColor={color.faint2}
-              multiline
-              textAlignVertical="top"
-              maxLength={MAX_TRANSLATION_INPUT_LENGTH}
-              scrollEnabled={false}
-            />
-            <View style={styles.inputFooter}>
-              {/*
-                音声入力。非対応環境（native未搭載・iOS以外）では描かない。
-                認識中は同じボタンが停止になる（push-to-talkではなくtoggle）。
-              */}
-              {speechAvailable ? (
+          {/* 入力方法の切替（テキスト・音声／写真／カメラ）。メインカメラのモード切替と同じ見た目 */}
+          <View style={styles.modeSegment}>
+            {INPUT_MODE_ITEMS.map((item) => {
+              const selected = inputMode === item.mode;
+              return (
                 <Pressable
-                  style={({ pressed }) => [
-                    styles.micBtn,
-                    isListening && styles.micBtnActive,
-                    !canUseMic && !isListening && styles.micBtnDisabled,
-                    pressed && styles.pressed,
-                  ]}
-                  onPress={() => void handleMicPress()}
-                  disabled={!canUseMic && !isListening}
-                  accessibilityRole="button"
-                  accessibilityLabel={isListening ? '音声入力を停止' : '音声入力を開始'}
-                  accessibilityState={{ disabled: !canUseMic && !isListening }}>
+                  key={item.mode}
+                  style={[styles.modeSegmentBtn, selected && styles.modeSegmentBtnActive]}
+                  onPress={() => handleChangeInputMode(item.mode)}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected }}>
                   <SymbolView
-                    name={{
-                      ios: isListening ? 'stop.fill' : 'mic.fill',
-                      android: 'mic',
-                      web: 'mic',
-                    }}
-                    tintColor={isListening ? '#fff' : canUseMic ? color.primaryDark : color.faint2}
+                    name={item.icon}
+                    tintColor={selected ? color.primaryDark : color.muted}
+                    weight="semibold"
                     size={15}
                   />
-                  <ThemedText
-                    style={[
-                      styles.micBtnText,
-                      isListening && styles.micBtnTextActive,
-                      !canUseMic && !isListening && styles.micBtnTextDisabled,
-                    ]}>
-                    {isListening ? '停止' : '音声入力'}
+                  <ThemedText style={[styles.modeSegmentText, selected && styles.modeSegmentTextActive]}>
+                    {item.label}
                   </ThemedText>
                 </Pressable>
-              ) : (
-                <View />
-              )}
-
-              <ThemedText style={styles.counter}>
-                {inputText.length} / {MAX_TRANSLATION_INPUT_LENGTH}
-              </ThemedText>
-            </View>
-          </SectionCard>
-
-          {/*
-            認識中の補助表示。**interimはここにだけ出し、入力欄へは書き込まない**
-            （確定時のみ`clampInputLength`を通してinputTextへ反映する）。
-          */}
-          {isListening && (
-            <View style={styles.listeningBox}>
-              <View style={styles.listeningHeader}>
-                <ActivityIndicator size="small" color={color.primaryDark} />
-                <ThemedText style={styles.listeningLabel}>聞き取り中…</ThemedText>
-              </View>
-              <ThemedText style={styles.interimText} numberOfLines={3}>
-                {interimText === '' ? '話しかけてください' : interimText}
-              </ThemedText>
-            </View>
-          )}
-
-          {/* 翻訳はできるが音声認識に対応しない言語。言語選択は変えずマイクだけ無効化する */}
-          {micUnsupported && !isListening && (
-            <ThemedText style={styles.micNote}>
-              {getLanguageDisplayName(source ?? '')}は音声入力に対応していません
-            </ThemedText>
-          )}
-
-          {speechError != null && (
-            <View style={styles.errorWrap}>
-              <ErrorMessage
-                message={
-                  speechError.kind === 'permission_blocked'
-                    ? 'マイクと音声認識の使用が許可されていません。設定から許可してください。'
-                    : speechError.kind === 'permission_prompt_denied'
-                      ? 'マイクと音声認識の使用を許可すると音声入力を利用できます。'
-                      : SPEECH_ERROR_MESSAGES[speechError.code]
-                }
-              />
-              {/* 一度拒否されるとアプリ内から再要求できないため、設定アプリへ送るしかない */}
-              {speechError.kind === 'permission_blocked' && (
-                <GhostButton title="設定を開く" tone="primary" onPress={handleOpenSettings} />
-              )}
-            </View>
-          )}
-
-          {/* アクション（音声入力・カメラ翻訳は初版では置かない） */}
-          <View style={styles.actionRow}>
-            <GhostButton
-              title="クリア"
-              onPress={handleClear}
-              disabled={inputText === '' && resultText == null}
-            />
+              );
+            })}
           </View>
 
-          <PrimaryButton title="翻訳する" onPress={handleTranslate} disabled={!canTranslate} loading={isTranslating} />
-
-          {showSlowHint && isTranslating && (
-            <ThemedText style={styles.slowHint}>
-              初回は言語モデルの準備に時間がかかる場合があります。そのままお待ちください。
-            </ThemedText>
-          )}
-
-          {errorCode != null && errorCode !== 'cancelled' && (
-            <View style={styles.errorWrap}>
-              <ErrorMessage message={ERROR_MESSAGES[errorCode]} />
-              {(errorCode === 'host_unavailable' || errorCode === 'translation_failed') && (
-                <GhostButton title="もう一度試す" tone="primary" onPress={handleTranslate} />
-              )}
-            </View>
-          )}
-
-          {/* 訳文カード */}
-          <View style={styles.resultCard}>
-            <View style={styles.resultHeader}>
-              <ThemedText style={styles.resultLabel}>訳文</ThemedText>
-              {resolvedSourceLanguage != null && (
-                <ThemedText style={styles.resolvedLang}>
-                  検出：{getLanguageDisplayName(resolvedSourceLanguage)}
-                </ThemedText>
-              )}
-            </View>
-
-            {isTranslating ? (
-              <View style={styles.resultLoading}>
-                <ActivityIndicator color={color.primaryDark} />
-              </View>
-            ) : resultText != null && resultText !== '' ? (
-              <ThemedText style={styles.resultText} selectable>
-                {resultText}
-              </ThemedText>
-            ) : (
-              <ThemedText style={styles.resultPlaceholder}>ここに翻訳結果が表示されます</ThemedText>
-            )}
-
-            {hasResult && !isTranslating && (
-              <View style={styles.resultActions}>
-                {/* 読み上げ。target側の訳文のみ。同じアイコンで再生/停止をtoggleする */}
-                {voices.length > 0 && (
+          {inputMode === 'text' && (
+            <>
+            {/* 入力カード */}
+            <SectionCard padding={0} style={styles.inputCard}>
+              <TextInput
+                style={[styles.input, Platform.OS === 'web' && ({ outlineStyle: 'none' } as object)]}
+                value={inputText}
+                onChangeText={handleChangeInput}
+                placeholder="テキストを入力または貼り付けてください"
+                placeholderTextColor={color.faint2}
+                multiline
+                textAlignVertical="top"
+                maxLength={MAX_TRANSLATION_INPUT_LENGTH}
+                scrollEnabled={false}
+              />
+              <View style={styles.inputFooter}>
+                {/*
+                  音声入力。非対応環境（native未搭載・iOS以外）では描かない。
+                  認識中は同じボタンが停止になる（push-to-talkではなくtoggle）。
+                */}
+                {speechAvailable ? (
                   <Pressable
                     style={({ pressed }) => [
-                      styles.copyBtn,
-                      isSpeaking && styles.speakBtnActive,
-                      !canSpeak && !isSpeaking && styles.copyBtnDisabled,
+                      styles.micBtn,
+                      isListening && styles.micBtnActive,
+                      !canUseMic && !isListening && styles.micBtnDisabled,
                       pressed && styles.pressed,
                     ]}
-                    onPress={() => void handleSpeakerPress()}
-                    disabled={!canSpeak && !isSpeaking}
+                    onPress={() => void handleMicPress()}
+                    disabled={!canUseMic && !isListening}
                     accessibilityRole="button"
-                    accessibilityLabel={isSpeaking ? '読み上げを停止' : '訳文を読み上げる'}
-                    accessibilityState={{ disabled: !canSpeak && !isSpeaking }}>
+                    accessibilityLabel={isListening ? '音声入力を停止' : '音声入力を開始'}
+                    accessibilityState={{ disabled: !canUseMic && !isListening }}>
                     <SymbolView
                       name={{
-                        ios: isSpeaking ? 'stop.fill' : 'speaker.wave.2.fill',
-                        android: 'volume_up',
-                        web: 'volume_up',
+                        ios: isListening ? 'stop.fill' : 'mic.fill',
+                        android: 'mic',
+                        web: 'mic',
                       }}
-                      tintColor={isSpeaking ? '#fff' : canSpeak ? color.primaryDark : color.faint2}
-                      size={16}
+                      tintColor={isListening ? '#fff' : canUseMic ? color.primaryDark : color.faint2}
+                      size={15}
                     />
                     <ThemedText
                       style={[
-                        styles.copyBtnText,
-                        isSpeaking && styles.speakBtnTextActive,
-                        !canSpeak && !isSpeaking && styles.copyBtnTextDisabled,
+                        styles.micBtnText,
+                        isListening && styles.micBtnTextActive,
+                        !canUseMic && !isListening && styles.micBtnTextDisabled,
                       ]}>
-                      {isSpeaking ? '停止' : '読み上げ'}
+                      {isListening ? '停止' : '音声入力'}
                     </ThemedText>
                   </Pressable>
+                ) : (
+                  <View />
                 )}
 
-                {/* 言語別voice選択（自動/manual）。voicesが取得できる端末でのみ表示する */}
-                {voices.length > 0 && (
-                  <Pressable
-                    style={({ pressed }) => [styles.voiceSettingsBtn, pressed && styles.pressed]}
-                    onPress={() => void handleOpenVoiceSettings()}
-                    accessibilityRole="button"
-                    accessibilityLabel="読み上げ設定">
-                    <SymbolView
-                      name={{ ios: 'gearshape', android: 'settings', web: 'settings' }}
-                      tintColor={color.primaryDark}
-                      size={16}
-                    />
-                  </Pressable>
-                )}
+                <ThemedText style={styles.counter}>
+                  {inputText.length} / {MAX_TRANSLATION_INPUT_LENGTH}
+                </ThemedText>
+              </View>
+            </SectionCard>
 
-                <Pressable
-                  style={({ pressed }) => [styles.copyBtn, pressed && styles.pressed]}
-                  onPress={handleCopy}>
-                  <SymbolView
-                    name={{ ios: 'doc.on.doc', android: 'content_copy', web: 'content_copy' }}
-                    tintColor={color.primaryDark}
-                    size={16}
-                  />
-                  <ThemedText style={styles.copyBtnText}>コピー</ThemedText>
-                </Pressable>
+            {/*
+              認識中の補助表示。**interimはここにだけ出し、入力欄へは書き込まない**
+              （確定時のみ`clampInputLength`を通してinputTextへ反映する）。
+            */}
+            {isListening && (
+              <View style={styles.listeningBox}>
+                <View style={styles.listeningHeader}>
+                  <ActivityIndicator size="small" color={color.primaryDark} />
+                  <ThemedText style={styles.listeningLabel}>聞き取り中…</ThemedText>
+                </View>
+                <ThemedText style={styles.interimText} numberOfLines={3}>
+                  {interimText === '' ? '話しかけてください' : interimText}
+                </ThemedText>
               </View>
             )}
 
-            {/* voice非対応は明示する（別言語のvoiceで代読せず、無音で失敗もさせない） */}
-            {hasResult && !isTranslating && voices.length > 0 && ttsVoice.status === 'unsupported' && (
-              <ThemedText style={styles.ttsNote}>この言語の読み上げには対応していません</ThemedText>
+            {/* 翻訳はできるが音声認識に対応しない言語。言語選択は変えずマイクだけ無効化する */}
+            {micUnsupported && !isListening && (
+              <ThemedText style={styles.micNote}>
+                {getLanguageDisplayName(source ?? '')}は音声入力に対応していません
+              </ThemedText>
             )}
-            {speakFailed && <ThemedText style={styles.ttsNote}>読み上げできませんでした</ThemedText>}
-          </View>
+
+            {speechError != null && (
+              <View style={styles.errorWrap}>
+                <ErrorMessage
+                  message={
+                    speechError.kind === 'permission_blocked'
+                      ? 'マイクと音声認識の使用が許可されていません。設定から許可してください。'
+                      : speechError.kind === 'permission_prompt_denied'
+                        ? 'マイクと音声認識の使用を許可すると音声入力を利用できます。'
+                        : SPEECH_ERROR_MESSAGES[speechError.code]
+                  }
+                />
+                {/* 一度拒否されるとアプリ内から再要求できないため、設定アプリへ送るしかない */}
+                {speechError.kind === 'permission_blocked' && (
+                  <GhostButton title="設定を開く" tone="primary" onPress={handleOpenSettings} />
+                )}
+              </View>
+            )}
+
+            {/* アクション */}
+            <View style={styles.actionRow}>
+              <GhostButton
+                title="クリア"
+                onPress={handleClear}
+                disabled={inputText === '' && resultText == null}
+              />
+            </View>
+
+            <PrimaryButton title="翻訳する" onPress={handleTranslate} disabled={!canTranslate} loading={isTranslating} />
+
+            {showSlowHint && isTranslating && (
+              <ThemedText style={styles.slowHint}>
+                初回は言語モデルの準備に時間がかかる場合があります。そのままお待ちください。
+              </ThemedText>
+            )}
+
+            {errorCode != null && errorCode !== 'cancelled' && (
+              <View style={styles.errorWrap}>
+                <ErrorMessage message={ERROR_MESSAGES[errorCode]} />
+                {(errorCode === 'host_unavailable' || errorCode === 'translation_failed') && (
+                  <GhostButton title="もう一度試す" tone="primary" onPress={handleTranslate} />
+                )}
+              </View>
+            )}
+
+            {/* 訳文カード */}
+            <View style={styles.resultCard}>
+              <View style={styles.resultHeader}>
+                <ThemedText style={styles.resultLabel}>訳文</ThemedText>
+                {resolvedSourceLanguage != null && (
+                  <ThemedText style={styles.resolvedLang}>
+                    検出：{getLanguageDisplayName(resolvedSourceLanguage)}
+                  </ThemedText>
+                )}
+              </View>
+
+              {isTranslating ? (
+                <View style={styles.resultLoading}>
+                  <ActivityIndicator color={color.primaryDark} />
+                </View>
+              ) : resultText != null && resultText !== '' ? (
+                <ThemedText style={styles.resultText} selectable>
+                  {resultText}
+                </ThemedText>
+              ) : (
+                <ThemedText style={styles.resultPlaceholder}>ここに翻訳結果が表示されます</ThemedText>
+              )}
+
+              {hasResult && !isTranslating && (
+                <View style={styles.resultActions}>
+                  {/* 読み上げ。target側の訳文のみ。同じアイコンで再生/停止をtoggleする */}
+                  {voices.length > 0 && (
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.copyBtn,
+                        isSpeaking && styles.speakBtnActive,
+                        !canSpeak && !isSpeaking && styles.copyBtnDisabled,
+                        pressed && styles.pressed,
+                      ]}
+                      onPress={() => void handleSpeakerPress()}
+                      disabled={!canSpeak && !isSpeaking}
+                      accessibilityRole="button"
+                      accessibilityLabel={isSpeaking ? '読み上げを停止' : '訳文を読み上げる'}
+                      accessibilityState={{ disabled: !canSpeak && !isSpeaking }}>
+                      <SymbolView
+                        name={{
+                          ios: isSpeaking ? 'stop.fill' : 'speaker.wave.2.fill',
+                          android: 'volume_up',
+                          web: 'volume_up',
+                        }}
+                        tintColor={isSpeaking ? '#fff' : canSpeak ? color.primaryDark : color.faint2}
+                        size={16}
+                      />
+                      <ThemedText
+                        style={[
+                          styles.copyBtnText,
+                          isSpeaking && styles.speakBtnTextActive,
+                          !canSpeak && !isSpeaking && styles.copyBtnTextDisabled,
+                        ]}>
+                        {isSpeaking ? '停止' : '読み上げ'}
+                      </ThemedText>
+                    </Pressable>
+                  )}
+
+                  {/* 言語別voice選択（自動/manual）。voicesが取得できる端末でのみ表示する */}
+                  {voices.length > 0 && (
+                    <Pressable
+                      style={({ pressed }) => [styles.voiceSettingsBtn, pressed && styles.pressed]}
+                      onPress={() => void handleOpenVoiceSettings()}
+                      accessibilityRole="button"
+                      accessibilityLabel="読み上げ設定">
+                      <SymbolView
+                        name={{ ios: 'gearshape', android: 'settings', web: 'settings' }}
+                        tintColor={color.primaryDark}
+                        size={16}
+                      />
+                    </Pressable>
+                  )}
+
+                  <Pressable
+                    style={({ pressed }) => [styles.copyBtn, pressed && styles.pressed]}
+                    onPress={() => void handleCopy()}>
+                    <SymbolView
+                      name={{ ios: 'doc.on.doc', android: 'content_copy', web: 'content_copy' }}
+                      tintColor={color.primaryDark}
+                      size={16}
+                    />
+                    <ThemedText style={styles.copyBtnText}>コピー</ThemedText>
+                  </Pressable>
+                </View>
+              )}
+
+              {/* voice非対応は明示する（別言語のvoiceで代読せず、無音で失敗もさせない） */}
+              {hasResult && !isTranslating && voices.length > 0 && ttsVoice.status === 'unsupported' && (
+                <ThemedText style={styles.ttsNote}>この言語の読み上げには対応していません</ThemedText>
+              )}
+              {speakFailed && <ThemedText style={styles.ttsNote}>読み上げできませんでした</ThemedText>}
+            </View>
+            </>
+          )}
+
+          {inputMode === 'photo' && (
+            <PhotoTranslationPanel
+              state={photo.state}
+              onTakePhoto={() => void handleTakePhotoForTranslation()}
+              onPickPhoto={() => void handlePickPhotoForTranslation()}
+              onRetry={photo.retry}
+              onClear={photo.clear}
+              onCopy={(text) => void handleCopy(text)}
+              onUseAsInput={handleUsePhotoTextAsInput}
+              onSpeak={
+                voices.length > 0 && ttsVoice.status !== 'unsupported'
+                  ? (text) => void handleSpeakerPress(text)
+                  : undefined
+              }
+              isSpeaking={isSpeaking}
+              speakFailed={speakFailed}
+            />
+          )}
+
+          {/* カメラはこの画面にフォーカスがある間だけマウントする（メインカメラとsessionを同時に動かさない） */}
+          {inputMode === 'camera' && !isLiveTextPlatformSupported && (
+            <ErrorMessage message="カメラ翻訳はiPhoneでのみ利用できます。写真から翻訳をお試しください。" />
+          )}
+          {inputMode === 'camera' && isLiveTextPlatformSupported && isScreenFocused && source != null && target != null && (
+            <LiveTranslationCamera
+              sourceLanguage={source}
+              targetLanguage={target}
+              onCapture={handleLiveCameraCapture}
+            />
+          )}
 
         </ScrollView>
       </SafeAreaView>
@@ -963,6 +1127,34 @@ const styles = StyleSheet.create({
   tripBadgeText: { fontSize: 12, fontWeight: '600', color: color.primaryDark },
 
   langBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+
+  // 入力方法の切替（メインカメラの価格OCR／商品写真の切替と同じ見た目）
+  modeSegment: {
+    flexDirection: 'row',
+    backgroundColor: color.line2,
+    borderRadius: radius.chip,
+    padding: 3,
+    gap: 3,
+  },
+  modeSegmentBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 9,
+    borderRadius: 10,
+  },
+  modeSegmentBtnActive: {
+    backgroundColor: color.card,
+    shadowColor: '#10211F',
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
+  modeSegmentText: { fontSize: 13, fontWeight: '600', color: color.muted },
+  modeSegmentTextActive: { color: color.text, fontWeight: '700' },
   langCard: {
     flex: 1,
     gap: 1,

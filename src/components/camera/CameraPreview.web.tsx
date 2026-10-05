@@ -13,6 +13,15 @@ export interface CameraPreviewProps {
   onAmountChange?: (text: string) => void;
   onOcrResult?: (rawText: string) => void;
   onPhotoCapture?: (uri: string) => void;
+  /** native版でのみ使用（カメラsessionを画面フォーカス中だけ動かす）。この版では無視する */
+  active?: boolean;
+  /** native版（iOS）でのみ使用するスマートカメラ設定。この版では無視する */
+  smartCamera?: {
+    sourceLanguage: string;
+    targetLanguage: string;
+    enabled: boolean;
+    onToggle: () => void;
+  } | null;
 }
 
 export function CameraPreview(_props: CameraPreviewProps) {

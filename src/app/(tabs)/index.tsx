@@ -28,6 +28,8 @@ import { FREE_LIMITS, canSaveEntry } from '@/config/limits';
 import { SHOW_PRO } from '@/config/feature-flags';
 import { getTranslationSourceLanguage } from '@/config/translation-languages';
 import { createPendingCandidates, translateMemoLines } from '@/lib/translation-service';
+import { getSmartCameraEnabled, SMART_CAMERA_DEFAULT_ENABLED, setSmartCameraEnabled } from '@/lib/smart-camera-preferences';
+import { DEFAULT_TARGET_LANGUAGE } from '@/lib/text-translation-core';
 import type { MemoCandidate } from '@/lib/translation-types';
 import { useHistory } from '@/hooks/use-history';
 import { useIsPro } from '@/hooks/use-purchases';
@@ -157,6 +159,11 @@ export default function CameraScreen() {
   const [memoCandidates, setMemoCandidates] = useState<MemoCandidate[] | null>(null);
   // 翻訳ホストViewはこの画面にフォーカスがある間だけマウントする。
   const [isScreenFocused, setIsScreenFocused] = useState(false);
+  // カメラのsessionを動かすか（全プラットフォーム共通）。下タブ画面はアンマウントされないため、
+  // 他タブ（翻訳タブのカメラ等）表示中はカメラを止める。isScreenFocusedはiOS限定で立つので流用しない。
+  const [isCameraFocused, setIsCameraFocused] = useState(true);
+  // スマートカメラ（かざして翻訳・円換算）のON/OFF。端末に保存し、既定はON
+  const [smartCameraEnabled, setSmartCameraEnabledState] = useState(SMART_CAMERA_DEFAULT_ENABLED);
 
   const scrollViewRef = useRef<ScrollView>(null);
   // 下タブでこのタブ（カメラ）を押した時（＝タブ切替で入ってきた時）だけ先頭へ戻す。
@@ -227,6 +234,23 @@ export default function CameraScreen() {
       };
     }, []),
   );
+
+  useFocusEffect(
+    useCallback(() => {
+      setIsCameraFocused(true);
+      return () => setIsCameraFocused(false);
+    }, []),
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void getSmartCameraEnabled().then((enabled) => {
+      if (!cancelled) setSmartCameraEnabledState(enabled);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const isJpyMode = activeTrip?.base_currency === 'JPY';
   const currencyForDisplay = activeTrip?.base_currency ?? selectedCurrency;
@@ -893,6 +917,25 @@ export default function CameraScreen() {
     }
   }
 
+  function handleToggleSmartCamera() {
+    const next = !smartCameraEnabled;
+    setSmartCameraEnabledState(next);
+    void setSmartCameraEnabled(next);
+  }
+
+  // スマートカメラ（iOSのみ）。翻訳元は通貨hint（既存のメモ候補翻訳と同じ`getTranslationSourceLanguage`）。
+  // JPY（国内）旅行では翻訳も円換算も不要なので出さない。翻訳先はアプリ既定のja。
+  const smartCameraSourceLanguage = getTranslationSourceLanguage(currencyForDisplay);
+  const smartCamera =
+    Platform.OS === 'ios' && smartCameraSourceLanguage != null
+      ? {
+          sourceLanguage: smartCameraSourceLanguage,
+          targetLanguage: DEFAULT_TARGET_LANGUAGE,
+          enabled: smartCameraEnabled,
+          onToggle: handleToggleSmartCamera,
+        }
+      : null;
+
   const cameraPreview = (
     <CameraPreview
       key={scanKey}
@@ -901,6 +944,8 @@ export default function CameraScreen() {
       remainingIfSaved={remainingIfSaved}
       onOcrResult={Platform.OS !== 'web' ? handleOcrResult : undefined}
       onPhotoCapture={Platform.OS !== 'web' ? handlePhotoCapture : undefined}
+      active={isCameraFocused}
+      smartCamera={smartCamera}
     />
   );
 

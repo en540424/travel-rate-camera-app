@@ -6,6 +6,8 @@ import { ActivityIndicator, Linking, Platform, StyleSheet, TouchableOpacity, Vie
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 import { ThemedText } from '@/components/themed-text';
+import { SmartCameraLayer } from '@/components/live-text/SmartCameraLayer';
+import { isLiveTextPlatformSupported } from '@/components/live-text/LiveTextScanner';
 import type { CurrencyCode } from '@/constants/currencies';
 import { getOcrLanguagesForCurrency } from '@/config/ocr-languages';
 import { color } from '@/theme/tokens';
@@ -21,7 +23,25 @@ export interface CameraPreviewProps {
   onOcrResult?: (rawText: string) => void;
   /** 撮影した写真のURIを呼び出し元へ渡す */
   onPhotoCapture?: (uri: string) => void;
+  /**
+   * カメラのsessionを動かすか（画面フォーカス中だけtrueにする）。未指定はtrue（従来どおり）。
+   * 下タブ画面はアンマウントされないため、翻訳タブのカメラと同時にsessionが動かないよう止める。
+   * 撮影・OCR処理中は離脱してもsessionを止めない（処理中の撮影を失敗させない）。
+   */
+  active?: boolean;
+  /**
+   * スマートカメラ（かざすだけで翻訳・円換算を表示）。iOSのみ。nullなら出さない（JPY旅行など）。
+   * 価格OCR・保存フロー（読み取るボタン）は置き換えない。
+   */
+  smartCamera?: SmartCameraOptions | null;
 }
+
+export type SmartCameraOptions = {
+  sourceLanguage: string;
+  targetLanguage: string;
+  enabled: boolean;
+  onToggle: () => void;
+};
 
 // zoom（expo-cameraのzoomプロップ、0〜1）と表示倍率（1.0x〜3.0x）の対応。
 // 既存の1x/2x/3xプリセット（0, 0.25, 0.5）がちょうど display=1+4*zoom の直線に乗るため、
@@ -77,8 +97,17 @@ async function recognizeText(uri: string, currency: CurrencyCode): Promise<strin
   return normalizeLegacyOcrResult(await extractTextFromImage(uri));
 }
 
-export function CameraPreview({ currency, onOcrResult, onPhotoCapture }: CameraPreviewProps) {
+export function CameraPreview({
+  currency,
+  rate,
+  onOcrResult,
+  onPhotoCapture,
+  active = true,
+  smartCamera = null,
+}: CameraPreviewProps) {
   const [permission, requestPermission] = useCameraPermissions();
+  // sessionの開始完了（onCameraReady）。スマートカメラはこれ以降にだけ映像フレーム出力を追加する
+  const [cameraReady, setCameraReady] = useState(false);
   // 撮影前（高倍率時のみ）の手ブレ対策の安定待ち。OCR処理中とは別stateで管理し、
   // 1x〜2.4xではこのstateが一切trueにならないようにする。
   const [isStabilizing, setIsStabilizing] = useState(false);
@@ -176,7 +205,13 @@ export function CameraPreview({ currency, onOcrResult, onPhotoCapture }: CameraP
       <GestureDetector gesture={pinchGesture}>
       <View style={styles.previewFrame}>
         {/* カメラフィード */}
-        <CameraView ref={cameraRef} style={styles.camera} zoom={zoom} />
+        <CameraView
+          ref={cameraRef}
+          style={styles.camera}
+          zoom={zoom}
+          active={active || isBusy}
+          onCameraReady={() => setCameraReady(true)}
+        />
 
         {/* ビューファインダー四隅（外側＝白ベース＋薄いティールのグロー） */}
         <View style={[styles.corner, styles.cornerTL]} />
@@ -200,6 +235,22 @@ export function CameraPreview({ currency, onOcrResult, onPhotoCapture }: CameraP
         <TouchableOpacity style={styles.zoomBtn} onPress={cycleZoom} activeOpacity={0.75}>
           <ThemedText style={styles.zoomBtnText}>{zoomLabel(zoom)}</ThemedText>
         </TouchableOpacity>
+
+        {/* スマートカメラ（iOS）：かざすだけで翻訳・価格・円換算を枠の下部に表示する。
+            撮影・OCR処理中（isBusy）・他タブ表示中（!active）はフレームを捨てるだけで、
+            映像出力の付け外しも撮影経路への干渉もしない。 */}
+        {smartCamera != null && isLiveTextPlatformSupported && (
+          <SmartCameraLayer
+            currency={currency}
+            rate={rate}
+            sourceLanguage={smartCamera.sourceLanguage}
+            targetLanguage={smartCamera.targetLanguage}
+            enabled={smartCamera.enabled}
+            onToggle={smartCamera.onToggle}
+            cameraReady={cameraReady}
+            paused={isBusy || !active}
+          />
+        )}
 
         {/* 安定待ちオーバーレイ（高倍率時のみ・isStabilizing連動）。1x〜2.4xでは絶対に表示されない。
             OCR処理中オーバーレイとは別state・別文言にして混同を避ける（タップは奪わない）。 */}
