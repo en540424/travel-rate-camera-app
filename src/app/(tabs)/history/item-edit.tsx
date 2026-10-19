@@ -472,11 +472,15 @@ export default function ItemEditScreen() {
         <View style={styles.formGroup}>
           {/* 保存写真 */}
           <View style={styles.photoRow}>
-            <Pressable onPress={() => draftPhotoUri && setPhotoOpen(true)} disabled={!draftPhotoUri} style={styles.thumb}>
+            <Pressable
+              onPress={() => draftPhotoUri && setPhotoOpen(true)}
+              disabled={!draftPhotoUri}
+              style={[styles.thumb, draftPhotoUri ? styles.thumbFilled : null]}>
               {draftPhotoUri ? (
                 // 保存済みURIはアプリコンテナ再割当てで無効化しうるため、詳細画面と同じ
                 // ResilientPhoto経由で現在のdocumentDirectory基準へ再解決してから表示する。
-                <ResilientPhoto uri={draftPhotoUri} style={styles.thumbImage} contentFit="cover" />
+                // 詳細画面・保存前と同じく保存写真全体を見せる（contain・余白は暗く）。
+                <ResilientPhoto uri={draftPhotoUri} style={styles.thumbImage} contentFit="contain" />
               ) : (
                 <View style={styles.thumbPlaceholder}>
                   <ThemedText style={styles.thumbPlaceholderText}>なし</ThemedText>
@@ -633,6 +637,7 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   thumb: { width: 72, height: 72, borderRadius: radius.chip, overflow: 'hidden', backgroundColor: color.line2 },
+  thumbFilled: { backgroundColor: color.dark },
   thumbImage: { width: '100%', height: '100%' },
   thumbPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   thumbPlaceholderText: { fontSize: 11, fontWeight: '600', color: color.faint2 },

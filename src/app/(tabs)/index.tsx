@@ -1077,7 +1077,7 @@ export default function CameraScreen() {
                               <Image
                                 source={{ uri: ocrPreviewUri }}
                                 style={styles.newPhotoCandidateThumb}
-                                contentFit="cover"
+                                contentFit="contain"
                               />
                             ) : (
                               <SymbolView
@@ -1097,7 +1097,7 @@ export default function CameraScreen() {
                               <Image
                                 source={{ uri: ocrResultCandidate.photoUri }}
                                 style={styles.newPhotoCandidateThumb}
-                                contentFit="cover"
+                                contentFit="contain"
                               />
                             ) : (
                               <SymbolView
@@ -1793,7 +1793,7 @@ export default function CameraScreen() {
                                       <Image
                                         source={{ uri: pendingPhotoUri }}
                                         style={styles.newPhotoCandidateThumb}
-                                        contentFit="cover"
+                                        contentFit="contain"
                                       />
                                     ) : (
                                       <SymbolView
@@ -1812,7 +1812,7 @@ export default function CameraScreen() {
                                     <Image
                                       source={{ uri: newPhotoCandidate.uri }}
                                       style={styles.newPhotoCandidateThumb}
-                                      contentFit="cover"
+                                      contentFit="contain"
                                     />
                                   </View>
                                   <ThemedText style={styles.newPhotoCandidateCompareLabel}>
@@ -2991,10 +2991,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  // 保存対象写真があるときの枠（3:4＝iPhoneの縦撮り写真がちょうど収まる比率。横長写真は上下に余白が出る）
+  // 保存対象写真があるときの枠（3:4＝iPhoneの縦撮り写真がちょうど収まる比率。横長写真は上下に余白が出る）。
+  // 余白は暗くし、写真の端＝保存範囲の端を見分けられるようにする（明るい背景だと白い値札と同化する）
   photoSettingsThumbWrapLarge: {
     width: 120,
     height: 160,
+    backgroundColor: color.dark,
   },
   photoSettingsThumb: {
     width: '100%',
@@ -3081,6 +3083,8 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: radius.chip,
+    // 写真全体（contain）の外側を暗くし、写真の端を見分けられるようにする（明るい背景だと白い値札と同化する）
+    backgroundColor: color.dark,
   },
   newPhotoCandidateCompareLabel: {
     fontSize: 11,

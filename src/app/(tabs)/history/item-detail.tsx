@@ -144,11 +144,12 @@ export default function ItemDetailScreen() {
         bounces={canScroll}
         overScrollMode={canScroll ? 'auto' : 'never'}>
         {/* 大判写真。保存写真全体を見せる（contain）＝保存前のプレビュー（カメラ画面）と同じ範囲。
-            coverだと縦長写真の中央帯だけになり、保存前と別の範囲に見えていた。タップで拡大。 */}
+            coverだと縦長写真の中央帯だけになり、保存前と別の範囲に見えていた。タップで拡大。
+            写真がある時は余白を暗くして写真の端を見分けられるようにする（写真なしの表示は従来どおり）。 */}
         <Pressable
           onPress={() => item.image_uri && setPhotoOpen(true)}
           disabled={!item.image_uri}
-          style={styles.photo}>
+          style={[styles.photo, item.image_uri ? styles.photoFilled : null]}>
           {item.image_uri ? (
             <ResilientPhoto uri={item.image_uri} style={styles.photoImage} contentFit="contain" />
           ) : (
@@ -269,6 +270,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: color.line2,
   },
+  photoFilled: { backgroundColor: color.dark },
   photoImage: { width: '100%', height: '100%' },
   photoPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   photoPlaceholderText: { fontSize: 13, fontWeight: '600', color: color.faint2 },
