@@ -53,6 +53,21 @@ import {
 import type { VisionOcrBenchmarkArmDefinition, VisionOcrBenchmarkArmId, VisionOcrBenchmarkResult } from '@/utils/ocr-benchmark';
 import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
 import { remainingSaveSlots, shouldShowNearSaveLimit } from '@/utils/budget-core';
+import {
+  adoptChosenPhoto,
+  adoptNewReadingPhoto,
+  captureFirstScanPhoto,
+  EMPTY_SAVE_PHOTO_STATE,
+  isFirstScanCapture,
+  keepCurrentPhoto,
+  photoUriToSave,
+  removeSavePhoto,
+  type SavePhotoState,
+  selectNewPhotoCandidate,
+  selectReadingPhoto,
+  showReadingPhoto,
+  toggleExcludePhoto,
+} from '@/utils/save-photo-state';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
 const MEMO_PREVIEW_COUNT = 3;
@@ -91,23 +106,15 @@ export default function CameraScreen() {
     memoLines: string[];
   } | null>(null);
   const [ocrRawExpanded, setOcrRawExpanded] = useState(false);
-  const [pendingPhotoUri, setPendingPhotoUri] = useState<string | null>(null);
-  // pendingPhotoUriの出どころ。「履歴に残す写真」カードの文言分岐に使う（値札写真のままか/商品写真等に変えたか）
-  const [pendingPhotoSource, setPendingPhotoSource] = useState<'ocr' | 'product' | 'library' | null>(null);
-  // 「写真なしで保存」：保存対象写真(pendingPhotoUri)はそのまま保持し、保存時だけ写真を付けない。
-  // 上部のOCR写真プレビュー（読み取り確認用・ocrPreviewUri）はpendingPhotoUriに依存するため、ここでは消さない。
-  const [excludePhotoFromSave, setExcludePhotoFromSave] = useState(false);
-  const [ocrPhotoUri, setOcrPhotoUri] = useState<string | null>(null);
-  // 再読み取りで得た新しい結果（写真込み）。「新しい読み取りを使う」を選ぶまでocrResult/ocrPhotoUriへは反映しない
+  // 保存する写真の状態（保存対象pendingPhotoUri・出どころ・「写真なしで保存」・読み取った値札ocrPhotoUri・保存欄の候補）。
+  // 「履歴に残す写真」の表示＝保存時にコピーする写真、Humanが「使う」と選んだ写真＝保存対象、を
+  // utils/save-photo-state.ts の純関数（テスト済み）だけで保つ。非同期の後でも古い値を使わないよう、更新は関数形式で行う。
+  const [savePhoto, setSavePhoto] = useState<SavePhotoState>(EMPTY_SAVE_PHOTO_STATE);
+  const { pendingPhotoUri, pendingPhotoSource, excludePhotoFromSave, ocrPhotoUri, newPhotoCandidate } = savePhoto;
+  // 再読み取りで得た新しい結果（写真込み）。「新しい読み取りを使う」を選ぶまでocrResult・保存写真へは反映しない
   const [ocrResultCandidate, setOcrResultCandidate] = useState<{
     photoUri: string | null;
     ocrResult: { raw: string; prices: string[]; memoLines: string[] };
-  } | null>(null);
-  // 値札再読み取り／商品写真の新しい撮影分。保存対象写真(pendingPhotoUri)へは即反映せず、
-  // 「履歴に残す写真」欄で「新しい写真を使う/今の保存写真を使う」を選ぶまで保持する
-  const [newPhotoCandidate, setNewPhotoCandidate] = useState<{
-    uri: string;
-    source: 'ocr' | 'product';
   } | null>(null);
   const [saveAsPurchased, setSaveAsPurchased] = useState(false);
   /** 保存時に付けるカテゴリー。`null`は未分類（未選択のままでも保存できる） */
@@ -182,6 +189,11 @@ export default function CameraScreen() {
   const amountInputRef = useRef<TextInput>(null);
   // 再読み取りで撮影した直後の写真URI。OCR処理が終わりhandleOcrResultが呼ばれるまでocrPhotoUriへは反映しない
   const lastScannedPhotoUriRef = useRef<string | null>(null);
+  // 保存（入力のリセット）ごとに進める番号。refは今の番号、stateは描画時点の番号。
+  // 「読み取る」を押した時点の描画のハンドラ（handlePhotoCapture／handleOcrResult）が、撮影・読み取りの途中で
+  // 保存が済んだ後に呼ばれた場合（＝番号が違う）、その写真・読み取り結果は前の記録のものなので使わない。
+  const photoSessionRef = useRef(0);
+  const [photoSession, setPhotoSession] = useState(0);
   // [検証] Phase 2：OCR結果の世代。翻訳結果が古い世代のものなら破棄する。
   // scanKeyはCameraPreviewの再マウント専用のkeyであり、非同期リクエストの世代管理には流用しない。
   const translationGenerationRef = useRef(0);
@@ -343,7 +355,8 @@ export default function CameraScreen() {
   const isWeb = Platform.OS === 'web';
 
   // 撮影後に見せる「読み取った値札」プレビュー画像（ヘッダー小サムネ／拡大モーダル用）。
-  // 初回スキャンはpendingPhotoUriに、再スキャン以降はocrPhotoUriに入る（handleOcrResultでOCR完了時に確定）。
+  // 値札写真が保存対象のときはpendingPhotoUri（＝「履歴に残す写真」と同じ写真）。保存対象が値札写真でない間
+  // （商品写真・ライブラリ写真を選んだ／写真を外した）だけ、値札写真を別にocrPhotoUriで持つ（utils/save-photo-state.ts）。
   const ocrPreviewUri = ocrPhotoUri ?? pendingPhotoUri;
   // 撮影後はライブカメラの代わりに「読み取った値札」プレビュー（ドラッグ/ズーム/拡大）を出す
   const showOcrPhotoPreview =
@@ -376,12 +389,13 @@ export default function CameraScreen() {
   }
 
   function handlePhotoCapture(uri: string) {
-    if (pendingPhotoUri == null) {
-      setPendingPhotoUri(uri);
-      setPendingPhotoSource('ocr');
-      setExcludePhotoFromSave(false);
+    if (photoSession !== photoSessionRef.current) return; // 撮影中に保存が済んだ（前の記録の撮影）
+    if (isFirstScanCapture(savePhoto, ocrResult != null)) {
+      // 最初の読み取り（読み取り結果も保存写真もまだ無い）だけ、撮った写真をそのまま保存対象にする
+      setSavePhoto((s) => captureFirstScanPhoto(s, uri));
     } else {
-      // 再読み取りの撮影分はOCR処理(handleOcrResult)が完了するまでocrPhotoUriへ確定しない
+      // 再読み取り（写真を外した後も含む）の撮影分は、OCR処理(handleOcrResult)が完了し
+      // 「新しい読み取りを使う」が選ばれるまで保存対象にしない
       lastScannedPhotoUriRef.current = uri;
     }
   }
@@ -394,9 +408,8 @@ export default function CameraScreen() {
         allowsEditing: false,
       });
       if (!picked.canceled && picked.assets[0]) {
-        setPendingPhotoUri(picked.assets[0].uri);
-        setPendingPhotoSource('library');
-        setExcludePhotoFromSave(false);
+        const pickedUri = picked.assets[0].uri;
+        setSavePhoto((s) => adoptChosenPhoto(s, pickedUri, 'library'));
         // 写真選択後は手入力カードを開き、サムネ位置（入力カード）へスクロールして変化を示す
         setShowManualInput(true);
         scrollToInputCard();
@@ -406,7 +419,9 @@ export default function CameraScreen() {
     }
   }
 
-  // 既に保存対象写真があるときは撮影してすぐに上書きせず、「履歴に残す写真」欄で選んでもらう。
+  // 商品写真を撮る。カメラ画面の「写真を使用」で返ってきた写真（再撮影した場合は最後の1枚）を、そのまま保存対象にする。
+  // 旧：既に保存写真があると「履歴に残す写真」欄でもう一度選ぶまで候補にしていたため、選ばずに保存すると
+  // 前の写真が保存されていた。前の値札写真は「読み取った値札」とシートの「値札写真を使う」で戻せる。
   async function handleTakeProductPhoto() {
     try {
       // 撮影前にカメラ権限を確認する（未許可のままlaunchCameraAsyncを呼ぶとSDK側で拒否され、無反応に見える）。
@@ -429,17 +444,9 @@ export default function CameraScreen() {
       });
       if (captured.canceled || !captured.assets[0]) return;
       const newUri = captured.assets[0].uri;
-      if (pendingPhotoUri == null) {
-        setPendingPhotoUri(newUri);
-        setPendingPhotoSource('product');
-        setExcludePhotoFromSave(false);
-        // 撮影後は手入力カードを開き、サムネ位置（入力カード）へスクロールして変化を示す
-        setShowManualInput(true);
-        scrollToInputCard();
-        return;
-      }
-      // 保存対象写真は即上書きせず、「履歴に残す写真」欄の案内から選んでもらう
-      setNewPhotoCandidate({ uri: newUri, source: 'product' });
+      setSavePhoto((s) => adoptChosenPhoto(s, newUri, 'product'));
+      // 最初の写真なら手入力カードを開く（従来どおり）。サムネ位置（入力カード）へスクロールして変化を示す
+      if (pendingPhotoUri == null) setShowManualInput(true);
       scrollToInputCard();
     } catch (e) {
       console.warn('[camera]', e);
@@ -461,32 +468,23 @@ export default function CameraScreen() {
     setTimeout(action, 250);
   }
 
+  // シートの「値札写真を使う」：読み取った値札写真を保存対象にする（同じ写真を指す保存欄の候補も消える）
   function handleUseOcrPhoto() {
     if (!ocrPhotoUri) return;
-    setPendingPhotoUri(ocrPhotoUri);
-    setPendingPhotoSource('ocr');
-    setExcludePhotoFromSave(false);
-    setOcrPhotoUri(null);
-    // この値札写真を直接採用したので、同じ写真を指していた候補案内は不要
-    setNewPhotoCandidate((prev) => (prev?.source === 'ocr' ? null : prev));
+    setSavePhoto(selectReadingPhoto);
     scrollToInputCard(); // 反映先（入力カードのサムネ）へスクロールして変化を示す
   }
 
-  // 「履歴に残す写真」欄の「新しい写真を使う」：新しい写真候補を保存対象写真へ反映する
+  // 「履歴に残す写真」欄の「新しい写真を使う」：候補の値札写真を保存対象写真へ反映する
   function handleUseNewPhotoCandidate() {
     if (!newPhotoCandidate) return;
-    setPendingPhotoUri(newPhotoCandidate.uri);
-    setPendingPhotoSource(newPhotoCandidate.source);
-    setExcludePhotoFromSave(false);
-    if (newPhotoCandidate.source === 'ocr') setOcrPhotoUri(null);
-    setNewPhotoCandidate(null);
+    setSavePhoto(selectNewPhotoCandidate);
     scrollToInputCard();
   }
 
   // 「履歴に残す写真」欄の「今の保存写真を使う」：候補を消すだけで保存対象写真は変えない
   function handleKeepCurrentPhoto() {
-    setNewPhotoCandidate(null);
-    setExcludePhotoFromSave(false);
+    setSavePhoto(keepCurrentPhoto);
   }
 
   function handleRemovePhoto() {
@@ -499,10 +497,7 @@ export default function CameraScreen() {
           text: '削除',
           style: 'destructive',
           onPress: () => {
-            setPendingPhotoUri(null);
-            setPendingPhotoSource(null);
-            setExcludePhotoFromSave(false);
-            setNewPhotoCandidate(null);
+            setSavePhoto(removeSavePhoto);
             setPhotoPreviewVisible(false);
           },
         },
@@ -584,6 +579,9 @@ export default function CameraScreen() {
     }
     const newPhotoUri = lastScannedPhotoUriRef.current;
     lastScannedPhotoUriRef.current = null;
+    // 撮影・読み取りの途中で保存（入力のリセット）が済んでいたら、この読み取り結果は前の記録のものなので使わない
+    // （遅れて届いた結果が、次の記録の画面へ候補や写真として紛れ込まないようにする）
+    if (photoSession !== photoSessionRef.current) return;
     const newResult = {
       raw,
       prices: extractPriceCandidates(raw, currencyForDisplay),
@@ -598,8 +596,8 @@ export default function CameraScreen() {
       return;
     }
 
-    // 初回スキャン：比較対象がまだ無いため即反映する
-    if (newPhotoUri != null) setOcrPhotoUri(newPhotoUri);
+    // 初回スキャン：比較対象がまだ無いため即反映する（先に商品写真等を選んでいれば、値札写真は「読み取った値札」に出す）
+    if (newPhotoUri != null) setSavePhoto((s) => showReadingPhoto(s, newPhotoUri));
     setOcrResult(newResult);
     startMemoTranslation(newResult.memoLines);
     setSelectedPrice(null);
@@ -634,15 +632,14 @@ export default function CameraScreen() {
     }
   }
 
-  // 「新しい読み取りを使う」：候補だった結果を実際に反映する（保存対象写真pendingPhotoUriは別途、保存欄で選ぶ）
+  // 「新しい読み取りを使う」：候補だった結果を反映し、新しい値札写真を保存対象写真にする。
+  // 旧：写真だけは「履歴に残す写真」欄でもう一度選ぶまで候補のままで、選ばずに保存すると最初の写真が保存されていた
+  // （金額・メモは新しい読み取り、写真は古いまま）。商品写真等を選んでいる／写真を外している場合だけ、
+  // それを黙って置き換えず欄の候補にする（utils/save-photo-state.ts adoptNewReadingPhoto）。
   function handleUseOcrResultCandidate() {
     if (!ocrResultCandidate) return;
     const { photoUri, ocrResult: newResult } = ocrResultCandidate;
-    if (photoUri != null) {
-      setOcrPhotoUri(photoUri);
-      // 新しい値札写真は保存対象写真へ即反映せず、「履歴に残す写真」欄で選んでもらう候補として保持する
-      setNewPhotoCandidate({ uri: photoUri, source: 'ocr' });
-    }
+    setSavePhoto((s) => adoptNewReadingPhoto(s, photoUri));
     setOcrResult(newResult);
     startMemoTranslation(newResult.memoLines);
     setSelectedPrice(null);
@@ -833,7 +830,9 @@ export default function CameraScreen() {
     // 「写真付きで保存できた」と誤認させないようトーストで明示する。
     let photoSaveFailed = false;
     // 「写真なしで保存」が選ばれている時は、保存対象写真があってもコピーしない（既存の写真なし保存と同じ扱い）。
-    if (pendingPhotoUri && !excludePhotoFromSave && Platform.OS !== 'web') {
+    // コピー元は「履歴に残す写真」に表示している写真と同じ（photoUriToSave）。
+    const photoToSave = photoUriToSave(savePhoto);
+    if (photoToSave && Platform.OS !== 'web') {
       try {
         const FileSystem = await import('expo-file-system/legacy');
         const docsDir = FileSystem.documentDirectory;
@@ -841,7 +840,7 @@ export default function CameraScreen() {
           const photosDir = `${docsDir}photos/`;
           await FileSystem.makeDirectoryAsync(photosDir, { intermediates: true });
           const destUri = `${photosDir}${Date.now()}.jpg`;
-          await FileSystem.copyAsync({ from: pendingPhotoUri, to: destUri });
+          await FileSystem.copyAsync({ from: photoToSave, to: destUri });
           savedPhotoUri = destUri;
         }
       } catch (e) {
@@ -893,12 +892,12 @@ export default function CameraScreen() {
     startMemoTranslation([]); // OCR結果を消したので世代を進め、遅れて届く翻訳結果を破棄する
     setCameraLive(true); // 保存後は撮影前のライブカメラ表示に戻す
     setOcrRawExpanded(false);
-    setPendingPhotoUri(null);
-    setPendingPhotoSource(null);
-    setExcludePhotoFromSave(false);
-    setOcrPhotoUri(null);
+    setSavePhoto(EMPTY_SAVE_PHOTO_STATE);
+    // 保存前に始まった読み取りの結果・写真が、遅れて次の記録の画面へ入らないようにする（handleOcrResult参照）
+    photoSessionRef.current += 1;
+    setPhotoSession(photoSessionRef.current);
+    lastScannedPhotoUriRef.current = null;
     setOcrResultCandidate(null);
-    setNewPhotoCandidate(null);
     setPhotoPreviewVisible(false);
     setSaveAsPurchased(false);
     setShowManualInput(false);
@@ -1705,7 +1704,7 @@ export default function CameraScreen() {
                           <ThemedText style={styles.saveSettingsSectionLabel}>履歴に残す写真</ThemedText>
                           {pendingPhotoUri != null && (
                             <TouchableOpacity
-                              onPress={() => setExcludePhotoFromSave((v) => !v)}
+                              onPress={() => setSavePhoto(toggleExcludePhoto)}
                               hitSlop={8}
                               activeOpacity={0.6}>
                               <ThemedText style={styles.photoExcludeLinkText}>
@@ -1759,83 +1758,30 @@ export default function CameraScreen() {
                             )}
                           </View>
                         </View>
+                        {/* 商品写真・ライブラリ写真を選んでいる／写真を外した後に「新しい読み取りを使う」を選んだ時だけ出る。
+                            保存対象（上の写真）は変えず、新しい値札写真を使うかをここで選んでもらう（utils/save-photo-state.ts）。 */}
                         {newPhotoCandidate != null && (
                           <View style={styles.newPhotoCandidateBanner}>
-                            {newPhotoCandidate.source === 'product' ? (
-                              <View style={styles.newPhotoCandidateCompareRow}>
-                                <View style={styles.newPhotoCandidateCompareCol}>
-                                  <View style={styles.newPhotoCandidateThumbWrap}>
-                                    {pendingPhotoUri != null ? (
-                                      <FitPhoto uri={pendingPhotoUri} surface="compareThumb" borderRadius={radius.chip} />
-                                    ) : (
-                                      <View style={styles.newPhotoCandidateThumbEmpty}>
-                                        <SymbolView
-                                          name={{ ios: 'photo', android: 'image', web: 'image' }}
-                                          tintColor={color.muted}
-                                          size={20}
-                                        />
-                                      </View>
-                                    )}
-                                  </View>
-                                  <ThemedText style={styles.newPhotoCandidateCompareLabel}>
-                                    現在の保存写真
-                                  </ThemedText>
-                                </View>
-                                <View style={styles.newPhotoCandidateCompareCol}>
-                                  <View style={styles.newPhotoCandidateThumbWrap}>
-                                    <FitPhoto uri={newPhotoCandidate.uri} surface="compareThumb" borderRadius={radius.chip} />
-                                  </View>
-                                  <ThemedText style={styles.newPhotoCandidateCompareLabel}>
-                                    新しく撮った商品写真
-                                  </ThemedText>
-                                </View>
-                              </View>
-                            ) : (
-                              <ThemedText style={styles.newPhotoCandidateText}>
-                                新しく撮った値札写真があります
-                              </ThemedText>
-                            )}
+                            <ThemedText style={styles.newPhotoCandidateText}>
+                              新しく撮った値札写真があります
+                            </ThemedText>
                             <View style={styles.photoSettingsActionsRow}>
-                              {newPhotoCandidate.source === 'product' ? (
-                                <>
-                                  {/* サムネ表示は左:現在の保存写真／右:新しい商品写真。ボタンの左右も同じ並びに揃える */}
-                                  <TouchableOpacity
-                                    style={[styles.photoSettingsActionBtn, styles.photoSettingsActionBtnGhost]}
-                                    onPress={handleKeepCurrentPhoto}
-                                    activeOpacity={0.7}>
-                                    <ThemedText style={styles.photoSettingsActionBtnGhostText}>
-                                      現在の保存写真を使う
-                                    </ThemedText>
-                                  </TouchableOpacity>
-                                  <TouchableOpacity
-                                    style={styles.photoSettingsActionBtn}
-                                    onPress={handleUseNewPhotoCandidate}
-                                    activeOpacity={0.7}>
-                                    <ThemedText style={styles.photoSettingsActionBtnText}>
-                                      新しい商品写真を使う
-                                    </ThemedText>
-                                  </TouchableOpacity>
-                                </>
-                              ) : (
-                                <>
-                                  <TouchableOpacity
-                                    style={styles.photoSettingsActionBtn}
-                                    onPress={handleUseNewPhotoCandidate}
-                                    activeOpacity={0.7}>
-                                    <ThemedText style={styles.photoSettingsActionBtnText}>
-                                      新しい写真を使う
-                                    </ThemedText>
-                                  </TouchableOpacity>
-                                  <TouchableOpacity
-                                    style={[styles.photoSettingsActionBtn, styles.photoSettingsActionBtnGhost]}
-                                    onPress={handleKeepCurrentPhoto}
-                                    activeOpacity={0.7}>
-                                    <ThemedText style={styles.photoSettingsActionBtnGhostText}>
-                                      今の保存写真を使う
-                                    </ThemedText>
-                                  </TouchableOpacity>
-                                </>
-                              )}
+                              <TouchableOpacity
+                                style={styles.photoSettingsActionBtn}
+                                onPress={handleUseNewPhotoCandidate}
+                                activeOpacity={0.7}>
+                                <ThemedText style={styles.photoSettingsActionBtnText}>
+                                  新しい写真を使う
+                                </ThemedText>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[styles.photoSettingsActionBtn, styles.photoSettingsActionBtnGhost]}
+                                onPress={handleKeepCurrentPhoto}
+                                activeOpacity={0.7}>
+                                <ThemedText style={styles.photoSettingsActionBtnGhostText}>
+                                  今の保存写真を使う
+                                </ThemedText>
+                              </TouchableOpacity>
                             </View>
                           </View>
                         )}
