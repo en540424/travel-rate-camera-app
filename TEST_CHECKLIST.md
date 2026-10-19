@@ -468,6 +468,7 @@
 
 ## J. 2026-10-05追加：スマートカメラ・写真翻訳・カメラ翻訳（次回Preview Buildで確認）
 
+> **【2026-10-20更新】今後の実機確認は`7fa16f73-3d49-4b01-a6d6-b5fd080bf19d`（K節・対象commit `1ec8f02`）を使う。`7fa16f73`は`50bc4f55`の内容（#57〜#65）と`be61a603`の内容（#52・#55・#56）をすべて含む。以下の`50bc4f55`の記述は当時の記録。**
 > **確認に使うBuild：`50bc4f55-bf0c-414d-8b7c-d61f4ce9207f`**（対象commit `2f3218c`。install：https://expo.dev/accounts/en540424/projects/travel-rate-camera-app/builds/50bc4f55-bf0c-414d-8b7c-d61f4ce9207f ）。
 > 新しいnative module（`modules/live-text`）と翻訳ホストの変更を含むため、`be61a603`以前のBuildには載っていない。
 > **`fa4b3f8f`（2026-10-05のコンパイル確認用・実装途中）はinstallしない。**
