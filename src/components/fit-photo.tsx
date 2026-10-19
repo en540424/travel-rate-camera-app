@@ -39,17 +39,25 @@ export function FitPhoto({ uri, surface, saved = false, borderRadius, onPress }:
   }
 
   const frameStyle = [styles.frame, { width: box.width, height: box.height, borderRadius }];
+  // key={uri}：写真が替わったら読み込み失敗の状態（ResilientPhoto内）も前の写真から引き継がない
   const photo = saved ? (
-    <ResilientPhoto uri={uri} style={StyleSheet.absoluteFill} contentFit="contain" onLoad={handleLoad} />
+    <ResilientPhoto key={uri} uri={uri} style={StyleSheet.absoluteFill} contentFit="contain" onLoad={handleLoad} />
   ) : (
     <Image source={{ uri }} style={StyleSheet.absoluteFill} contentFit="contain" onLoad={handleLoad} />
   );
+  // 写真の端の線は写真の上に重ねる（枠にborderを付けると写真の領域が線の分だけ縮み、上下に暗い筋が出るため）
+  const content = (
+    <>
+      {photo}
+      <View pointerEvents="none" style={[styles.edge, { borderRadius }]} />
+    </>
+  );
   const frame = onPress ? (
     <TouchableOpacity style={frameStyle} onPress={onPress} activeOpacity={0.85}>
-      {photo}
+      {content}
     </TouchableOpacity>
   ) : (
-    <View style={frameStyle}>{photo}</View>
+    <View style={frameStyle}>{content}</View>
   );
 
   if (!fillsParentWidth) return frame;
@@ -69,7 +77,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     // 枠＝写真の形なので通常は見えない。極端に細長い画像・読み込み中だけ写真の外側として見える
     backgroundColor: color.dark,
-    // 白い値札など明るい写真でも、写真の端（＝保存される範囲の端）が白いカード・画面背景と見分けられる線
+  },
+  // 白い値札など明るい写真でも、写真の端（＝保存される範囲の端）が白いカード・画面背景と見分けられる線
+  edge: {
+    ...StyleSheet.absoluteFill,
     borderWidth: 1,
     borderColor: color.faint,
   },
