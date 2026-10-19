@@ -3,7 +3,19 @@ import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Keyboard, Linking, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  Alert,
+  Keyboard,
+  Linking,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CameraPreview } from '@/components/camera/CameraPreview';
@@ -52,6 +64,7 @@ import {
 import type { VisionOcrBenchmarkArmDefinition, VisionOcrBenchmarkArmId, VisionOcrBenchmarkResult } from '@/utils/ocr-benchmark';
 import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
 import { remainingSaveSlots, shouldShowNearSaveLimit } from '@/utils/budget-core';
+import { getOcrPhotoPreviewHeight } from '@/utils/photo-preview-layout';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
 const MEMO_PREVIEW_COUNT = 3;
@@ -59,8 +72,6 @@ const PRICE_PREVIEW_COUNT = 3;
 // 上限の何件手前から「残りN件」案内を出すか（上限10件なら7件目から）。
 // 5件目（50%消費）からの表示は課金圧が強すぎるため3へ緩和した（2026-08-28）。
 const NEAR_SAVE_LIMIT_OFFSET = 3;
-// OCR写真プレビュー枠の高さ（styles.ocrPhotoPreviewFrameと一致させる・中心スクロール計算に使用）
-const OCR_PHOTO_PREVIEW_FRAME_HEIGHT = 110;
 
 /** 撮影前メイン画面の撮影モード。価格OCR（既定）/ 商品写真（補助） */
 type CaptureMode = 'ocr' | 'photo';
@@ -70,6 +81,9 @@ type Phase = 'camera' | 'scanning' | 'result';
 
 export default function CameraScreen() {
   const insets = useSafeAreaInsets();
+  // 撮影後の「読み取った値札」プレビュー枠の高さ（画面の縦幅に比例・上下限あり。utils/photo-preview-layout.ts）
+  const { height: windowHeight } = useWindowDimensions();
+  const ocrPhotoPreviewHeight = getOcrPhotoPreviewHeight(windowHeight);
   // 保存成功トースト（Alertではない軽量通知）。文言が入ると表示、Toast側で自動的にnullへ戻す。
   // hideToastはuseCallbackで参照を固定し、他state変化での再renderでToast内部のuseEffectが
   // 毎回再始動してフェードが終わらなくなる事態を防ぐ。
@@ -139,8 +153,6 @@ export default function CameraScreen() {
   const [cameraLive, setCameraLive] = useState(true);
   // 撮影済みOCR写真を拡大表示するモーダル
   const [ocrPhotoZoomVisible, setOcrPhotoZoomVisible] = useState(false);
-  // 撮影した値札写真の縦横比（width/height）。読み込み時に確定し、プレビュー高さを実寸に合わせる。
-  const [ocrImgAspect, setOcrImgAspect] = useState(0.75);
   // [診断] OCRデバッグパネル開閉 — リリース前に削除
   const [showOcrDebug, setShowOcrDebug] = useState(false);
   // [検証] Apple Vision OCR比較パネル開閉・結果。本番ビルドには一切含めない開発用検証基盤（AGENTS.md参照）。
@@ -183,8 +195,6 @@ export default function CameraScreen() {
   const memoInputRef = useRef<TextInput>(null);
   // 手入力金額フィールドのref（openManualInput時のフォーカス制御用）
   const amountInputRef = useRef<TextInput>(null);
-  // OCR写真プレビュー（読み取った値札）の縦スクロールを中心位置にするための参照
-  const ocrPhotoPreviewScrollRef = useRef<ScrollView>(null);
   // 再読み取りで撮影した直後の写真URI。OCR処理が終わりhandleOcrResultが呼ばれるまでocrPhotoUriへは反映しない
   const lastScannedPhotoUriRef = useRef<string | null>(null);
   // [検証] Phase 2：OCR結果の世代。翻訳結果が古い世代のものなら破棄する。
@@ -1123,36 +1133,19 @@ export default function CameraScreen() {
                       </View>
                     </View>
                   )}
-                  {/* 横長コンパクト。全幅(実寸比)で表示し縦スクロール／iOSピンチで全体確認。枠内クリップ。
-                      撮影時に中心へ合わせた値札がプレビューでも中心付近に見えるよう、画像の高さが確定したら
-                      縦スクロール位置を中央へ補正する（上寄せのまま固定しない）。 */}
-                  <View style={styles.ocrPhotoPreviewFrame}>
-                    <ScrollView
-                      ref={ocrPhotoPreviewScrollRef}
+                  {/* 写真全体を枠内に収めて表示（contain・切り抜かない）。保存されるのは撮影画像そのものなので、
+                      ここで見えている範囲＝保存される範囲。旧：高さ110ptの横長枠＋縦スクロールで中央約1/4しか
+                      見えず、保存後の商品詳細と別の範囲に見えていた。タップで拡大（「拡大」と同じモーダル）。 */}
+                  <TouchableOpacity
+                    style={[styles.ocrPhotoPreviewFrame, { height: ocrPhotoPreviewHeight }]}
+                    onPress={() => setOcrPhotoZoomVisible(true)}
+                    activeOpacity={0.85}>
+                    <Image
+                      source={{ uri: ocrPreviewUri }}
                       style={StyleSheet.absoluteFill}
-                      contentContainerStyle={styles.ocrPhotoPreviewScrollContent}
-                      nestedScrollEnabled
-                      showsVerticalScrollIndicator
-                      minimumZoomScale={1}
-                      maximumZoomScale={3}
-                      centerContent>
-                      <Image
-                        source={{ uri: ocrPreviewUri }}
-                        style={[styles.ocrPhotoPreviewImg, { aspectRatio: ocrImgAspect }]}
-                        contentFit="contain"
-                        onLoad={(e) => {
-                          const w = e?.source?.width;
-                          const h = e?.source?.height;
-                          if (w && h) setOcrImgAspect(w / h);
-                        }}
-                        onLayout={(e) => {
-                          const renderedHeight = e.nativeEvent.layout.height;
-                          const centerY = Math.max((renderedHeight - OCR_PHOTO_PREVIEW_FRAME_HEIGHT) / 2, 0);
-                          ocrPhotoPreviewScrollRef.current?.scrollTo({ y: centerY, animated: false });
-                        }}
-                      />
-                    </ScrollView>
-                  </View>
+                      contentFit="contain"
+                    />
+                  </TouchableOpacity>
                 </View>
               ) : (
                 cameraPreview
@@ -1673,7 +1666,7 @@ export default function CameraScreen() {
                 </View>
               )}
 
-              {/* 保存の設定パネル（商品名・円金額・外貨金額・大きな写真プレビューはここに出さない）。
+              {/* 保存の設定パネル（商品名・円金額・外貨金額はここに出さない。保存写真は全体が分かる中サイズ枠のみ）。
                   メモ／写真／保存先を1枚のカードにまとめ、区切り線で行を整理する。
                   メモはiOS標準の「完了」キーで閉じられるため独自バーは出さない。
                   写真は「商品写真を撮る」を直接アクション、「他から」でphotoSheet(ActionSheet)に委ねる構成。
@@ -1740,8 +1733,14 @@ export default function CameraScreen() {
                           )}
                         </View>
                         <View style={styles.photoSettingsRow}>
+                          {/* 保存される写真は撮影画像そのもの（crop/resizeなし）のため、正方形に切り抜かず
+                              写真全体を見せる（contain）。写真があるときだけ大きい枠にし、写真なしの時は従来の小枠。
+                              タップで拡大（既存の保存写真プレビューModal）。 */}
                           <TouchableOpacity
-                            style={styles.photoSettingsThumbWrap}
+                            style={[
+                              styles.photoSettingsThumbWrap,
+                              pendingPhotoUri != null && !excludePhotoFromSave && styles.photoSettingsThumbWrapLarge,
+                            ]}
                             onPress={
                               pendingPhotoUri != null && !excludePhotoFromSave
                                 ? () => setPhotoPreviewVisible(true)
@@ -1752,7 +1751,7 @@ export default function CameraScreen() {
                               <Image
                                 source={{ uri: pendingPhotoUri }}
                                 style={styles.photoSettingsThumb}
-                                contentFit="cover"
+                                contentFit="contain"
                               />
                             ) : (
                               <SymbolView
@@ -1772,6 +1771,11 @@ export default function CameraScreen() {
                                     ? 'OCR写真を保存中'
                                     : '商品写真を保存に使用中'}
                             </ThemedText>
+                            {pendingPhotoUri != null && !excludePhotoFromSave && (
+                              <ThemedText style={styles.photoSettingsHint}>
+                                左の写真全体がそのまま保存されます。タップで拡大
+                              </ThemedText>
+                            )}
                             {pendingPhotoUri != null && !excludePhotoFromSave && pendingPhotoSource === 'ocr' && (
                               <ThemedText style={styles.photoSettingsHint}>
                                 商品写真に変更できます
@@ -2401,20 +2405,12 @@ const styles = StyleSheet.create({
     color: color.primary,
   },
   ocrPhotoPreviewFrame: {
-    height: OCR_PHOTO_PREVIEW_FRAME_HEIGHT, // 横長コンパクト（従来200→150→110）。拡大で全体確認できるため低めでOK。戻す場合はここを調整。
+    // 高さは画面の縦幅から算出（getOcrPhotoPreviewHeight・160〜220pt）してinlineで渡す。
+    // 暗い背景＝写真の外側。写真の端がそのまま保存範囲の端として見える。
     borderRadius: radius.chip,
     overflow: 'hidden',
     backgroundColor: '#111',
     position: 'relative',
-  },
-  ocrPhotoPreviewScrollContent: {
-    // 画像が枠より小さいときは中央、大きいときは縦スクロールで全体を確認
-    minHeight: '100%',
-    justifyContent: 'center',
-  },
-  ocrPhotoPreviewImg: {
-    width: '100%',
-    // 高さは aspectRatio（実寸比）で決まる。枠より高ければ縦スクロールで上下を見渡せる。
   },
   ocrPhotoPreviewRescan: {
     fontSize: 13,
@@ -2995,9 +2991,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
+  // 保存対象写真があるときの枠（3:4＝iPhoneの縦撮り写真がちょうど収まる比率。横長写真は上下に余白が出る）
+  photoSettingsThumbWrapLarge: {
+    width: 120,
+    height: 160,
+  },
   photoSettingsThumb: {
-    width: 72,
-    height: 72,
+    width: '100%',
+    height: '100%',
     borderRadius: radius.chip,
   },
   photoSettingsInfo: {

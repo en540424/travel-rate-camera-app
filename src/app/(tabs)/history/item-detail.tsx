@@ -143,13 +143,14 @@ export default function ItemDetailScreen() {
         scrollEnabled={canScroll}
         bounces={canScroll}
         overScrollMode={canScroll ? 'auto' : 'never'}>
-        {/* 大判写真 */}
+        {/* 大判写真。保存写真全体を見せる（contain）＝保存前のプレビュー（カメラ画面）と同じ範囲。
+            coverだと縦長写真の中央帯だけになり、保存前と別の範囲に見えていた。タップで拡大。 */}
         <Pressable
           onPress={() => item.image_uri && setPhotoOpen(true)}
           disabled={!item.image_uri}
           style={styles.photo}>
           {item.image_uri ? (
-            <ResilientPhoto uri={item.image_uri} style={styles.photoImage} contentFit="cover" />
+            <ResilientPhoto uri={item.image_uri} style={styles.photoImage} contentFit="contain" />
           ) : (
             <View style={styles.photoPlaceholder}>
               <ThemedText style={styles.photoPlaceholderText}>写真なし</ThemedText>
