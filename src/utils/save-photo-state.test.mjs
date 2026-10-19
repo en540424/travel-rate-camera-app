@@ -17,6 +17,7 @@ import {
   adoptNewReadingPhoto,
   captureFirstScanPhoto,
   EMPTY_SAVE_PHOTO_STATE,
+  hasComparableReading,
   isFirstScanCapture,
   keepCurrentPhoto,
   photoUriToSave,
@@ -30,29 +31,52 @@ import {
 function flow() {
   let state = EMPTY_SAVE_PHOTO_STATE;
   let hasOcrResult = false;
-  let readingCandidatePhoto = null; // 再読み取りの結果（「新しい読み取りを使う」待ち）の写真
+  let hasReadingCandidate = false; // 再読み取りの結果が「新しい読み取りを使う／前の読み取りを残す」待ち
+  let readingCandidatePhoto = null; // その写真
   const api = {
-    /** 価格OCRの「読み取る」：撮影→読み取り完了 */
+    /**
+     * 価格OCRの「読み取る」：撮影→読み取り完了。`uri`がnullなら撮影失敗（写真なしでエラー結果が届く）。
+     * handlePhotoCapture・handleOcrResultは「読み取る」を押した時点の状態（before）で判定する。
+     */
     scan(uri) {
+      const before = state;
+      const beforeHasResult = hasOcrResult;
       let lastScanned = null;
-      if (isFirstScanCapture(state, hasOcrResult)) state = captureFirstScanPhoto(state, uri);
-      else lastScanned = uri;
-      if (hasOcrResult) {
-        readingCandidatePhoto = lastScanned; // 再読み取り：選ぶまで候補
+      if (uri != null) {
+        if (isFirstScanCapture(before, beforeHasResult)) state = captureFirstScanPhoto(state, uri);
+        else lastScanned = uri;
+      }
+      if (hasComparableReading(before, beforeHasResult)) {
+        hasReadingCandidate = true; // 再読み取り：選ぶまで候補
+        readingCandidatePhoto = lastScanned;
       } else {
         if (lastScanned != null) state = showReadingPhoto(state, lastScanned);
         hasOcrResult = true;
+        hasReadingCandidate = false;
+        readingCandidatePhoto = null;
       }
       return api;
     },
+    scanFails() {
+      return api.scan(null);
+    },
     useNewReading() {
       state = adoptNewReadingPhoto(state, readingCandidatePhoto);
+      hasReadingCandidate = false;
       readingCandidatePhoto = null;
       return api;
     },
     keepPreviousReading() {
+      hasReadingCandidate = false;
       readingCandidatePhoto = null;
       return api;
+    },
+    /** 「新しい読み取りを使う／前の読み取りを残す」の案内が画面に出ているか（「読み取った値札」欄の中に出るため写真が要る） */
+    get readingCandidateVisible() {
+      return hasReadingCandidate && api.readingPreview != null;
+    },
+    get hasReadingCandidate() {
+      return hasReadingCandidate;
     },
     takeProductPhoto(uri) {
       state = adoptChosenPhoto(state, uri, 'product');
@@ -154,9 +178,14 @@ test('写真なしで保存：撮り直して新しい読み取りを使って�
 });
 
 test('写真を外した後の再読み取り：前の読み取りを残す→写真なし／新しい読み取りを使う→欄の候補（選ぶまで写真なし）', () => {
-  const kept = flow().scan('shot1.jpg').removePhoto().scan('shot2.jpg').keepPreviousReading();
-  equal(kept.saved, null, '旧実装はここで2枚目が保存対象になっていた');
-  assertShownEqualsSaved(kept, 'remove-keep');
+  const removed = flow().scan('shot1.jpg').removePhoto();
+  equal(removed.saved, null);
+  equal(removed.readingPreview, 'shot1.jpg', '「読み取った値札」には残る（見比べ・値札写真を使うで戻す）');
+  removed.scan('shot2.jpg');
+  equal(removed.readingCandidateVisible, true, '新しい読み取りの案内が画面に出る');
+  removed.keepPreviousReading();
+  equal(removed.saved, null, '旧実装はここで2枚目が保存対象になっていた');
+  assertShownEqualsSaved(removed, 'remove-keep');
 
   const used = flow().scan('shot1.jpg').removePhoto().scan('shot2.jpg').useNewReading();
   equal(used.saved, null);
@@ -164,6 +193,37 @@ test('写真を外した後の再読み取り：前の読み取りを残す→�
   used.useNewPhotoCandidate();
   equal(used.saved, 'shot2.jpg');
   assertShownEqualsSaved(used, 'remove-use');
+
+  // 外した値札写真はシートの「値札写真を使う」で戻せる
+  const back = flow().scan('shot1.jpg').removePhoto().sheetUseReadingPhoto();
+  equal(back.saved, 'shot1.jpg');
+});
+
+test('最初の撮影が失敗（写真なしのエラー結果）→次の読み取りはそのまま置き換え、その写真が保存対象', () => {
+  const f = flow().scanFails();
+  equal(f.saved, null);
+  f.scan('shot2.jpg');
+  equal(f.hasReadingCandidate, false, '見比べる写真が無いので候補にせず置き換える（案内が見えず止まらない）');
+  equal(f.saved, 'shot2.jpg');
+  equal(f.readingPreview, 'shot2.jpg');
+  assertShownEqualsSaved(f, 'failed-first');
+});
+
+test('再読み取りの案内は、どの流れでも画面に出る（候補があるのに見えない状態を作らない）', () => {
+  const flows = [
+    flow().scan('a.jpg').scan('b.jpg'),
+    flow().scan('a.jpg').removePhoto().scan('b.jpg'),
+    flow().scan('a.jpg').toggleExclude().scan('b.jpg'),
+    flow().scan('a.jpg').takeProductPhoto('p.jpg').scan('b.jpg'),
+    flow().scan('a.jpg').takeProductPhoto('p.jpg').removePhoto().scan('b.jpg'),
+    flow().scan('a.jpg').pickFromLibrary('l.jpg').scan('b.jpg'),
+    flow().takeProductPhoto('p.jpg').scan('a.jpg').scan('b.jpg'),
+    flow().scanFails().scanFails().scan('a.jpg').scan('b.jpg'),
+  ];
+  flows.forEach((f, i) => {
+    if (f.hasReadingCandidate) equal(f.readingCandidateVisible, true, `flow ${i}`);
+    assertShownEqualsSaved(f, `flow ${i}`);
+  });
 });
 
 test('商品写真（カメラの再撮影→「写真を使用」）：最後に撮った商品写真がすぐ保存対象になる', () => {

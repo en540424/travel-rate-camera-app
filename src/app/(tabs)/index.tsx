@@ -58,6 +58,7 @@ import {
   adoptNewReadingPhoto,
   captureFirstScanPhoto,
   EMPTY_SAVE_PHOTO_STATE,
+  hasComparableReading,
   isFirstScanCapture,
   keepCurrentPhoto,
   photoUriToSave,
@@ -577,11 +578,12 @@ export default function CameraScreen() {
       console.log('[EUR Debug Active Trip] name:', activeTrip?.name ?? '(none)', '/ base_currency:', activeTrip?.base_currency ?? '(none)', '/ rate:', activeTrip?.manual_rate ?? 0);
       console.log('[EUR Debug Extract Call] currencyForDisplay:', currencyForDisplay, '/ raw.length:', raw.length);
     }
+    // 撮影・読み取りの途中で保存（入力のリセット）が済んでいたら、この読み取り結果は前の記録のものなので使わない
+    // （遅れて届いた結果が、次の記録の画面へ候補や写真として紛れ込まないようにする）。
+    // 撮影写真のrefは、次の記録の撮影分を取らないよう、この確認の後で受け取る
+    if (photoSession !== photoSessionRef.current) return;
     const newPhotoUri = lastScannedPhotoUriRef.current;
     lastScannedPhotoUriRef.current = null;
-    // 撮影・読み取りの途中で保存（入力のリセット）が済んでいたら、この読み取り結果は前の記録のものなので使わない
-    // （遅れて届いた結果が、次の記録の画面へ候補や写真として紛れ込まないようにする）
-    if (photoSession !== photoSessionRef.current) return;
     const newResult = {
       raw,
       prices: extractPriceCandidates(raw, currencyForDisplay),
@@ -590,14 +592,16 @@ export default function CameraScreen() {
 
     setCameraLive(false); // 読み取り完了→ライブカメラを撮影済みプレビューに切替（表示専用）
 
-    if (ocrResult != null) {
-      // 再読み取り：新しい結果は即反映せず、現在の結果と比較して選べる候補として保持する
+    if (hasComparableReading(savePhoto, ocrResult != null)) {
+      // 再読み取り：新しい結果は即反映せず、現在の結果（とその写真）と比較して選べる候補として保持する。
+      // 写真の無い読み取り結果（最初の撮影の失敗等）は見比べられないので、下の初回と同じく置き換える
       setOcrResultCandidate({ photoUri: newPhotoUri, ocrResult: newResult });
       return;
     }
 
     // 初回スキャン：比較対象がまだ無いため即反映する（先に商品写真等を選んでいれば、値札写真は「読み取った値札」に出す）
     if (newPhotoUri != null) setSavePhoto((s) => showReadingPhoto(s, newPhotoUri));
+    setOcrResultCandidate(null); // 写真の無い読み取り結果を置き換える場合に、前の候補を残さない
     setOcrResult(newResult);
     startMemoTranslation(newResult.memoLines);
     setSelectedPrice(null);

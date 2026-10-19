@@ -50,11 +50,20 @@ export function photoUriToSave(state: SavePhotoState): string | null {
 }
 
 /**
- * 価格OCRで撮った写真を、そのまま保存対象にしてよいか（＝最初の読み取りで、保存写真もまだ無い）。
- * 読み取り結果がある（再読み取り）なら、写真を外した後でも保存対象にはせず「新しい読み取りを使う」を待つ。
+ * 今の読み取り結果と、新しい読み取りを見比べて選べるか（＝読み取り結果があり、その値札写真か保存写真がある）。
+ * trueなら新しい読み取りは「新しい読み取りを使う／前の読み取りを残す」の候補にする（handleOcrResult）。
+ * 写真の無い読み取り結果（最初の撮影の失敗等）は見比べられないので、新しい読み取りでそのまま置き換える。
+ */
+export function hasComparableReading(state: SavePhotoState, hasOcrResult: boolean): boolean {
+  return hasOcrResult && (state.pendingPhotoUri != null || state.ocrPhotoUri != null);
+}
+
+/**
+ * 価格OCRで撮った写真を、そのまま保存対象にしてよいか（＝保存写真が無く、見比べる読み取りも無い）。
+ * 見比べる読み取りがある（再読み取り）なら、写真を外した後でも保存対象にはせず「新しい読み取りを使う」を待つ。
  */
 export function isFirstScanCapture(state: SavePhotoState, hasOcrResult: boolean): boolean {
-  return state.pendingPhotoUri == null && !hasOcrResult;
+  return state.pendingPhotoUri == null && !hasComparableReading(state, hasOcrResult);
 }
 
 /** 最初の読み取りの写真を保存対象にする */
@@ -133,9 +142,23 @@ export function keepCurrentPhoto(state: SavePhotoState): SavePhotoState {
   return { ...state, newPhotoCandidate: null, excludePhotoFromSave: false };
 }
 
-/** 「写真を外す」 */
+/**
+ * 「写真を外す」：保存する写真だけを外す。値札写真だった場合は「読み取った値札」には残す
+ * （読み取り結果の確認・再読み取りの見比べに使い、シートの「値札写真を使う」で保存写真に戻せる）。
+ */
 export function removeSavePhoto(state: SavePhotoState): SavePhotoState {
-  return { ...state, pendingPhotoUri: null, pendingPhotoSource: null, excludePhotoFromSave: false, newPhotoCandidate: null };
+  const readingPhoto =
+    state.pendingPhotoSource === 'ocr' && state.pendingPhotoUri != null
+      ? (state.ocrPhotoUri ?? state.pendingPhotoUri)
+      : state.ocrPhotoUri;
+  return {
+    ...state,
+    pendingPhotoUri: null,
+    pendingPhotoSource: null,
+    excludePhotoFromSave: false,
+    ocrPhotoUri: readingPhoto,
+    newPhotoCandidate: null,
+  };
 }
 
 /** 「写真なしで保存」⇔「写真を残す」 */
