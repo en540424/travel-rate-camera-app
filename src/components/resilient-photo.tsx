@@ -1,4 +1,4 @@
-import { Image, type ImageContentFit, type ImageStyle } from 'expo-image';
+import { Image, type ImageContentFit, type ImageLoadEventData, type ImageStyle } from 'expo-image';
 import { useState } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
@@ -12,6 +12,8 @@ interface ResilientPhotoProps {
   // 呼び出し元は幅/高さ/角丸などレイアウト用のスタイルのみ渡す想定（View/Image両方に安全に適用できる範囲）
   style?: StyleProp<ViewStyle & ImageStyle>;
   contentFit?: ImageContentFit;
+  /** 読み込み完了（画像の幅・高さが分かる）。FitPhotoが写真の縦横比を測るのに使う */
+  onLoad?: (event: ImageLoadEventData) => void;
 }
 
 /**
@@ -20,7 +22,7 @@ interface ResilientPhotoProps {
  * それでも読み込めない場合は黒画面/空白ではなく「画像を表示できません」を出す。
  * DB・履歴レコードには一切触れない（表示のみのフォールバック）。
  */
-export function ResilientPhoto({ uri, style, contentFit = 'cover' }: ResilientPhotoProps) {
+export function ResilientPhoto({ uri, style, contentFit = 'cover', onLoad }: ResilientPhotoProps) {
   const resolved = resolveImageUri(uri);
   const [failed, setFailed] = useState(false);
 
@@ -39,6 +41,7 @@ export function ResilientPhoto({ uri, style, contentFit = 'cover' }: ResilientPh
       source={{ uri: resolved }}
       style={style}
       contentFit={contentFit}
+      onLoad={onLoad}
       onError={() => setFailed(true)}
     />
   );

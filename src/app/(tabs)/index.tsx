@@ -3,22 +3,11 @@ import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Alert,
-  Keyboard,
-  Linking,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { Alert, Keyboard, Linking, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CameraPreview } from '@/components/camera/CameraPreview';
+import { FitPhoto } from '@/components/fit-photo';
 import { ThemedText } from '@/components/themed-text';
 import {
   CategorySelector,
@@ -64,7 +53,6 @@ import {
 import type { VisionOcrBenchmarkArmDefinition, VisionOcrBenchmarkArmId, VisionOcrBenchmarkResult } from '@/utils/ocr-benchmark';
 import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
 import { remainingSaveSlots, shouldShowNearSaveLimit } from '@/utils/budget-core';
-import { getOcrPhotoPreviewHeight } from '@/utils/photo-preview-layout';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
 const MEMO_PREVIEW_COUNT = 3;
@@ -81,9 +69,6 @@ type Phase = 'camera' | 'scanning' | 'result';
 
 export default function CameraScreen() {
   const insets = useSafeAreaInsets();
-  // 撮影後の「読み取った値札」プレビュー枠の高さ（画面の縦幅に比例・上下限あり。utils/photo-preview-layout.ts）
-  const { height: windowHeight } = useWindowDimensions();
-  const ocrPhotoPreviewHeight = getOcrPhotoPreviewHeight(windowHeight);
   // 保存成功トースト（Alertではない軽量通知）。文言が入ると表示、Toast側で自動的にnullへ戻す。
   // hideToastはuseCallbackで参照を固定し、他state変化での再renderでToast内部のuseEffectが
   // 毎回再始動してフェードが終わらなくなる事態を防ぐ。
@@ -1074,17 +1059,15 @@ export default function CameraScreen() {
                         <View style={styles.newPhotoCandidateCompareCol}>
                           <View style={styles.newPhotoCandidateThumbWrap}>
                             {ocrPreviewUri != null ? (
-                              <Image
-                                source={{ uri: ocrPreviewUri }}
-                                style={styles.newPhotoCandidateThumb}
-                                contentFit="contain"
-                              />
+                              <FitPhoto uri={ocrPreviewUri} surface="compareThumb" borderRadius={radius.chip} />
                             ) : (
-                              <SymbolView
-                                name={{ ios: 'photo', android: 'image', web: 'image' }}
-                                tintColor={color.muted}
-                                size={20}
-                              />
+                              <View style={styles.newPhotoCandidateThumbEmpty}>
+                                <SymbolView
+                                  name={{ ios: 'photo', android: 'image', web: 'image' }}
+                                  tintColor={color.muted}
+                                  size={20}
+                                />
+                              </View>
                             )}
                           </View>
                           <ThemedText style={styles.newPhotoCandidateCompareLabel}>
@@ -1094,17 +1077,19 @@ export default function CameraScreen() {
                         <View style={styles.newPhotoCandidateCompareCol}>
                           <View style={styles.newPhotoCandidateThumbWrap}>
                             {ocrResultCandidate.photoUri != null ? (
-                              <Image
-                                source={{ uri: ocrResultCandidate.photoUri }}
-                                style={styles.newPhotoCandidateThumb}
-                                contentFit="contain"
+                              <FitPhoto
+                                uri={ocrResultCandidate.photoUri}
+                                surface="compareThumb"
+                                borderRadius={radius.chip}
                               />
                             ) : (
-                              <SymbolView
-                                name={{ ios: 'photo', android: 'image', web: 'image' }}
-                                tintColor={color.muted}
-                                size={20}
-                              />
+                              <View style={styles.newPhotoCandidateThumbEmpty}>
+                                <SymbolView
+                                  name={{ ios: 'photo', android: 'image', web: 'image' }}
+                                  tintColor={color.muted}
+                                  size={20}
+                                />
+                              </View>
                             )}
                           </View>
                           <ThemedText style={styles.newPhotoCandidateCompareLabel}>
@@ -1133,19 +1118,16 @@ export default function CameraScreen() {
                       </View>
                     </View>
                   )}
-                  {/* 写真全体を枠内に収めて表示（contain・切り抜かない）。保存されるのは撮影画像そのものなので、
-                      ここで見えている範囲＝保存される範囲。旧：高さ110ptの横長枠＋縦スクロールで中央約1/4しか
-                      見えず、保存後の商品詳細と別の範囲に見えていた。タップで拡大（「拡大」と同じモーダル）。 */}
-                  <TouchableOpacity
-                    style={[styles.ocrPhotoPreviewFrame, { height: ocrPhotoPreviewHeight }]}
+                  {/* 写真全体を、写真そのものの縦横比の枠で表示（切り抜かない・大きな余白を出さない）。
+                      保存されるのは撮影画像そのものなので、ここで見えている範囲＝保存される範囲。
+                      旧：110ptの帯（中央約1/4）→ 固定の横長枠（縦撮りは左右に大きな余白）。
+                      大きさの上限は utils/photo-preview-layout.ts。タップで拡大（「拡大」と同じモーダル）。 */}
+                  <FitPhoto
+                    uri={ocrPreviewUri}
+                    surface="ocrResult"
+                    borderRadius={radius.chip}
                     onPress={() => setOcrPhotoZoomVisible(true)}
-                    activeOpacity={0.85}>
-                    <Image
-                      source={{ uri: ocrPreviewUri }}
-                      style={StyleSheet.absoluteFill}
-                      contentFit="contain"
-                    />
-                  </TouchableOpacity>
+                  />
                 </View>
               ) : (
                 cameraPreview
@@ -1733,34 +1715,28 @@ export default function CameraScreen() {
                           )}
                         </View>
                         <View style={styles.photoSettingsRow}>
-                          {/* 保存される写真は撮影画像そのもの（crop/resizeなし）のため、正方形に切り抜かず
-                              写真全体を見せる（contain）。写真があるときだけ大きい枠にし、写真なしの時は従来の小枠。
+                          {/* 保存される写真は撮影画像そのもの（crop/resizeなし）のため、切り抜かず写真全体を、
+                              写真そのものの縦横比の枠で見せる。写真なしの時は従来の小枠（タップで写真を追加）。
                               タップで拡大（既存の保存写真プレビューModal）。 */}
-                          <TouchableOpacity
-                            style={[
-                              styles.photoSettingsThumbWrap,
-                              pendingPhotoUri != null && !excludePhotoFromSave && styles.photoSettingsThumbWrapLarge,
-                            ]}
-                            onPress={
-                              pendingPhotoUri != null && !excludePhotoFromSave
-                                ? () => setPhotoPreviewVisible(true)
-                                : handleAddPhoto
-                            }
-                            activeOpacity={0.8}>
-                            {pendingPhotoUri != null && !excludePhotoFromSave ? (
-                              <Image
-                                source={{ uri: pendingPhotoUri }}
-                                style={styles.photoSettingsThumb}
-                                contentFit="contain"
-                              />
-                            ) : (
+                          {pendingPhotoUri != null && !excludePhotoFromSave ? (
+                            <FitPhoto
+                              uri={pendingPhotoUri}
+                              surface="savePhoto"
+                              borderRadius={radius.chip}
+                              onPress={() => setPhotoPreviewVisible(true)}
+                            />
+                          ) : (
+                            <TouchableOpacity
+                              style={styles.photoSettingsThumbWrap}
+                              onPress={handleAddPhoto}
+                              activeOpacity={0.8}>
                               <SymbolView
                                 name={{ ios: 'photo', android: 'image', web: 'image' }}
                                 tintColor={color.muted}
                                 size={26}
                               />
-                            )}
-                          </TouchableOpacity>
+                            </TouchableOpacity>
+                          )}
                           <View style={styles.photoSettingsInfo}>
                             <ThemedText style={styles.photoSettingsRowText}>
                               {excludePhotoFromSave
@@ -1790,17 +1766,15 @@ export default function CameraScreen() {
                                 <View style={styles.newPhotoCandidateCompareCol}>
                                   <View style={styles.newPhotoCandidateThumbWrap}>
                                     {pendingPhotoUri != null ? (
-                                      <Image
-                                        source={{ uri: pendingPhotoUri }}
-                                        style={styles.newPhotoCandidateThumb}
-                                        contentFit="contain"
-                                      />
+                                      <FitPhoto uri={pendingPhotoUri} surface="compareThumb" borderRadius={radius.chip} />
                                     ) : (
-                                      <SymbolView
-                                        name={{ ios: 'photo', android: 'image', web: 'image' }}
-                                        tintColor={color.muted}
-                                        size={20}
-                                      />
+                                      <View style={styles.newPhotoCandidateThumbEmpty}>
+                                        <SymbolView
+                                          name={{ ios: 'photo', android: 'image', web: 'image' }}
+                                          tintColor={color.muted}
+                                          size={20}
+                                        />
+                                      </View>
                                     )}
                                   </View>
                                   <ThemedText style={styles.newPhotoCandidateCompareLabel}>
@@ -1809,11 +1783,7 @@ export default function CameraScreen() {
                                 </View>
                                 <View style={styles.newPhotoCandidateCompareCol}>
                                   <View style={styles.newPhotoCandidateThumbWrap}>
-                                    <Image
-                                      source={{ uri: newPhotoCandidate.uri }}
-                                      style={styles.newPhotoCandidateThumb}
-                                      contentFit="contain"
-                                    />
+                                    <FitPhoto uri={newPhotoCandidate.uri} surface="compareThumb" borderRadius={radius.chip} />
                                   </View>
                                   <ThemedText style={styles.newPhotoCandidateCompareLabel}>
                                     新しく撮った商品写真
@@ -2404,14 +2374,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: color.primary,
   },
-  ocrPhotoPreviewFrame: {
-    // 高さは画面の縦幅から算出（getOcrPhotoPreviewHeight・160〜220pt）してinlineで渡す。
-    // 暗い背景＝写真の外側。写真の端がそのまま保存範囲の端として見える。
-    borderRadius: radius.chip,
-    overflow: 'hidden',
-    backgroundColor: '#111',
-    position: 'relative',
-  },
   ocrPhotoPreviewRescan: {
     fontSize: 13,
     fontWeight: '700',
@@ -2991,18 +2953,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  // 保存対象写真があるときの枠（3:4＝iPhoneの縦撮り写真がちょうど収まる比率。横長写真は上下に余白が出る）。
-  // 余白は暗くし、写真の端＝保存範囲の端を見分けられるようにする（明るい背景だと白い値札と同化する）
-  photoSettingsThumbWrapLarge: {
-    width: 120,
-    height: 160,
-    backgroundColor: color.dark,
-  },
-  photoSettingsThumb: {
-    width: '100%',
-    height: '100%',
-    borderRadius: radius.chip,
-  },
   photoSettingsInfo: {
     flex: 1,
     gap: 4,
@@ -3070,21 +3020,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
   },
+  // 比較サムネの置き場（56×56）。写真は写真の形の枠（FitPhoto）で中央に置くので、左右の列で高さが揃う
   newPhotoCandidateThumbWrap: {
+    width: 56,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // 写真が無いときのアイコン枠
+  newPhotoCandidateThumbEmpty: {
     width: 56,
     height: 56,
     borderRadius: radius.chip,
     backgroundColor: color.line2,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  newPhotoCandidateThumb: {
-    width: 56,
-    height: 56,
-    borderRadius: radius.chip,
-    // 写真全体（contain）の外側を暗くし、写真の端を見分けられるようにする（明るい背景だと白い値札と同化する）
-    backgroundColor: color.dark,
   },
   newPhotoCandidateCompareLabel: {
     fontSize: 11,

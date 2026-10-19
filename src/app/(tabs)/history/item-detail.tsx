@@ -3,8 +3,8 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { FitPhoto } from '@/components/fit-photo';
 import { PhotoModal } from '@/components/photo-modal';
-import { ResilientPhoto } from '@/components/resilient-photo';
 import { ThemedText } from '@/components/themed-text';
 import { CurrencyFlagImage } from '@/components/domain';
 import { getCategoryLabel } from '@/config/categories';
@@ -143,21 +143,24 @@ export default function ItemDetailScreen() {
         scrollEnabled={canScroll}
         bounces={canScroll}
         overScrollMode={canScroll ? 'auto' : 'never'}>
-        {/* 大判写真。保存写真全体を見せる（contain）＝保存前のプレビュー（カメラ画面）と同じ範囲。
-            coverだと縦長写真の中央帯だけになり、保存前と別の範囲に見えていた。タップで拡大。
-            写真がある時は余白を暗くして写真の端を見分けられるようにする（写真なしの表示は従来どおり）。 */}
-        <Pressable
-          onPress={() => item.image_uri && setPhotoOpen(true)}
-          disabled={!item.image_uri}
-          style={[styles.photo, item.image_uri ? styles.photoFilled : null]}>
-          {item.image_uri ? (
-            <ResilientPhoto uri={item.image_uri} style={styles.photoImage} contentFit="contain" />
-          ) : (
+        {/* 大判写真。保存写真全体を、写真そのものの縦横比の枠で見せる＝保存前のプレビュー（カメラ画面）と同じ範囲・同じ形。
+            旧：全幅×220の枠（cover＝中央帯だけ → contain＝縦撮りは左右に大きな余白）。
+            大きさの上限は utils/photo-preview-layout.ts。タップで拡大。写真なしの表示は従来どおり。 */}
+        {item.image_uri ? (
+          <FitPhoto
+            uri={item.image_uri}
+            surface="detail"
+            saved
+            borderRadius={radius.cardLg}
+            onPress={() => setPhotoOpen(true)}
+          />
+        ) : (
+          <View style={styles.photo}>
             <View style={styles.photoPlaceholder}>
               <ThemedText style={styles.photoPlaceholderText}>写真なし</ThemedText>
             </View>
-          )}
-        </Pressable>
+          </View>
+        )}
 
         {/* タイトル＋状態 */}
         <View style={styles.titleRow}>
@@ -270,8 +273,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: color.line2,
   },
-  photoFilled: { backgroundColor: color.dark },
-  photoImage: { width: '100%', height: '100%' },
   photoPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   photoPlaceholderText: { fontSize: 13, fontWeight: '600', color: color.faint2 },
   titleRow: {

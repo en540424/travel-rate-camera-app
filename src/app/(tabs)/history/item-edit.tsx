@@ -5,9 +5,9 @@ import { Alert, Keyboard, Platform, Pressable, ScrollView, StyleSheet, TextInput
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 
+import { FitPhoto } from '@/components/fit-photo';
 import { PhotoModal } from '@/components/photo-modal';
 import { PhotoChangeSheet } from '@/components/domain/PhotoChangeSheet';
-import { ResilientPhoto } from '@/components/resilient-photo';
 import { ThemedText } from '@/components/themed-text';
 import { CategorySelector } from '@/components/domain';
 import { normalizeCategoryId, type CategoryId } from '@/config/categories';
@@ -472,21 +472,26 @@ export default function ItemEditScreen() {
         <View style={styles.formGroup}>
           {/* 保存写真 */}
           <View style={styles.photoRow}>
-            <Pressable
-              onPress={() => draftPhotoUri && setPhotoOpen(true)}
-              disabled={!draftPhotoUri}
-              style={[styles.thumb, draftPhotoUri ? styles.thumbFilled : null]}>
+            <View style={styles.thumbSlot}>
               {draftPhotoUri ? (
                 // 保存済みURIはアプリコンテナ再割当てで無効化しうるため、詳細画面と同じ
-                // ResilientPhoto経由で現在のdocumentDirectory基準へ再解決してから表示する。
-                // 詳細画面・保存前と同じく保存写真全体を見せる（contain・余白は暗く）。
-                <ResilientPhoto uri={draftPhotoUri} style={styles.thumbImage} contentFit="contain" />
+                // ResilientPhoto経由（FitPhotoのsaved）で現在のdocumentDirectory基準へ再解決してから表示する。
+                // 詳細画面・保存前と同じく、保存写真全体を写真そのものの縦横比の枠で見せる。タップで拡大。
+                <FitPhoto
+                  uri={draftPhotoUri}
+                  surface="editThumb"
+                  saved
+                  borderRadius={radius.chip}
+                  onPress={() => setPhotoOpen(true)}
+                />
               ) : (
-                <View style={styles.thumbPlaceholder}>
-                  <ThemedText style={styles.thumbPlaceholderText}>なし</ThemedText>
+                <View style={styles.thumb}>
+                  <View style={styles.thumbPlaceholder}>
+                    <ThemedText style={styles.thumbPlaceholderText}>なし</ThemedText>
+                  </View>
                 </View>
               )}
-            </Pressable>
+            </View>
             <View style={styles.photoTextWrap}>
               <ThemedText style={styles.photoTitle}>保存写真</ThemedText>
               <ThemedText style={styles.photoSub}>履歴一覧で表示されます</ThemedText>
@@ -637,8 +642,8 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   thumb: { width: 72, height: 72, borderRadius: radius.chip, overflow: 'hidden', backgroundColor: color.line2 },
-  thumbFilled: { backgroundColor: color.dark },
-  thumbImage: { width: '100%', height: '100%' },
+  // サムネの置き場（72×72）。写真は写真の形の枠（FitPhoto）で中央に置き、右の説明文の位置を揃える
+  thumbSlot: { width: 72, height: 72, alignItems: 'center', justifyContent: 'center' },
   thumbPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   thumbPlaceholderText: { fontSize: 11, fontWeight: '600', color: color.faint2 },
   photoTextWrap: { flex: 1, gap: 2 },
