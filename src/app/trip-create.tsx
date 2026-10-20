@@ -21,7 +21,7 @@ function todayStr(): string {
 }
 
 export default function TripCreateScreen() {
-  const { createTrip, editTrip } = useTrips();
+  const { activeTrip, createTrip, endCurrentAndCreateTrip, editTrip } = useTrips();
   const selectedCurrency = useSettingsStore((s) => s.selectedCurrency);
 
   const [name, setName] = useState('');
@@ -64,7 +64,11 @@ export default function TripCreateScreen() {
     return { started_at: s === '' ? null : s, ended_at: e === '' ? null : e };
   }
 
-  async function handleCreate() {
+  /**
+   * 旅行を作成する。`endCurrent`がtrueなら、無料版の「記録中の旅行は1件まで」シートで終了を確認した後の経路で、
+   * 今の記録中の旅行を終了（アーカイブ）してから作成する（入力した内容はそのまま使う）。
+   */
+  async function handleCreate(endCurrent = false) {
     if (creatingRef.current) return; // 連打：2回目以降は何もしない
     const nm = name.trim();
     if (!nm) return;
@@ -81,7 +85,9 @@ export default function TripCreateScreen() {
     // 保存失敗時に何も表示されない箇所があったため try/catch + Alert を追加（P0-08）。
     // 保存ロジック本体（createTrip/editTrip）は変更しない。
     try {
-      const trip = await createTrip(nm, bud, cur, r);
+      const trip = endCurrent
+        ? await endCurrentAndCreateTrip(nm, bud, cur, r)
+        : await createTrip(nm, bud, cur, r);
       if (trip == null) {
         setShowTripLimitSheet(true);
         return;
@@ -221,7 +227,7 @@ export default function TripCreateScreen() {
       {/* 固定フッター */}
       <View style={styles.footer}>
         <Pressable
-          onPress={handleCreate}
+          onPress={() => { void handleCreate(); }}
           disabled={!canCreate || isCreating}
           style={({ pressed }) => [
             styles.createBtn,
@@ -240,6 +246,10 @@ export default function TripCreateScreen() {
         visible={showTripLimitSheet}
         onClose={() => setShowTripLimitSheet(false)}
         onUpgrade={() => { setShowTripLimitSheet(false); router.push('/pro'); }}
+        currentTripName={activeTrip?.name}
+        onEndCurrent={() => { setShowTripLimitSheet(false); void handleCreate(true); }}
+        endCurrentLabel="今の旅行を終了して、新しい旅行を始める"
+        confirmEndLabel="終了して新しい旅行を始める"
       />
     </View>
   );

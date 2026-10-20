@@ -3,12 +3,13 @@
 // use-trips.native.ts（expo-sqlite 使用）はネイティブのみで使われる。
 import { useCallback, useEffect } from 'react';
 
-import { canCreateTrip, canRestoreTrip } from '@/config/limits';
+import { canCreateTrip, canRestoreTrip, canSwitchTrip, isTripReadOnly } from '@/config/limits';
 import type { CurrencyCode } from '@/constants/currencies';
 import type { TripRow } from '@/db/queries/trips';
 import { useIsPro } from '@/hooks/use-purchases';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useTripStore } from '@/stores/trip-store';
+import { resolveRecordingTripId, sortLiveTrips } from '@/utils/trip-recording-core';
 
 const STORAGE_KEY = 'travelrate:trips';
 let idCounter = Date.now();
@@ -141,10 +142,70 @@ export function useTrips() {
     }
   }
 
-  async function switchTrip(id: number): Promise<void> {
+  /** 使用中の旅行を切り替える。無料版は記録対象がある間、別の旅行へ切り替えない（native版と同じ契約） */
+  async function switchTrip(id: number): Promise<{ blocked: boolean }> {
+    const live = loadAll().filter((t) => t.archived_at === null);
+    if (!live.some((t) => t.id === id)) return { blocked: true };
+    if (!canSwitchTrip(isPro, id, resolveRecordingTripId(live))) return { blocked: true };
     const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
     const all = loadAll().map((t) => ({
       ...t,
+      is_active: (t.id === id ? 1 : 0) as 0 | 1,
+      updated_at: now,
+    }));
+    persistAll(all);
+    const trip = all.find((t) => t.id === id) ?? null;
+    if (trip) {
+      setActiveTrip(trip);
+      useSettingsStore.getState().setSelectedCurrency(trip.base_currency);
+    }
+    return { blocked: false };
+  }
+
+  /** 今の記録対象の旅行を終了して、新しい旅行を作成する（native版と同じ契約。件数の判定はしない） */
+  async function endCurrentAndCreateTrip(
+    name: string,
+    budgetJpy: number,
+    currency: CurrencyCode,
+    rate: number = 0,
+  ): Promise<TripRow> {
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const recordingTripId = resolveRecordingTripId(loadAll());
+    const all = loadAll().map((t) => ({
+      ...t,
+      archived_at: t.id === recordingTripId ? now : t.archived_at,
+      is_active: 0 as 0 | 1,
+      updated_at: now,
+    }));
+    const trip: TripRow = {
+      id: idCounter++,
+      name,
+      base_currency: currency,
+      target_currency: 'JPY',
+      manual_rate: rate,
+      budget_jpy: budgetJpy,
+      started_at: null,
+      ended_at: null,
+      is_active: 1,
+      created_at: now,
+      updated_at: now,
+      archived_at: null,
+    };
+    persistAll([trip, ...all]);
+    setActiveTrip(trip);
+    useSettingsStore.getState().setSelectedCurrency(trip.base_currency);
+    return trip;
+  }
+
+  /** 今の記録対象の旅行を終了して、記録中の別の旅行へ切り替える（native版と同じ契約） */
+  async function endCurrentAndSwitchTrip(id: number): Promise<void> {
+    const live = sortLiveTrips(loadAll());
+    if (!live.some((t) => t.id === id)) throw new Error('Switch target is not a live trip');
+    const recordingTripId = resolveRecordingTripId(live);
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const all = loadAll().map((t) => ({
+      ...t,
+      archived_at: t.id === recordingTripId && t.id !== id ? now : t.archived_at,
       is_active: (t.id === id ? 1 : 0) as 0 | 1,
       updated_at: now,
     }));
@@ -158,11 +219,10 @@ export function useTrips() {
 
   /**
    * アーカイブ済み旅行を復元。復元のみ行い、自動でのアクティブ化はしない（安全側）。
-   * 無料版は新規作成と同じ境界（非アーカイブ旅行数）でのみ復元できる（native版と同じ契約）。
+   * 無料版は終了した旅行を再開できない（native版と同じ契約）。
    */
   async function restoreTrip(id: number): Promise<{ blocked: boolean }> {
-    const activeCount = loadAll().filter((t) => t.archived_at === null).length;
-    if (!canRestoreTrip(isPro, activeCount)) return { blocked: true };
+    if (!canRestoreTrip(isPro)) return { blocked: true };
     const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
     const all = loadAll().map((t) =>
       t.id === id ? { ...t, archived_at: null, updated_at: now } : t,
@@ -171,5 +231,22 @@ export function useTrips() {
     return { blocked: false };
   }
 
-  return { activeTrip, loadTrips, createTrip, editTrip, removeTrip, switchTrip, restoreTrip };
+  /** この旅行が閲覧のみか（native版と同じ契約） */
+  function isReadOnlyTrip(tripId: number | null | undefined): boolean {
+    const recordingTripId = activeTrip != null && activeTrip.archived_at == null ? activeTrip.id : null;
+    return isTripReadOnly(isPro, tripId, recordingTripId);
+  }
+
+  return {
+    activeTrip,
+    loadTrips,
+    createTrip,
+    endCurrentAndCreateTrip,
+    editTrip,
+    removeTrip,
+    switchTrip,
+    endCurrentAndSwitchTrip,
+    restoreTrip,
+    isReadOnlyTrip,
+  };
 }

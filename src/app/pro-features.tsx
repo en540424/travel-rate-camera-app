@@ -14,9 +14,9 @@ interface CompareRow {
 }
 
 const ROWS: CompareRow[] = [
-  // 保存上限は「1つの旅行につき」、旅行数は「同時に管理できる件数」（アーカイブ後の新規作成は可）。全体上限と誤読させない
+  // 保存上限は「1つの旅行につき」、旅行数は「記録中にできる件数」（終了した旅行は何件でも残り閲覧できる）。全体上限と誤読させない
   { label: '保存件数（1旅行につき）', free: `${FREE_LIMITS.saves}件`, pro: '無制限' },
-  { label: '同時に管理できる旅行', free: `${FREE_LIMITS.trips}件`, pro: '無制限' },
+  { label: '記録中の旅行', free: `${FREE_LIMITS.trips}件まで`, pro: '無制限' },
   // カテゴリーは「保存はFreeでもできる／絞り込みと分析はPro」という切り分けを表に出す
   { label: 'カテゴリー保存', free: '○', pro: '○' },
   { label: 'カテゴリー絞り込み', free: '—', pro: '○' },

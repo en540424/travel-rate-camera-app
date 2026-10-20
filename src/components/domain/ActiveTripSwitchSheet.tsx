@@ -15,6 +15,8 @@ export interface ActiveTripSwitchSheetProps {
   trips: TripRow[];
   activeTripId: number | null;
   onSelect: (id: number) => void;
+  /** 閉じ切った後（iOS専用。ActionSheetの`onDismiss`をそのまま渡す）。続けて別のシートを出すときに使う */
+  onDismiss?: () => void;
 }
 
 /**
@@ -23,12 +25,12 @@ export interface ActiveTripSwitchSheetProps {
  * 各行にレートと残予算（アーカイブ済みは使用額）を併記。
  * 残り予算＝予算−購入済み合計（候補は差し引かない）。集計はSQL（totalsByTrip）で表示上限に依存しない。
  */
-export function ActiveTripSwitchSheet({ visible, onClose, trips, activeTripId, onSelect }: ActiveTripSwitchSheetProps) {
+export function ActiveTripSwitchSheet({ visible, onClose, trips, activeTripId, onSelect, onDismiss }: ActiveTripSwitchSheetProps) {
   const { totalsByTrip } = useAllHistory();
   const { height: windowHeight } = useWindowDimensions();
 
   return (
-    <ActionSheet visible={visible} onClose={onClose}>
+    <ActionSheet visible={visible} onClose={onClose} onDismiss={onDismiss}>
       <ThemedText style={styles.title}>使う旅行を切り替え</ThemedText>
       <ThemedText style={styles.subtitle}>カメラと履歴が、選んだ旅行に切り替わります</ThemedText>
 

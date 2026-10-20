@@ -21,7 +21,7 @@
 | App Store提出文言・App Privacy・ASC入力値・スクショ設計 | Vault `AI-Workflow-System/07_project-kits/tabirate-camera/旅レートカメラ_AppStore提出パッケージ_2026-09-12.md`（**2026-09-12新設・コピペ可能な確定版**。旧`…提出文書セット_2026-09-11.md`／`_2026-07-07.md`はsuperseded） |
 | repo側の技術設定（`app.json`／`eas.json`／credentials／環境変数／icon・splash・権限・production前提） | `RELEASE_PREP.md` |
 | 現行デザイントークン（実コード） | `src/theme/tokens.ts` |
-| 無料版上限・Pro回数（実コード） | `src/config/limits.ts`（現行値は `trips = 1` / `saves = 10`。2026-08-28のFree/Pro設計再整理でsavesを30→10へ変更済み。2026-09-11に`design/旅レートカメラ_実装引き継ぎ資料.md`・`.claude/design-sync-v2-plan.md`・`design-handoff/`各資料の記載も10へ整合済み。**数値は必ず`src/config/limits.ts`を正とする**）。**scope（2026-09-11 Human確定）：`saves`は「1つの旅行につき10件」（旅行ごと。端末全体ではない。判定は`getHistoryCountForTrip`）、`trips`は「同時に管理できる旅行1件」（非アーカイブ数で判定。アーカイブ後の新規作成・復元は同じ境界）。UI文言もこの表現へ整合済み** |
+| 無料版上限・Pro回数（実コード） | `src/config/limits.ts`（現行値は `trips = 1` / `saves = 10`。2026-08-28のFree/Pro設計再整理でsavesを30→10へ変更済み。2026-09-11に`design/旅レートカメラ_実装引き継ぎ資料.md`・`.claude/design-sync-v2-plan.md`・`design-handoff/`各資料の記載も10へ整合済み。**数値は必ず`src/config/limits.ts`を正とする**）。**scope（2026-09-11 Human確定）：`saves`は「1つの旅行につき10件」（旅行ごと。端末全体ではない。判定は`getHistoryCountForTrip`）、`trips`は「同時に管理できる旅行1件」（非アーカイブ数で判定。アーカイブ後の新規作成・復元は同じ境界）。UI文言もこの表現へ整合済み**。**【2026-10-20 Human確定で更新】`trips`は「記録中の旅行1件」：無料版の記録対象は非アーカイブ旅行のうち使用中の1件（判定は`src/utils/trip-recording-core.ts`・`config/limits.ts`の`canSwitchTrip`／`isTripReadOnly`）。終了（アーカイブ）した旅行は何件でも残り閲覧できるが、無料版では再開不可（記録中が0件でも不可）・新規記録不可・許可は閲覧／記録の削除／候補⇔購入済みの切替のみ。無料版は記録対象から別の旅行へ切り替えられない（Proから戻って記録中の旅行が複数ある場合も、データは書き換えず使用中の1件だけを記録対象にし、他は閲覧のみ）。Proは複数の旅行を記録中のまま切り替えて記録・再開できる** |
 | Pro購入・復元・課金設定（実コード） | `src/config/revenuecat.ts`・`src/config/feature-flags.ts`（実装済み・`SHOW_PRO = true`。外部ダッシュボード設定はVault `旅レートカメラ_RevenueCat・AppStoreConnect課金設定メモ.md`。**ただし同メモの価格欄は旧価格（¥480/¥3,800）。確定価格は月額¥500／年額¥4,000で、正本はVault提出パッケージ2026-09-12 §C-4**） |
 | 多言語OCR・翻訳・テキスト入力（中核構想） | Vault `AI-Workflow-System/07_project-kits/tabirate-camera/旅レートカメラ_多言語OCR・翻訳・テキスト入力_中核構想設計書_v1.md`（2026-07-22決定済み構想。2026-08-14時点：Apple TranslationをRelease正式経路へ接続済み。Release build実証・iOS16.4〜17.x weak-link実証は未実施。オンデバイス方式が第一候補、無料/Pro境界は未決定。詳細な現在地は`.claude/mvp-tasks.md`の該当節を参照） |
 | スマートカメラ・写真翻訳・カメラ翻訳（実コード・2026-10-05追加） | 共有ロジック`src/lib/live-text-core.ts`（追跡・価格と商品名の組立・位置合わせ・段落分割・文字種→翻訳元・LRU・言語ペア状態。`live-text-core.test.mjs`）／翻訳`src/lib/scene-translation-service.ts`（既存Apple Translation・既存`TranslationHost`を共有）／iOS native `modules/live-text`（expo-cameraのsessionへ映像フレーム出力を1つ追加しVisionで約1秒ごとに認識。**撮影経路・写真出力には触れない**）。メインカメラは`CameraPreview.native.tsx`の`SmartCameraLayer`（**シャッター→価格OCR→保存は不変**）、翻訳タブは`translation.tsx`の入力方法（テキスト・音声／写真／カメラ）。有料API・クラウドなし。現在地は`.claude/mvp-tasks.md`、実機確認は`TEST_CHECKLIST.md` #57〜#65 |
@@ -46,7 +46,7 @@
 - 写真の保存処理・保存先
 - 旅行切り替えロジック
 - 固定の下タブ構成（`(tabs)` 単一構成）
-- `FREE_LIMITS`（`trips = 1` / `saves = 10`、`src/config/limits.ts`）の数値そのもの、および保存上限のscope（旅行ごと＝`getHistoryCountForTrip`で数える。2026-09-11 Human確定）
+- `FREE_LIMITS`（`trips = 1` / `saves = 10`、`src/config/limits.ts`）の数値そのもの、および保存上限のscope（旅行ごと＝`getHistoryCountForTrip`で数える。2026-09-11 Human確定）と旅行のscope（記録中の旅行1件・終了した旅行は無料版で閲覧のみ・再開不可。2026-10-20 Human確定）
 - RevenueCat購入・復元・Entitlement判定（`SHOW_PRO = true`、`src/config/feature-flags.ts`）は実装済み。Entitlement ID／Offering ID／Product ID（`src/config/revenuecat.ts`）・購入/復元フローを動作確認なしに変更しない
 - `design-handoff-v1-before-sync/` の内容（削除・上書き禁止、比較材料として保持）
 

@@ -3,6 +3,8 @@
  * 価格・上限・回数などの「数値」はデザイントークンではなく差し替え前提のconfigに分離する。
  * 価格はRevenueCatのPackage（product.priceString等）を正とする。固定値は持たない。
  */
+import { canSwitchTripOnFree, isTripLockedOnFree } from '@/utils/trip-recording-core';
+
 import { DEV_BYPASS_FREE_LIMITS } from './feature-flags';
 
 // 無料版の上限（§7）
@@ -22,14 +24,35 @@ export function canCreateTrip(isPro: boolean, activeTripCount: number): boolean 
 }
 
 /**
- * アーカイブ済み旅行を復元できるか。
+ * 終了済み（アーカイブ済み）の旅行を記録中へ戻せるか。
  *
- * 復元も「同時に使える（非アーカイブの）旅行を1件増やす」操作なので、新規作成と**同じ境界**を通す。
- * 独自の判定を持たず`canCreateTrip`へ委譲する（片方だけ条件が変わる事故を防ぐ）。
- * `activeTripCount`は復元前の非アーカイブ旅行数。
+ * 無料版では終了した旅行は「記録を締めた旅行」で、記録中の旅行が0件でも再開できない（2026-10-20 Human確定）。
+ * 再開できると「終了→新しい旅行→前の旅行を再開」で複数の旅行へ記録できてしまうため。Proは再開できる。
  */
-export function canRestoreTrip(isPro: boolean, activeTripCount: number): boolean {
-  return canCreateTrip(isPro, activeTripCount);
+export function canRestoreTrip(isPro: boolean): boolean {
+  if (DEV_BYPASS_FREE_LIMITS) return true;
+  return isPro;
+}
+
+/**
+ * 使用中の旅行を切り替えられるか。無料版は記録対象（`recordingTripId`）がある間、別の旅行へ切り替えられない
+ * （切り替えると記録対象が移り、複数の旅行へ交互に記録できてしまう）。Proは複数の旅行を切り替えて記録できる。
+ */
+export function canSwitchTrip(isPro: boolean, targetTripId: number, recordingTripId: number | null): boolean {
+  if (DEV_BYPASS_FREE_LIMITS) return true;
+  if (isPro) return true;
+  return canSwitchTripOnFree(targetTripId, recordingTripId);
+}
+
+/**
+ * この旅行が「閲覧のみ」か（無料版で、記録対象以外の旅行＝終了済み・Proで記録していた他の旅行）。
+ * 閲覧のみの旅行では、閲覧・記録の削除・候補/購入済みの切替だけができる。データは書き換えない。
+ * Proは常にfalse（終了済みの旅行も従来どおり編集・再開できる）。
+ */
+export function isTripReadOnly(isPro: boolean, tripId: number | null | undefined, recordingTripId: number | null): boolean {
+  if (DEV_BYPASS_FREE_LIMITS) return false;
+  if (isPro) return false;
+  return isTripLockedOnFree(tripId, recordingTripId);
 }
 
 /**

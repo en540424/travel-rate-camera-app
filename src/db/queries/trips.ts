@@ -17,10 +17,13 @@ export interface TripRow {
   archived_at: string | null;
 }
 
-/** アクティブな旅行（archived_at IS NULL）を新しい順・is_active 優先で取得 */
+/**
+ * アクティブな旅行（archived_at IS NULL）を新しい順・is_active 優先で取得。
+ * 同時刻作成はidが大きい方を先にする（無料版の記録対象を決める`utils/trip-recording-core.ts`と同じ並び）。
+ */
 export async function getActiveTrips(db: SQLiteDatabase): Promise<TripRow[]> {
   return db.getAllAsync<TripRow>(
-    'SELECT * FROM trips WHERE archived_at IS NULL ORDER BY is_active DESC, created_at DESC',
+    'SELECT * FROM trips WHERE archived_at IS NULL ORDER BY is_active DESC, created_at DESC, id DESC',
   );
 }
 

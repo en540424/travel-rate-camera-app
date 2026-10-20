@@ -32,7 +32,8 @@ interface Feature {
 const FEATURES: Feature[] = [
   // 上限は旅行ごと（1つの旅行につきN件）。端末全体の上限ではない
   { title: '保存件数の上限を解除', sub: `無料版は1つの旅行につき${FREE_LIMITS.saves}件まで。Proなら無制限に保存できます。` },
-  { title: '旅行をいくつでも作成', sub: `無料版は同時に${FREE_LIMITS.trips}件まで。Proなら複数の旅行を同時に管理できます。` },
+  // 旅行は「記録中にできる数」の違い（終了した旅行は無料版でも何件でも残り、閲覧できる）
+  { title: '複数の旅行を同時に管理', sub: `無料版は記録中の旅行が${FREE_LIMITS.trips}件まで。Proなら複数の旅行を切り替えながら記録できます。` },
   {
     title: 'カテゴリー別の絞り込みと分析',
     sub: 'カテゴリーの保存は無料版でも使えます。Proなら履歴の絞り込みと、金額・件数・構成比の分析ができます。',
@@ -79,7 +80,7 @@ export default function ProScreen() {
             </View>
             <ThemedText style={styles.heroTitle}>Proは有効です</ThemedText>
             <ThemedText style={styles.heroBody}>
-              保存件数・旅行作成数の制限が解除されています。
+              保存件数の制限が解除され、複数の旅行を同時に管理できます。
             </ThemedText>
           </View>
 
@@ -124,7 +125,7 @@ export default function ProScreen() {
           </View>
           <ThemedText style={styles.heroTitle}>旅の記録を、もっと自由に。</ThemedText>
           <ThemedText style={styles.heroBody}>
-            無料版の使い心地はそのままに、保存・旅行数の上限を解放します。
+            無料版の使い心地はそのままに、保存件数の上限をなくし、複数の旅行を同時に管理できます。
           </ThemedText>
         </View>
 

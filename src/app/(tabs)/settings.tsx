@@ -2,6 +2,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -14,6 +15,7 @@ import { SettingRow, SettingSection } from '@/components/ui';
 import { ActiveTripSwitchSheet } from '@/components/domain/ActiveTripSwitchSheet';
 import { CurrencyFlagImage } from '@/components/domain/CurrencyFlagImage';
 import { CurrentPlanCard } from '@/components/domain/CurrentPlanCard';
+import { TripLimitSheet } from '@/components/domain/TripLimitSheet';
 import { FALLBACK_BUDGET_JPY } from '@/constants/camera-screen';
 import { SHOW_PRO } from '@/config/feature-flags';
 import type { TripRow } from '@/db/queries/trips';
@@ -47,11 +49,18 @@ export default function SettingsScreen() {
   }, []);
 
   const { selectedCurrency } = useSettingsStore();
-  const { activeTrip, loadTrips, switchTrip } = useTrips();
+  const { activeTrip, loadTrips, switchTrip, endCurrentAndSwitchTrip, isReadOnlyTrip } = useTrips();
   const { totalCount, budgetTotals } = useHistory();
 
   const [trips, setTrips] = useState<TripRow[]>([]);
   const [showSwitch, setShowSwitch] = useState(false);
+  /** 無料版で切替がブロックされた切替先（「記録中の旅行は1件まで」シートを出す） */
+  const [limitTargetId, setLimitTargetId] = useState<number | null>(null);
+  /**
+   * 切替シートが閉じ切ってから上限シートを出すための保留（iOS）。閉じかけのModalの上に別のModalを
+   * presentすると無言で失敗することがあるため（PhotoChangeSheetと同じ理由）、`onDismiss`で出す。
+   */
+  const pendingLimitTargetRef = useRef<number | null>(null);
 
   // 一覧件数を表示するため、フォーカス時に旅行リストを読み込む
   useFocusEffect(
@@ -69,8 +78,9 @@ export default function SettingsScreen() {
   // 旅行切替失敗時に無言で終わらないよう try/catch + Alert を追加（S-08）。切替処理本体は変更しない。
   async function handleSwitch(id: number) {
     try {
-      await switchTrip(id);
+      const result = await switchTrip(id);
       setShowSwitch(false);
+      if (result.blocked) setLimitTargetId(id);
     } catch (err) {
       console.warn('[settings switch error]', err);
       Alert.alert(
@@ -78,6 +88,40 @@ export default function SettingsScreen() {
         'もう一度お試しください。',
         [{ text: 'OK' }],
       );
+    }
+  }
+
+  /** 切替シートで旅行を選んだ時。無料版で記録対象以外の旅行なら、切り替えずに上限シートを出す */
+  function handleSelectTrip(id: number) {
+    if (isReadOnlyTrip(id)) {
+      if (Platform.OS === 'ios') {
+        pendingLimitTargetRef.current = id;
+        setShowSwitch(false);
+      } else {
+        setShowSwitch(false);
+        setLimitTargetId(id);
+      }
+      return;
+    }
+    setShowSwitch(false);
+    handleSwitch(id);
+  }
+
+  function handleSwitchSheetDismiss() {
+    const id = pendingLimitTargetRef.current;
+    pendingLimitTargetRef.current = null;
+    if (id != null) setLimitTargetId(id);
+  }
+
+  /** 上限シートで「今の旅行を終了して切り替える」を確認した後。終了した旅行の記録はそのまま残る */
+  async function handleEndCurrentAndSwitch(id: number) {
+    setLimitTargetId(null);
+    try {
+      await endCurrentAndSwitchTrip(id);
+      setTrips(await loadTrips());
+    } catch (err) {
+      console.warn('[settings end and switch error]', err);
+      Alert.alert('旅行を切り替えできませんでした', 'もう一度お試しください。', [{ text: 'OK' }]);
     }
   }
 
@@ -235,7 +279,18 @@ export default function SettingsScreen() {
         onClose={() => setShowSwitch(false)}
         trips={trips}
         activeTripId={activeTrip?.id ?? null}
-        onSelect={(id) => { setShowSwitch(false); handleSwitch(id); }}
+        onSelect={handleSelectTrip}
+        onDismiss={handleSwitchSheetDismiss}
+      />
+
+      <TripLimitSheet
+        visible={limitTargetId != null}
+        onClose={() => setLimitTargetId(null)}
+        onUpgrade={() => { setLimitTargetId(null); router.push('/pro'); }}
+        currentTripName={activeTrip?.name}
+        onEndCurrent={() => { if (limitTargetId != null) void handleEndCurrentAndSwitch(limitTargetId); }}
+        endCurrentLabel="今の旅行を終了して、この旅行に切り替える"
+        confirmEndLabel="終了して切り替える"
       />
     </View>
   );

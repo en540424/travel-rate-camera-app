@@ -8,6 +8,7 @@ import { TripLimitSheet } from '@/components/domain/TripLimitSheet';
 import type { CurrencyCode } from '@/constants/currencies';
 import { CURRENCY_CODES, getRateInputExample } from '@/constants/currencies';
 import { useAllHistory } from '@/hooks/use-all-history';
+import { useIsPro } from '@/hooks/use-purchases';
 import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { color, radius, shadow } from '@/theme/tokens';
@@ -18,7 +19,8 @@ export default function TripEditScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
   const id = params.id != null ? parseInt(params.id, 10) : NaN;
   const { tripMap } = useAllHistory();
-  const { activeTrip, editTrip, switchTrip, removeTrip, restoreTrip } = useTrips();
+  const { activeTrip, editTrip, switchTrip, removeTrip, restoreTrip, isReadOnlyTrip } = useTrips();
+  const isPro = useIsPro();
   const { saveRate } = useRates();
 
   const trip = tripMap.get(id);
@@ -30,8 +32,10 @@ export default function TripEditScreen() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [makeActive, setMakeActive] = useState(false);
-  // 無料版の旅行数上限で復元がブロックされた時のPro案内（trip-create.tsxと同じシートを再利用）
+  // 無料版で再開・切替がブロックされた時のPro案内（trip-create.tsxと同じシートを再利用）
   const [showTripLimitSheet, setShowTripLimitSheet] = useState(false);
+  // この画面で旅行を終了した直後（戻る途中）。終了で閲覧のみになった旅行の案内を一瞬出さない
+  const [isLeaving, setIsLeaving] = useState(false);
   const initedRef = useRef<number | null>(null);
   const origCurrencyRef = useRef<CurrencyCode>('USD');
 
@@ -55,6 +59,21 @@ export default function TripEditScreen() {
         <ThemedText style={styles.missingText}>旅行が見つかりません</ThemedText>
         <Pressable onPress={() => router.back()} style={styles.missingBtn}>
           <ThemedText style={styles.missingBtnText}>戻る</ThemedText>
+        </Pressable>
+      </View>
+    );
+  }
+
+  // 無料版で記録対象以外の旅行（終了済み・Proで記録していた他の旅行）は閲覧のみ。編集・再開はさせず記録一覧へ案内する
+  if (isReadOnlyTrip(trip.id) && !isLeaving) {
+    return (
+      <View style={[styles.screen, styles.center]}>
+        <ThemedText style={styles.missingText}>この旅行はFreeプランでは閲覧のみです</ThemedText>
+        <ThemedText style={styles.readOnlyBody}>記録の閲覧・削除と、候補／購入済みの切り替えができます。</ThemedText>
+        <Pressable
+          onPress={() => router.replace({ pathname: '/trip-records', params: { id: String(trip.id) } })}
+          style={styles.missingBtn}>
+          <ThemedText style={styles.missingBtnText}>記録を見る</ThemedText>
         </Pressable>
       </View>
     );
@@ -108,7 +127,14 @@ export default function TripEditScreen() {
         ended_at: dates.ended_at,
       });
       if (cur !== 'JPY' && r > 0) await saveRate(cur, r);
-      if (makeActive && activeTrip?.id !== id) await switchTrip(id);
+      if (makeActive && activeTrip?.id !== id) {
+        const result = await switchTrip(id);
+        if (result.blocked) {
+          // 旅行の内容は保存済み。切替だけ無料版の上限で止まったので、案内を出して画面に留まる
+          setShowTripLimitSheet(true);
+          return;
+        }
+      }
       router.back();
     } catch (err) {
       console.warn('[trip-edit save error]', err);
@@ -138,8 +164,10 @@ export default function TripEditScreen() {
 
   function handleArchive() {
     Alert.alert(
-      '旅行を終了しますか？',
-      `「${trip!.name}」をアーカイブします。履歴データは削除されません。`,
+      `「${trip!.name}」を終了しますか？`,
+      isPro
+        ? '終了した旅行の記録・写真は削除されず、いつでも閲覧できます。'
+        : '旅行を終了すると、Freeプランではこの旅行に新しい記録を追加できなくなります。過去の記録・写真はいつでも閲覧できます。',
       [
         { text: 'キャンセル', style: 'cancel' },
         {
@@ -147,9 +175,11 @@ export default function TripEditScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              setIsLeaving(true);
               await removeTrip(id);
               router.back();
             } catch (err) {
+              setIsLeaving(false);
               console.warn('[trip-edit archive error]', err);
               Alert.alert('旅行をアーカイブできませんでした', 'もう一度お試しください。', [{ text: 'OK' }]);
             }
@@ -171,7 +201,7 @@ export default function TripEditScreen() {
             try {
               const result = await restoreTrip(id);
               if (result.blocked) {
-                // DBは変更されていない。アーカイブ済みのまま、Pro導線を案内する
+                // DBは変更されていない。無料版は終了した旅行を再開できないので、アーカイブ済みのままPro導線を案内する
                 setShowTripLimitSheet(true);
                 return;
               }
@@ -311,6 +341,7 @@ const styles = StyleSheet.create({
   missingText: { fontSize: 15, fontWeight: '600', color: color.muted },
   missingBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: radius.button, borderWidth: 1.5, borderColor: color.inputBorder },
   missingBtnText: { fontSize: 15, fontWeight: '700', color: color.body },
+  readOnlyBody: { fontSize: 13, fontWeight: '500', color: color.muted, textAlign: 'center', paddingHorizontal: 32, lineHeight: 20 },
   scroll: { padding: 18, paddingBottom: 40, gap: 18, maxWidth: 480, width: '100%', alignSelf: 'center' },
   field: { gap: 8 },
   label: { fontSize: 13, fontWeight: '700', color: color.body },

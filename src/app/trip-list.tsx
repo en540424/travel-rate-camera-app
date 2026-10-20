@@ -1,9 +1,10 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { CurrencyFlagImage } from '@/components/domain';
+import { TripLimitSheet } from '@/components/domain/TripLimitSheet';
 import type { TripRow } from '@/db/queries/trips';
 import { useAllHistory } from '@/hooks/use-all-history';
 import { useTrips } from '@/hooks/use-trips';
@@ -18,14 +19,17 @@ function monthLabel(t: TripRow): string {
 }
 
 export default function TripListScreen() {
-  const { activeTrip, switchTrip } = useTrips();
+  const { activeTrip, switchTrip, endCurrentAndSwitchTrip, isReadOnlyTrip } = useTrips();
   // 集計は表示用2000件ではなくSQL集計（totalsByTrip）を使う。残り予算＝予算−購入済み（候補は差し引かない）
   const { tripMap, totalsByTrip, reload } = useAllHistory();
+  /** 無料版で切替がブロックされた切替先（「記録中の旅行は1件まで」シートを出す） */
+  const [limitTargetId, setLimitTargetId] = useState<number | null>(null);
 
   // 旅行切替失敗時に無言で終わらないよう try/catch + Alert を追加（S-08）。切替処理本体は変更しない。
   async function handleSwitchTrip(id: number) {
     try {
-      await switchTrip(id);
+      const result = await switchTrip(id);
+      if (result.blocked) setLimitTargetId(id);
     } catch (err) {
       console.warn('[trip-list switch error]', err);
       Alert.alert(
@@ -33,6 +37,27 @@ export default function TripListScreen() {
         'もう一度お試しください。',
         [{ text: 'OK' }],
       );
+    }
+  }
+
+  /** シートで「今の旅行を終了して切り替える」を確認した後。終了した旅行の記録はそのまま残る */
+  async function handleEndCurrentAndSwitch(id: number) {
+    setLimitTargetId(null);
+    try {
+      await endCurrentAndSwitchTrip(id);
+      await reload();
+    } catch (err) {
+      console.warn('[trip-list end and switch error]', err);
+      Alert.alert('旅行を切り替えできませんでした', 'もう一度お試しください。', [{ text: 'OK' }]);
+    }
+  }
+
+  /** 終了済み・無料版で閲覧のみの旅行は記録一覧へ、それ以外は従来どおり編集画面へ */
+  function openTrip(t: TripRow) {
+    if (t.archived_at != null || isReadOnlyTrip(t.id)) {
+      router.push({ pathname: '/trip-records', params: { id: String(t.id) } });
+    } else {
+      router.push({ pathname: '/trip-edit', params: { id: String(t.id) } });
     }
   }
 
@@ -139,7 +164,7 @@ export default function TripListScreen() {
               return (
                 <Pressable
                   key={t.id}
-                  onPress={() => router.push({ pathname: '/trip-edit', params: { id: String(t.id) } })}
+                  onPress={() => openTrip(t)}
                   style={({ pressed }) => [styles.otherCard, archived && styles.otherCardArchived, pressed && styles.pressed]}>
                   <View style={styles.otherTop}>
                     <View style={styles.nameWrap}>
@@ -161,7 +186,7 @@ export default function TripListScreen() {
                     候補{s.candidateCount}・購入{s.purchasedCount}{monthLabel(t) !== '' ? `・${monthLabel(t)}` : ''}
                   </ThemedText>
                   {archived ? (
-                    <ThemedText style={styles.archivedHint}>タップして詳細・復元</ThemedText>
+                    <ThemedText style={styles.archivedHint}>タップして記録を見る</ThemedText>
                   ) : (
                     <Pressable
                       onPress={() => { void handleSwitchTrip(t.id); }}
@@ -175,6 +200,16 @@ export default function TripListScreen() {
           </>
         )}
       </ScrollView>
+
+      <TripLimitSheet
+        visible={limitTargetId != null}
+        onClose={() => setLimitTargetId(null)}
+        onUpgrade={() => { setLimitTargetId(null); router.push('/pro'); }}
+        currentTripName={active?.name}
+        onEndCurrent={() => { if (limitTargetId != null) void handleEndCurrentAndSwitch(limitTargetId); }}
+        endCurrentLabel="今の旅行を終了して、この旅行に切り替える"
+        confirmEndLabel="終了して切り替える"
+      />
     </View>
   );
 }

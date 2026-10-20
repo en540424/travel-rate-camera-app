@@ -38,7 +38,7 @@ interface IncludedFeature {
  */
 const INCLUDED: IncludedFeature[] = [
   { label: '保存件数', value: '無制限' },
-  { label: '旅行作成数', value: '無制限' },
+  { label: '複数の旅行を同時に管理', value: '利用可' },
   { label: 'カテゴリー絞り込み', value: '利用可' },
   { label: 'カテゴリー分析', value: '利用可' },
   { label: 'CSV書き出し', value: '利用可' },
