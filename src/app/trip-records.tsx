@@ -52,9 +52,10 @@ function formatPeriod(trip: TripRow): string | null {
  * 旅行の記録一覧（終了済みの旅行・無料版で閲覧のみの旅行を見るための画面）。
  *
  * 履歴タブは使用中の旅行に固定され、終了済みの旅行は使用中にできないため、ここで旅行ごとに見せる。
- * 無料版で閲覧のみの旅行に許す操作は、閲覧・記録の削除・候補/購入済みの切替だけ（2026-10-20 Human確定）。
- * 金額・メモ・写真・日付の編集や新しい記録の追加はここに置かない。Proは「旅行の編集・再開」から従来の編集画面へ進める。
- * 履歴タブ内の詳細画面（別のStack）へは遷移せず、写真の拡大・切替・削除をこの画面で完結させる。
+ * 無料版で記録対象以外の旅行に許す操作は、閲覧・保存済みの記録の編集（訂正）・削除・候補/購入済みの切替
+ * （2026-10-20 Human確定。同日「既存記録の編集はOK・新しい記録を増やすのはNG」へ更新）。新しい記録の追加・再開はここに置かない。
+ * 記録の編集は履歴タブと同じ編集画面を、ルートStackの`trip-record-edit`として開く（履歴タブ内のStackへは遷移しない）。
+ * 写真の拡大・切替・削除はこの画面で完結させる。
  */
 export default function TripRecordsScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
@@ -194,6 +195,11 @@ export default function TripRecordsScreen() {
                 {isPurchased ? '✓ 購入済み' : '候補'}
               </ThemedText>
             </Pressable>
+            <Pressable
+              onPress={() => router.push({ pathname: '/trip-record-edit', params: { id: String(item.id) } })}
+              hitSlop={8}>
+              <ThemedText style={styles.editLink}>編集</ThemedText>
+            </Pressable>
             <Pressable onPress={() => handleDelete(item)} hitSlop={8}>
               <ThemedText style={styles.deleteLink}>削除</ThemedText>
             </Pressable>
@@ -215,7 +221,7 @@ export default function TripRecordsScreen() {
           <ThemedText style={styles.tripName} numberOfLines={1}>{trip.name}</ThemedText>
           <View style={[styles.badge, !archived && !readOnly && styles.badgeLive]}>
             <ThemedText style={[styles.badgeText, !archived && !readOnly && styles.badgeTextLive]}>
-              {archived ? '終了' : readOnly ? '閲覧のみ' : '記録中'}
+              {archived ? '終了' : readOnly ? '新規記録不可' : '記録中'}
             </ThemedText>
           </View>
         </View>
@@ -239,7 +245,7 @@ export default function TripRecordsScreen() {
       </View>
       {readOnly && (
         <ThemedText style={styles.note}>
-          Freeプランでは、この旅行に記録を追加・編集できません。記録の閲覧・削除と、候補／購入済みの切り替えはできます。
+          Freeプランでは、この旅行に新しい記録は追加できません。保存済みの記録は編集できます。
         </ThemedText>
       )}
       {totalCount > rows.length && (
@@ -325,6 +331,7 @@ const styles = StyleSheet.create({
   cardActions: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 3 },
   statusBtn: { borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 3 },
   statusBtnText: { fontSize: 11, fontWeight: '700' },
+  editLink: { fontSize: 12, fontWeight: '600', color: color.primaryDark },
   deleteLink: { fontSize: 12, fontWeight: '600', color: color.danger },
   cardRight: { alignItems: 'flex-end', flexShrink: 0 },
   cardJpy: { fontSize: 17, fontWeight: '700', color: color.text, letterSpacing: -0.4, fontVariant: ['tabular-nums'] },

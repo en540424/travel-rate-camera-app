@@ -46,7 +46,7 @@
 - 写真の保存処理・保存先
 - 旅行切り替えロジック
 - 固定の下タブ構成（`(tabs)` 単一構成）
-- `FREE_LIMITS`（`trips = 1` / `saves = 10`、`src/config/limits.ts`）の数値そのもの、および保存上限のscope（旅行ごと＝`getHistoryCountForTrip`で数える。2026-09-11 Human確定）と旅行のscope（記録中の旅行1件・終了した旅行は無料版で閲覧のみ・再開不可。2026-10-20 Human確定）
+- `FREE_LIMITS`（`trips = 1` / `saves = 10`、`src/config/limits.ts`）の数値そのもの、および保存上限のscope（旅行ごと＝`getHistoryCountForTrip`で数える。2026-09-11 Human確定）と旅行のscope（記録中の旅行1件・終了した旅行は無料版で新規記録・再開不可、保存済みの記録の編集・削除は可。2026-10-20 Human確定・同日編集可へ更新）
 - RevenueCat購入・復元・Entitlement判定（`SHOW_PRO = true`、`src/config/feature-flags.ts`）は実装済み。Entitlement ID／Offering ID／Product ID（`src/config/revenuecat.ts`）・購入/復元フローを動作確認なしに変更しない
 - `design-handoff-v1-before-sync/` の内容（削除・上書き禁止、比較材料として保持）
 

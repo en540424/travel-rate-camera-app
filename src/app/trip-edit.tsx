@@ -64,12 +64,13 @@ export default function TripEditScreen() {
     );
   }
 
-  // 無料版で記録対象以外の旅行（終了済み・Proで記録していた他の旅行）は閲覧のみ。編集・再開はさせず記録一覧へ案内する
+  // 無料版で記録対象以外の旅行（終了済み・Proで記録していた他の旅行）は、旅行の編集・再開はさせず記録一覧へ案内する
+  // （保存済みの記録の編集は記録一覧から行える）
   if (isReadOnlyTrip(trip.id) && !isLeaving) {
     return (
       <View style={[styles.screen, styles.center]}>
-        <ThemedText style={styles.missingText}>この旅行はFreeプランでは閲覧のみです</ThemedText>
-        <ThemedText style={styles.readOnlyBody}>記録の閲覧・削除と、候補／購入済みの切り替えができます。</ThemedText>
+        <ThemedText style={styles.missingText}>この旅行はFreeプランでは再開できません</ThemedText>
+        <ThemedText style={styles.readOnlyBody}>新しい記録は追加できません。保存済みの記録は「記録を見る」から編集できます。</ThemedText>
         <Pressable
           onPress={() => router.replace({ pathname: '/trip-records', params: { id: String(trip.id) } })}
           style={styles.missingBtn}>

@@ -15,7 +15,6 @@ import { CURRENCIES } from '@/constants/currencies';
 import type { HistoryRow } from '@/db/queries/history';
 import { getHistoryById } from '@/db/queries/history';
 import { useHistory } from '@/hooks/use-history';
-import { useTrips } from '@/hooks/use-trips';
 import { useUnsavedChangesStore } from '@/stores/unsaved-changes-store';
 import { color, radius, shadow } from '@/theme/tokens';
 import { resolveEditedAmount } from '@/utils/edit-amount-core';
@@ -26,7 +25,6 @@ export default function ItemEditScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
   const id = params.id != null ? parseInt(params.id, 10) : NaN;
   const { history, reload, updateAmount, updateMemo, togglePurchased, updateImageUri, updateCategory, removeEntry } = useHistory();
-  const { isReadOnlyTrip } = useTrips();
   const setHasUnsavedChanges = useUnsavedChangesStore((s) => s.setHasUnsavedChanges);
   const setDiscardHandler = useUnsavedChangesStore((s) => s.setDiscardHandler);
   const navigation = useNavigation();
@@ -278,17 +276,8 @@ export default function ItemEditScreen() {
     );
   }
 
-  // 無料版で記録対象以外の旅行（終了済み等）の記録は編集させない（詳細画面で候補/購入済みの切替・削除のみ）
-  if (isReadOnlyTrip(item.trip_id)) {
-    return (
-      <View style={[styles.screen, styles.center]}>
-        <ThemedText style={styles.missingText}>この記録はFreeプランでは編集できません</ThemedText>
-        <Pressable onPress={() => router.back()} style={styles.missingBtn}>
-          <ThemedText style={styles.missingBtnText}>戻る</ThemedText>
-        </Pressable>
-      </View>
-    );
-  }
+  // 無料版で記録対象以外の旅行（終了済み等）の記録も、保存済みの記録の訂正としてここで編集できる
+  // （2026-10-20 Human確定）。新しい記録の追加・旅行の再開はこの画面には無い。
 
   const isForeign = item.currency !== 'JPY';
   const previewJpy = (() => {

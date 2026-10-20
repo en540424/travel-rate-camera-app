@@ -35,7 +35,7 @@ function formatSavedAt(row: HistoryRow): string {
 export default function ItemDetailScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
   const id = params.id != null ? parseInt(params.id, 10) : NaN;
-  const { history, reload, removeEntry, togglePurchased } = useHistory();
+  const { history, reload, removeEntry } = useHistory();
   const { activeTrip, isReadOnlyTrip } = useTrips();
   const db = useSQLiteContext();
   const [photoOpen, setPhotoOpen] = useState(false);
@@ -107,20 +107,9 @@ export default function ItemDetailScreen() {
   const statusBg = isPurchased ? color.primarySoft : color.candidateSoft;
   const statusFg = isPurchased ? color.purchasedText : color.candidateText;
   const title = item.memo?.trim() ? item.memo.trim() : '（メモなし）';
-  // 無料版で記録対象以外の旅行（終了済み等）の記録は閲覧のみ。編集の代わりに候補/購入済みの切替だけを出す
+  // 無料版で記録対象以外の旅行（終了済み等）の記録も、保存済みの記録は通常どおり編集できる。
+  // 新しい記録を追加できないことだけを案内する（2026-10-20 Human確定）
   const readOnly = isReadOnlyTrip(item.trip_id);
-
-  async function handleTogglePurchased() {
-    if (!item) return;
-    // 他旅行の記録はfallbackで表示している。切替後に読み直すよう「取得済み」印を外してから更新する
-    fetchedFallbackIdRef.current = null;
-    try {
-      await togglePurchased(item.id, item.is_purchased ?? 0);
-    } catch (err) {
-      console.warn('[item-detail toggle error]', err);
-      Alert.alert('切り替えできませんでした', 'もう一度お試しください。', [{ text: 'OK' }]);
-    }
-  }
 
   function handleDelete() {
     if (!item) return;
@@ -236,7 +225,7 @@ export default function ItemDetailScreen() {
         </View>
         {readOnly && (
           <ThemedText style={styles.readOnlyNote}>
-            この旅行はFreeプランでは閲覧のみです。候補／購入済みの切り替えと削除はできます。
+            Freeプランでは、この旅行に新しい記録は追加できません。保存済みの記録は編集できます。
           </ThemedText>
         )}
       </ScrollView>
@@ -248,19 +237,11 @@ export default function ItemDetailScreen() {
           style={({ pressed }) => [styles.deleteBtn, pressed && styles.pressed]}>
           <ThemedText style={styles.deleteIcon}>🗑</ThemedText>
         </Pressable>
-        {readOnly ? (
-          <Pressable
-            onPress={() => { void handleTogglePurchased(); }}
-            style={({ pressed }) => [styles.editBtn, pressed && styles.pressed]}>
-            <ThemedText style={styles.editBtnText}>{isPurchased ? '候補に戻す' : '購入済みにする'}</ThemedText>
-          </Pressable>
-        ) : (
-          <Pressable
-            onPress={() => router.push({ pathname: '/history/item-edit', params: { id: String(item.id) } })}
-            style={({ pressed }) => [styles.editBtn, pressed && styles.pressed]}>
-            <ThemedText style={styles.editBtnText}>編集する</ThemedText>
-          </Pressable>
-        )}
+        <Pressable
+          onPress={() => router.push({ pathname: '/history/item-edit', params: { id: String(item.id) } })}
+          style={({ pressed }) => [styles.editBtn, pressed && styles.pressed]}>
+          <ThemedText style={styles.editBtnText}>編集する</ThemedText>
+        </Pressable>
       </View>
 
       <PhotoModal uri={photoOpen ? item.image_uri : null} onClose={() => setPhotoOpen(false)} />

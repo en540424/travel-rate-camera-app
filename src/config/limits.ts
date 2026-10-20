@@ -46,7 +46,8 @@ export function canSwitchTrip(isPro: boolean, targetTripId: number, recordingTri
 
 /**
  * この旅行が「閲覧のみ」か（無料版で、記録対象以外の旅行＝終了済み・Proで記録していた他の旅行）。
- * 閲覧のみの旅行では、閲覧・記録の削除・候補/購入済みの切替だけができる。データは書き換えない。
+ * 閲覧のみの旅行では、新しい記録の追加・旅行の編集・再開・切替ができない。保存済みの記録の閲覧・編集（訂正）・削除・
+ * 候補/購入済みの切替はできる（2026-10-20 Human確定。記録の編集はこの判定でゲートしない）。データは書き換えない。
  * Proは常にfalse（終了済みの旅行も従来どおり編集・再開できる）。
  */
 export function isTripReadOnly(isPro: boolean, tripId: number | null | undefined, recordingTripId: number | null): boolean {
