@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -24,6 +24,8 @@ export default function TripListScreen() {
   const { tripMap, totalsByTrip, reload } = useAllHistory();
   /** 無料版で切替がブロックされた切替先（「記録中の旅行は1件まで」シートを出す） */
   const [limitTargetId, setLimitTargetId] = useState<number | null>(null);
+  // 終了＋切替の処理中。連打で同じ処理を並行させない（trip-createのcreatingRefと同じ考え方）
+  const endingRef = useRef(false);
 
   // 旅行切替失敗時に無言で終わらないよう try/catch + Alert を追加（S-08）。切替処理本体は変更しない。
   async function handleSwitchTrip(id: number) {
@@ -42,6 +44,8 @@ export default function TripListScreen() {
 
   /** シートで「今の旅行を終了して切り替える」を確認した後。終了した旅行の記録はそのまま残る */
   async function handleEndCurrentAndSwitch(id: number) {
+    if (endingRef.current) return;
+    endingRef.current = true;
     setLimitTargetId(null);
     try {
       await endCurrentAndSwitchTrip(id);
@@ -49,6 +53,8 @@ export default function TripListScreen() {
     } catch (err) {
       console.warn('[trip-list end and switch error]', err);
       Alert.alert('旅行を切り替えできませんでした', 'もう一度お試しください。', [{ text: 'OK' }]);
+    } finally {
+      endingRef.current = false;
     }
   }
 

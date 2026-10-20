@@ -61,6 +61,8 @@ export default function SettingsScreen() {
    * presentすると無言で失敗することがあるため（PhotoChangeSheetと同じ理由）、`onDismiss`で出す。
    */
   const pendingLimitTargetRef = useRef<number | null>(null);
+  // 終了＋切替の処理中。連打で同じ処理を並行させない
+  const endingRef = useRef(false);
 
   // 一覧件数を表示するため、フォーカス時に旅行リストを読み込む
   useFocusEffect(
@@ -115,6 +117,8 @@ export default function SettingsScreen() {
 
   /** 上限シートで「今の旅行を終了して切り替える」を確認した後。終了した旅行の記録はそのまま残る */
   async function handleEndCurrentAndSwitch(id: number) {
+    if (endingRef.current) return;
+    endingRef.current = true;
     setLimitTargetId(null);
     try {
       await endCurrentAndSwitchTrip(id);
@@ -122,6 +126,8 @@ export default function SettingsScreen() {
     } catch (err) {
       console.warn('[settings end and switch error]', err);
       Alert.alert('旅行を切り替えできませんでした', 'もう一度お試しください。', [{ text: 'OK' }]);
+    } finally {
+      endingRef.current = false;
     }
   }
 
