@@ -1,5 +1,7 @@
 export * from './ActiveTripBanner';
+export * from './AnalysisSummaryCard';
 export * from './CategorySelector';
+export * from './CategorySpendCard';
 export * from './ConversionSummaryCard';
 export * from './CurrencyFlagImage';
 export * from './ItemCard';
@@ -7,5 +9,6 @@ export * from './PriceResultCard';
 export * from './ProFeatureBadge';
 export * from './RateInfoRow';
 export * from './SaveLimitBanner';
+export * from './SpendBarChart';
 export * from './StatCard';
 export * from './TripListItem';
