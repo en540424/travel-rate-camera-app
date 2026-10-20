@@ -169,7 +169,7 @@ function formatYenIn(amount: number, unit: YenUnit): string {
   if (!Number.isFinite(amount) || amount <= 0) return '¥0';
   if (unit === 'oku') return `¥${trimOneDecimal(amount / 100_000_000)}億`;
   if (unit === 'man') return `¥${trimOneDecimal(amount / 10_000)}万`;
-  // 1円未満の端数は通常出ないが、¥20未満の軸の半分（例 ¥1.5）だけは丸めずに出す
+  // 1円未満の端数は通常出ないが、10円未満の端数（例 ¥1.5）は整数に丸めずに出す
   if (!Number.isInteger(amount) && amount < 10) return `¥${trimOneDecimal(amount)}`;
   return `¥${withThousandsSeparator(Math.round(amount))}`;
 }
@@ -182,17 +182,38 @@ export function formatCompactYen(amount: number): string {
   return formatYenIn(amount, amount >= 100_000_000 ? 'oku' : amount >= 10_000 ? 'man' : 'yen');
 }
 
+/** 縦軸の目盛りを桁区切りの円で出す上限（上端がこれ未満なら「¥40,000」、以上なら「¥15万」） */
+const AXIS_FULL_YEN_LIMIT = 100_000;
+
 /**
- * 縦軸の目盛り（上端・半分）の表記。**同じ軸の2つは同じ単位にそろえる**
- * （「¥1万」と「¥5,000」のように万表記と桁区切りが混ざらないようにする）。
- * 単位は半分の値で決める：半分が1万以上なら「万」、1億以上なら「億」、それ未満は桁区切り。
- * `niceAxisMax`の刻みなら、どちらも小数1桁までで正確に表せる。
- * 例：40,000→"¥4万"/"¥2万"、30,000→"¥3万"/"¥1.5万"、15,000→"¥15,000"/"¥7,500"、10,000→"¥10,000"/"¥5,000"
+ * 縦軸の目盛り1つ分の表記。`formatYenIn`と違い、万・億の数字にも桁区切りを付け（「¥8,000万」）、
+ * 1円未満の端数は有効数字3桁まで出す（`niceAxisMax`の刻みの半分は有効数字2桁以内なので丸めにならない）。
  */
-export function formatAxisLabels(axisMax: number): { top: string; half: string } {
-  const half = axisMax / 2;
-  const unit: YenUnit = half >= 100_000_000 ? 'oku' : half >= 10_000 ? 'man' : 'yen';
-  return { top: formatYenIn(axisMax, unit), half: formatYenIn(half, unit) };
+function formatAxisValue(amount: number, unit: YenUnit): string {
+  if (!Number.isFinite(amount) || amount <= 0) return '¥0';
+  if (unit === 'oku' || unit === 'man') {
+    const scaled = amount / (unit === 'oku' ? 100_000_000 : 10_000);
+    const rounded = Math.round(scaled * 10) / 10;
+    const [int, frac] = String(rounded).split('.');
+    return `¥${withThousandsSeparator(Number(int))}${frac ? `.${frac}` : ''}${unit === 'oku' ? '億' : '万'}`;
+  }
+  if (amount < 10 && !Number.isInteger(amount)) return `¥${Number(amount.toPrecision(3))}`;
+  return `¥${withThousandsSeparator(Math.round(amount))}`;
+}
+
+/**
+ * 縦軸の目盛り（上端・半分・0）の表記。**同じ軸の3つは同じ単位にそろえる**
+ * （「¥4万」と「¥20,000」のように万表記と桁区切りが混ざらないようにする）。
+ * - 上端が10万円未満：桁区切りの円（読み取り欄の金額「¥33,120」と同じ書き方）。例：40,000→"¥40,000"/"¥20,000"/"¥0"
+ * - 上端が10万円以上：「万」。例：150,000→"¥15万"/"¥7.5万"/"¥0"、1,000,000→"¥100万"/"¥50万"/"¥0"
+ * - 半分が1億円以上：「億」。例：300,000,000→"¥3億"/"¥1.5億"/"¥0"
+ * `niceAxisMax`の刻みなら、上端・半分とも丸めずに正確な値を表せる。上端が0（棒がない）なら3つとも"¥0"。
+ */
+export function formatAxisLabels(axisMax: number): { top: string; half: string; zero: string } {
+  const top = Number.isFinite(axisMax) && axisMax > 0 ? axisMax : 0;
+  const half = top / 2;
+  const unit: YenUnit = half >= 100_000_000 ? 'oku' : top >= AXIS_FULL_YEN_LIMIT ? 'man' : 'yen';
+  return { top: formatAxisValue(top, unit), half: formatAxisValue(half, unit), zero: '¥0' };
 }
 
 /**

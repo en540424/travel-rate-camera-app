@@ -312,22 +312,73 @@ test('findPeakBucket：最大の棒（同額は先の方）', () => {
   equal(peak.key, 'd2');
 });
 
-test('formatAxisLabels：上端と半分は同じ単位・正確な値（万と桁区切りを混ぜない）', () => {
-  deepEqual(formatAxisLabels(40000), { top: '¥4万', half: '¥2万' });
-  deepEqual(formatAxisLabels(30000), { top: '¥3万', half: '¥1.5万' });
-  deepEqual(formatAxisLabels(20000), { top: '¥2万', half: '¥1万' });
-  deepEqual(formatAxisLabels(15000), { top: '¥15,000', half: '¥7,500' });
-  deepEqual(formatAxisLabels(10000), { top: '¥10,000', half: '¥5,000' });
-  deepEqual(formatAxisLabels(5000), { top: '¥5,000', half: '¥2,500' });
-  deepEqual(formatAxisLabels(1000000), { top: '¥100万', half: '¥50万' });
-  deepEqual(formatAxisLabels(300000000), { top: '¥3億', half: '¥1.5億' });
-  // niceAxisMaxが返しうる上端なら、半分の目盛りは常に小数1桁以内で正確（丸めた表記にならない）
-  for (const max of [3, 77, 640, 4719, 12760, 21000, 32400, 62000, 84320, 140000, 2600000, 51000000]) {
+test('formatAxisLabels：上端・半分・0は同じ単位（10万円未満は桁区切りの円、以上は万・億）', () => {
+  deepEqual(formatAxisLabels(40000), { top: '¥40,000', half: '¥20,000', zero: '¥0' });
+  deepEqual(formatAxisLabels(30000), { top: '¥30,000', half: '¥15,000', zero: '¥0' });
+  deepEqual(formatAxisLabels(80000), { top: '¥80,000', half: '¥40,000', zero: '¥0' });
+  deepEqual(formatAxisLabels(15000), { top: '¥15,000', half: '¥7,500', zero: '¥0' });
+  deepEqual(formatAxisLabels(5000), { top: '¥5,000', half: '¥2,500', zero: '¥0' });
+  deepEqual(formatAxisLabels(500), { top: '¥500', half: '¥250', zero: '¥0' });
+  deepEqual(formatAxisLabels(100000), { top: '¥10万', half: '¥5万', zero: '¥0' });
+  deepEqual(formatAxisLabels(150000), { top: '¥15万', half: '¥7.5万', zero: '¥0' });
+  deepEqual(formatAxisLabels(1000000), { top: '¥100万', half: '¥50万', zero: '¥0' });
+  deepEqual(formatAxisLabels(80000000), { top: '¥8,000万', half: '¥4,000万', zero: '¥0' });
+  deepEqual(formatAxisLabels(300000000), { top: '¥3億', half: '¥1.5億', zero: '¥0' });
+  deepEqual(formatAxisLabels(1.5), { top: '¥1.5', half: '¥0.75', zero: '¥0' });
+});
+
+test('formatAxisLabels：0円・非数でも「¥NaN」等にならない（記録がない期間はグラフ自体を出さない）', () => {
+  deepEqual(formatAxisLabels(niceAxisMax(0)), { top: '¥0', half: '¥0', zero: '¥0' });
+  deepEqual(formatAxisLabels(Number.NaN), { top: '¥0', half: '¥0', zero: '¥0' });
+  deepEqual(formatAxisLabels(-100), { top: '¥0', half: '¥0', zero: '¥0' });
+  equal(barHeightPx(0, niceAxisMax(0), 148), 0);
+});
+
+/** 目盛りの表記を円の数値へ戻す（「¥7.5万」→75000）。表記方式も返す */
+function parseAxisLabel(label) {
+  const unit = label.endsWith('億') ? 'oku' : label.endsWith('万') ? 'man' : 'yen';
+  const value = Number(label.replace(/[¥,万億]/g, ''));
+  return { unit, yen: value * (unit === 'oku' ? 1e8 : unit === 'man' ? 1e4 : 1) };
+}
+
+test('縦軸：少額〜非常に大きな金額で、上端は最大の棒以上・3つの目盛りの値が正確・単位が混ざらない', () => {
+  const cases = [
+    // [最大の棒の金額, 期待する上端]
+    [1, 1],
+    [380, 400], // 少額
+    [4719, 5000],
+    [33000, 40000], // 33,000円前後（2026-10-20 Human実機確認の例）
+    [33120, 40000],
+    [99999, 100000],
+    [100000, 100000],
+    [128000, 150000], // 10万円以上
+    [1000000, 1000000],
+    [1200000000, 1500000000], // 非常に大きな金額
+  ];
+  for (const [max, expectedAxisMax] of cases) {
+    const axisMax = niceAxisMax(max);
+    equal(axisMax, expectedAxisMax, `上端: max=${max}`);
+    ok(axisMax >= max, `上端が最大の棒より低い: max=${max} axisMax=${axisMax}`);
+
+    const labels = formatAxisLabels(axisMax);
+    const top = parseAxisLabel(labels.top);
+    const half = parseAxisLabel(labels.half);
+    equal(top.yen, axisMax, `上端の目盛りが不正確: max=${max} top=${labels.top}`);
+    equal(half.yen, axisMax / 2, `半分の目盛りが不正確: max=${max} half=${labels.half}`);
+    equal(labels.zero, '¥0');
+    equal(top.unit, half.unit, `上端と半分で単位が違う: ${labels.top} / ${labels.half}`);
+    // 10万円未満は「¥40,000」の書き方（読み取り欄の金額と同じ）。万表記を混ぜない
+    if (axisMax < 100000) equal(top.unit, 'yen', `10万円未満なのに万・億表記: ${labels.top}`);
+
+    // 最大の棒は上端の線を超えない（棒の高さ＝目盛りの比率どおり）
+    ok(barHeightPx(max, axisMax, 148) <= 148);
+  }
+  // niceAxisMaxが返しうる上端なら、半分の目盛りは常に丸めのない正確な値
+  for (const max of [3, 77, 640, 12760, 21000, 32400, 62000, 84320, 140000, 2600000, 51000000, 0.12]) {
     const axisMax = niceAxisMax(max);
     const { half } = formatAxisLabels(axisMax);
-    const value = Number(half.replace(/[¥,万億]/g, ''));
-    const scale = half.endsWith('億') ? 1e8 : half.endsWith('万') ? 1e4 : 1;
-    equal(value * scale, axisMax / 2, `半分の目盛りが不正確: max=${max} axisMax=${axisMax} half=${half}`);
+    const parsed = parseAxisLabel(half).yen;
+    ok(Math.abs(parsed - axisMax / 2) < 1e-9 * Math.max(1, axisMax), `半分の目盛りが不正確: max=${max} half=${half}`);
   }
 });
 

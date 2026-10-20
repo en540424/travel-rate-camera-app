@@ -16,8 +16,10 @@ const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土'];
 
 /** 棒を描く領域の高さ（ラベル行は含まない） */
 const CHART_H = 148;
-/** 右側の縦軸目盛りの幅（「¥15,000」が1.3倍の文字でも収まる幅。収まらなければ縮小） */
-const Y_AXIS_W = 46;
+/** 右側の縦軸目盛りの幅（「¥80,000」が標準の文字サイズで収まる幅。文字拡大で収まらなければ縮小） */
+const Y_AXIS_W = 52;
+/** 目盛りの文字を、対応する目盛り線の高さに縦中央で合わせるためのずらし量（yLabelのlineHeightの半分） */
+const Y_LABEL_OFFSET = 7;
 // 月表示は31日分を横スクロールで表示する（2026-07のHuman実機確認で確定した方式）。
 // 初期表示でだいたい10日分が見える幅にする
 const MONTH_VISIBLE_DAYS = 10;
@@ -47,7 +49,8 @@ export interface SpendBarChartProps {
  * - 棒の色は`color.chartBar`（Human実機評価で決めた色）、選択中は`color.primaryDark`。選択中は他の棒を薄くする
  * - 上の読み取り欄は高さ固定で、未選択時は「いちばん多い日（月）」、選択時はその棒の日付と金額を文字で出す
  *   （色だけで選択状態を伝えない）
- * - 縦軸の上端はきりのいい金額（`niceAxisMax`）。目盛り線は上端・半分・0の3本だけ
+ * - 縦軸の上端はきりのいい金額（`niceAxisMax`）。目盛り線は上端・半分・0の3本だけで、
+ *   3本とも金額を添えて「いちばん上がいくら・下端は0円」が一目で分かるようにする（2026-10-20 Human実機確認の要望）
  */
 export function SpendBarChart({ kind, buckets, year, month, todayKey, selectedKey, onSelect }: SpendBarChartProps) {
   // 棒の領域の実幅（月表示の列幅と初期スクロール位置に使う）
@@ -148,29 +151,28 @@ export function SpendBarChart({ kind, buckets, year, month, todayKey, selectedKe
           )}
         </View>
 
-        {/* 縦軸の目盛り（上端・半分）。棒の領域の外に置くので横スクロールしても動かない。
+        {/* 縦軸の目盛り（上端・半分・0）。棒の領域の外に置くので横スクロールしても動かない。
             金額は読み取り欄と各棒の読み上げで伝わるので、目盛りは読み上げ対象から外す */}
         <View
           style={[styles.yAxis, { height: CHART_H }]}
           pointerEvents="none"
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants">
-          <Text
-            style={[styles.yLabel, { top: -7 }]}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.75}
-            maxFontSizeMultiplier={LABEL_MAX_SCALE}>
-            {axisLabels.top}
-          </Text>
-          <Text
-            style={[styles.yLabel, { top: CHART_H / 2 - 7 }]}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.75}
-            maxFontSizeMultiplier={LABEL_MAX_SCALE}>
-            {axisLabels.half}
-          </Text>
+          {[
+            { key: 'top', y: 0, label: axisLabels.top },
+            { key: 'half', y: CHART_H / 2, label: axisLabels.half },
+            { key: 'zero', y: CHART_H, label: axisLabels.zero },
+          ].map((tick) => (
+            <Text
+              key={tick.key}
+              style={[styles.yLabel, { top: tick.y - Y_LABEL_OFFSET }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
+              maxFontSizeMultiplier={LABEL_MAX_SCALE}>
+              {tick.label}
+            </Text>
+          ))}
         </View>
       </View>
 
@@ -399,9 +401,9 @@ const styles = StyleSheet.create({
     left: 6,
     right: 0,
     fontSize: 10,
-    lineHeight: 14,
+    lineHeight: Y_LABEL_OFFSET * 2,
     fontWeight: '600',
-    color: color.muted,
+    color: color.body,
     fontVariant: ['tabular-nums'],
   },
 
