@@ -674,7 +674,7 @@
 
 ## N. 2026-10-20追加：旅行管理のFree/Pro境界（次回Preview Buildで確認・データ保護）
 
-> **これから確認に使うBuild：（Build作成後に記入）**
+> **これから確認に使うBuild：`462515c3-8219-423d-b0a9-3b44ad8d52bc`**（FINISHED・2026-10-20 12:40〜12:46 JST・app 1.0.0 / buildNumber 1・SDK 56.0.0・preview / internal（既存のad hoc証明書・プロファイルをそのまま使用）・対象commit `bf2c550`。install：https://expo.dev/accounts/en540424/projects/travel-rate-camera-app/builds/462515c3-8219-423d-b0a9-3b44ad8d52bc ）。`b0d82d7f`（#69・#70）の内容をすべて含むため、#69・#70もこのBuildで確認してよい
 > 仕様：Freeは「記録中の旅行は1件」。終了した旅行は削除されず何件でも見られるが、Freeでは再開・新しい記録・通常の編集はできない（閲覧・記録の削除・候補⇔購入済みの切替だけ）。Proは複数の旅行を記録中のまま切り替えて記録できる。
 > **アプリの削除・再インストールはしない**（端末内のデータが消えるため。確認はすべて今のデータのまま行う）。
 
