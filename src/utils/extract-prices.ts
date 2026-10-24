@@ -16,8 +16,8 @@ function dbg(...args: unknown[]): void {
 //   日付 `2026.10.24` → `10.24`（`\b`はカンマ・ピリオドの直後でも成立するため）
 // 一致した数字の前後に桁・桁区切り・小数点が続く時は、まとまり全体を1つの金額として読み直す。
 // 前後に何も続かない一致（従来どおりの`$12.50`・`4, 99`等）はこれまでと同じ経路で扱う。
-// 桁区切りと小数点の向きは通貨で決める（USD/GBP：`1,250.00`、EUR：`1.250,00`）。
-// 小数点側の記号の後ろが3桁（燃料・単価の`$3.999`・`€1,799`）は桁区切りにせず、従来どおり小数第2位まで読む。
+// 桁区切り＋小数（`1,250.00`・`1.250,00`）は記号の並びで向きが決まる。記号1種類＋3桁（`1,250`・`3.999`）の
+// 読み方は parseAmountToken を参照（EURは`.`・`,`のどちらも小数点に使われるため、曖昧なものは従来の読みのまま）。
 
 /** 通貨記号・コード付きで、桁区切りのある金額の上限（`$12,000`等を読むため。KRW/JPYの999,999と揃える）。
  *  桁区切りの無い長い数字（`$123456`）は電話番号・コードの恐れがあるため従来の上限のまま */
@@ -31,7 +31,7 @@ const NOT_PRICE_AFTER_DECIMAL = /^\s*(?:%|(?:ml|cl|fl\.?\s?oz)\b|l\b(?!\s*\$?\s*
 const isDigitChar = (c: string | undefined): boolean => c !== undefined && c >= '0' && c <= '9';
 const isSeparatorChar = (c: string | undefined): boolean => c === '.' || c === ',';
 
-/** 小数点の記号。USD/GBP＝`.`（桁区切りは`,`）、EUR＝`,`（桁区切りは`.`） */
+/** 通貨のふつうの小数点。USD/GBP＝`.`（`$1,250`のカンマは桁区切りと決めてよい）、EUR＝`,` */
 type DecimalMark = '.' | ',';
 
 /** 読み取った金額。grouped＝桁区切りで読んだ（記号付きなら上限を広げてよい） */
@@ -51,12 +51,18 @@ function parseAmountToken(token: string, decimalMark: DecimalMark): AmountReadin
   if (/^\d{1,3}(?:\.\d{3})+,\d{1,2}$/.test(s)) {
     return { value: s.replace(/\./g, '').replace(',', '.'), grouped: true };
   }
-  // 桁区切りだけ（`1,250`／EURの`1.250`）は通貨の桁区切り記号の時だけ
-  const groupOnly = decimalMark === '.' ? /^\d{1,3}(?:,\d{3})+$/ : /^\d{1,3}(?:\.\d{3})+$/;
-  if (groupOnly.test(s)) return { value: s.replace(/[.,]/g, ''), grouped: true };
-  // 小数点の後ろが3桁（`$3.999`・`€1,799`）：従来どおり小数第2位までで読む
-  const dec3 = (decimalMark === '.' ? /^(\d+)\.(\d{3})$/ : /^(\d+),(\d{3})$/).exec(s);
-  if (dec3) return { value: `${dec3[1]}.${dec3[2].slice(0, 2)}`, grouped: false };
+  // 1種類の記号＋3桁のまとまり（`1,250`・`12.000`・`3.999`・`1,250,000`）
+  const single = /^(\d{1,3})((?:,\d{3})+|(?:\.\d{3})+)$/.exec(s);
+  if (single) {
+    const [, head, rest] = single;
+    // 桁区切りと読む：区切りが2つ以上／整数部が2桁以上（3桁小数の価格は考えにくい）／USD・GBPのカンマ（`$1,250`）。
+    // 残る「1桁＋記号＋3桁」（燃料・単価の`$3.999`・`€1,799`、アイルランド式の`€1.799`）は
+    // 桁区切りとも小数とも書かれるため、従来どおり小数第2位までで読む（`€1.250`も従来の1.25のまま）
+    if (rest.length > 4 || head.length > 1 || (rest[0] === ',' && decimalMark === '.')) {
+      return { value: head + rest.replace(/[.,]/g, ''), grouped: true };
+    }
+    return { value: `${head}.${rest.slice(1, 3)}`, grouped: false };
+  }
   return null;
 }
 
