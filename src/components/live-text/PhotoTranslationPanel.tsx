@@ -1,14 +1,14 @@
 // 翻訳ページの「写真翻訳」パネル。写真を撮る／選ぶ → 読み取った文章を段落ごとに翻訳して表示する。
 // 読み上げ・コピーは翻訳ページの既存の仕組み（TTS・クリップボード）を呼び出し側から受け取って使う。
 //
-// 写真は写真そのものの縦横比の枠（`FitPhoto`）で大きく出し、タップで全画面の拡大表示を開く。
+// 写真は写真そのものの縦横比の枠（`FitPhoto`）で大きく出し、タップで全画面の拡大表示を開く
+// （拡大表示`PhotoZoomViewer`は翻訳画面のいちばん外側に置く。ここはタップを`onOpenPhoto`で伝えるだけ）。
 // 写真に写った価格には、旅行の通貨・レートでの円換算を添える（原文・翻訳・コピーする文章には混ぜない）。
 import { SymbolView } from 'expo-symbols';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { FitPhoto } from '@/components/fit-photo';
-import { PhotoZoomViewer } from '@/components/live-text/PhotoZoomViewer';
 import {
   formatTranslationPrice,
   type TranslationPriceConversion,
@@ -44,6 +44,11 @@ export type PhotoTranslationPanelProps = {
   speakFailed: boolean;
   /** 円換算に使う旅行の通貨・レート（国内・旅行なしはnull＝円換算を出さない） */
   priceConversion: TranslationPriceConversion | null;
+  /**
+   * 写真のタップ（全画面の拡大表示を開く）。拡大表示は呼び出し側が画面のいちばん外側に置く
+   * （ScrollViewの中でModalを開くと、TestFlight 1.0.0 (4) の実機で開かなかったため。`PhotoZoomViewer`参照）
+   */
+  onOpenPhoto: (uri: string) => void;
 };
 
 const EMPTY_BLOCKS: PhotoBlockTranslation[] = [];
@@ -79,9 +84,8 @@ export function PhotoTranslationPanel({
   isSpeaking,
   speakFailed,
   priceConversion,
+  onOpenPhoto,
 }: PhotoTranslationPanelProps) {
-  // 拡大表示中の写真。写真を替えた・クリアした時は開いたままにしない（下の`viewerOpen`）
-  const [viewerUri, setViewerUri] = useState<string | null>(null);
   const blocks = state.phase === 'translating' || state.phase === 'done' ? state.blocks : EMPTY_BLOCKS;
 
   // 段落ごとの価格（原文から読む。翻訳の進み具合とは関係なく、読み取った時点から出す）
@@ -115,7 +119,6 @@ export function PhotoTranslationPanel({
   }
 
   const uri = state.uri;
-  const viewerOpen = uri != null && viewerUri === uri;
   // 商品名の段落へ結び付けた「価格だけの段落」は単独の行として出さない
   const visibleBlocks = blocks
     .map((block, index) => ({ block, index, prices: blockPrices?.[index] ?? null }))
@@ -135,7 +138,7 @@ export function PhotoTranslationPanel({
           uri={uri}
           surface="photoTranslation"
           borderRadius={radius.card}
-          onPress={() => setViewerUri(uri)}
+          onPress={() => onOpenPhoto(uri)}
           accessibilityLabel="写真を拡大して見る"
           overlay={
             <View style={styles.zoomBadge} pointerEvents="none">
@@ -289,7 +292,6 @@ export function PhotoTranslationPanel({
         </View>
       )}
 
-      <PhotoZoomViewer uri={viewerOpen ? uri : null} onClose={() => setViewerUri(null)} />
     </View>
   );
 }

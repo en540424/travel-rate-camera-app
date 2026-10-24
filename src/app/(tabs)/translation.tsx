@@ -41,6 +41,7 @@ import { ThemedText } from '@/components/themed-text';
 import { isLiveTextPlatformSupported } from '@/components/live-text/LiveTextScanner';
 import { LiveTranslationCamera } from '@/components/live-text/LiveTranslationCamera';
 import { PhotoTranslationPanel } from '@/components/live-text/PhotoTranslationPanel';
+import { PhotoZoomViewer } from '@/components/live-text/PhotoZoomViewer';
 import { TranslationHost, isTranslationPlatformSupported } from '@/components/translation-host';
 import { EmptyState, ErrorMessage, GhostButton, PrimaryButton, SectionCard, Toast } from '@/components/ui';
 import { VoiceSelectSheet } from '@/components/domain/VoiceSelectSheet';
@@ -55,6 +56,7 @@ import { getLanguageDisplayName } from '@/config/translation-language-names';
 import { getTranslationSourceLanguage } from '@/config/translation-languages';
 import { usePhotoTranslation } from '@/hooks/use-photo-translation';
 import { resolveTripPriceConversion } from '@/lib/live-text-core';
+import { openPhotoViewerUri } from '@/lib/photo-zoom-core';
 import { useTrips } from '@/hooks/use-trips';
 import type { SpeechRecognitionErrorCode } from '@/lib/speech-recognition-service';
 import {
@@ -327,6 +329,13 @@ export default function TranslationScreen() {
     priceCurrency: priceConversion?.currency ?? null,
     onResetTranslationHost: resetTranslationHost,
   });
+
+  // 写真翻訳の拡大表示で開いている写真。拡大表示（PhotoZoomViewer）は画面のいちばん外側に置く
+  // （写真翻訳パネル＝ScrollViewの中でModalを開くと、TestFlight 1.0.0 (4) の実機で開かなかったため）。
+  // 写真を撮り直した・選び直した・クリアした時、写真翻訳以外の入力方法の時は開かない
+  const [photoViewerUri, setPhotoViewerUri] = useState<string | null>(null);
+  const currentPhotoUri = photo.state.phase === 'idle' ? null : photo.state.uri;
+  const openViewerUri = inputMode === 'photo' ? openPhotoViewerUri(photoViewerUri, currentPhotoUri) : null;
 
   // MARK: - 言語選択画面からの戻り値（route params）を消費する
 
@@ -1086,6 +1095,7 @@ export default function TranslationScreen() {
               isSpeaking={isSpeaking}
               speakFailed={speakFailed}
               priceConversion={priceConversion}
+              onOpenPhoto={setPhotoViewerUri}
             />
           )}
 
@@ -1116,6 +1126,16 @@ export default function TranslationScreen() {
         selectedIdentifier={target != null ? voicePrefs[target] ?? null : null}
         onSelect={handleSelectVoice}
       />
+
+      {/* 写真翻訳の拡大表示。ScrollViewの外に置き、写真がある間はマウントしたままvisibleで開閉する
+          （メインカメラ・商品詳細の、実機で動いている拡大表示と同じ形。PhotoZoomViewer参照） */}
+      {currentPhotoUri != null && (
+        <PhotoZoomViewer
+          uri={currentPhotoUri}
+          visible={openViewerUri != null}
+          onClose={() => setPhotoViewerUri(null)}
+        />
+      )}
     </View>
   );
 }

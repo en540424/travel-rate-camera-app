@@ -5,6 +5,17 @@
 // - ダブルタップで拡大／元の大きさ、拡大中は「元の大きさ」ボタンでも戻せる
 // - 閉じる・元の大きさのボタンはSafe Areaの内側に置く
 // - 写真は表示するだけ（一時ファイルの削除・翻訳結果は呼び出し側のまま。閉じても翻訳結果は消えない）
+//
+// ■ 置き場所（2026-10-24 TestFlight 1.0.0 (4) の不具合対応）
+//   以前は写真翻訳パネルの中（＝翻訳画面のScrollViewの中）で、開く時だけModalをマウントしていた。
+//   実機で「タップしても開かない」不具合が出たため、実機で動いている拡大表示（メインカメラの
+//   撮影結果・商品詳細・カレンダー）と同じ形にそろえた：**画面のいちばん外側（ScrollViewの外）に置き、
+//   写真がある間はマウントしたまま`visible`で開閉する**。呼び出し側は`translation.tsx`。
+//
+// ■ ダブルタップ
+//   写真を`Pressable`で包むと、ズームするScrollViewのピンチ・ドラッグとタッチを取り合うおそれがあるため、
+//   ScrollViewのタッチの開始・終了だけを見て判定する（写真を包まない）。ダブルタップが効かない端末でも、
+//   開く・閉じる・ピンチ・ドラッグ・「元の大きさ」は動く。
 import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
 import { useRef, useState } from 'react';
@@ -22,55 +33,75 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
+import { isDoubleTap, isPhotoTap, zoomRectAround, type PhotoTap } from '@/lib/photo-zoom-core';
 
 /** ピンチで拡大できる最大倍率（メニューの小さな文字を読める程度） */
 const MAX_ZOOM = 5;
 /** ダブルタップで拡大する倍率 */
 const DOUBLE_TAP_ZOOM = 2.5;
-/** 2回のタップをダブルタップとみなす間隔(ms) */
-const DOUBLE_TAP_MS = 280;
 
 export type PhotoZoomViewerProps = {
-  /** 表示する写真。nullなら閉じている */
-  uri: string | null;
+  /** 表示する写真 */
+  uri: string;
+  /** 開いているか（開閉はModalの`visible`で行い、ビューア自体は写真がある間マウントしたまま） */
+  visible: boolean;
   onClose: () => void;
 };
 
-export function PhotoZoomViewer({ uri, onClose }: PhotoZoomViewerProps) {
+type TouchStart = { x: number; y: number; time: number; maxTouches: number };
+
+export function PhotoZoomViewer({ uri, visible, onClose }: PhotoZoomViewerProps) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
-  const lastTapRef = useRef(0);
+  const touchStartRef = useRef<TouchStart | null>(null);
+  const lastTapRef = useRef<PhotoTap | null>(null);
   const [zoomed, setZoomed] = useState(false);
-
-  if (uri == null) return null;
 
   function resetZoom() {
     scrollRef.current?.scrollResponderZoomTo({ x: 0, y: 0, width, height, animated: true });
   }
 
-  function handleTap(event: GestureResponderEvent) {
-    const now = Date.now();
-    if (now - lastTapRef.current > DOUBLE_TAP_MS) {
-      lastTapRef.current = now;
+  function handleTouchStart(event: GestureResponderEvent) {
+    const { pageX, pageY, touches } = event.nativeEvent;
+    const current = touchStartRef.current;
+    // 2本目の指が触れた（ピンチ）時は、1本目の開始位置を残したまま指の本数だけ増やす
+    if (current != null && touches.length > 1) {
+      current.maxTouches = Math.max(current.maxTouches, touches.length);
       return;
     }
-    lastTapRef.current = 0;
+    touchStartRef.current = { x: pageX, y: pageY, time: Date.now(), maxTouches: Math.max(1, touches.length) };
+  }
+
+  function handleTouchEnd(event: GestureResponderEvent) {
+    const { pageX, pageY, touches } = event.nativeEvent;
+    const start = touchStartRef.current;
+    // まだ指が残っている（ピンチの途中で1本離した）間は判定しない
+    if (start == null || touches.length > 0) return;
+    touchStartRef.current = null;
+    const tap = { x: pageX, y: pageY, time: Date.now() };
+    if (!isPhotoTap(start, tap)) {
+      lastTapRef.current = null;
+      return;
+    }
+    if (!isDoubleTap(lastTapRef.current, tap)) {
+      lastTapRef.current = tap;
+      return;
+    }
+    lastTapRef.current = null;
     if (zoomed) {
       resetZoom();
       return;
     }
-    // タップした所を中心に拡大する（等倍の時は写真の座標＝画面の座標）
-    const zoomWidth = width / DOUBLE_TAP_ZOOM;
-    const zoomHeight = height / DOUBLE_TAP_ZOOM;
-    const { locationX, locationY } = event.nativeEvent;
+    // 等倍の時は写真の座標＝画面の座標（全画面・等倍で表示しているため）
     scrollRef.current?.scrollResponderZoomTo({
-      x: Math.min(Math.max(locationX - zoomWidth / 2, 0), width - zoomWidth),
-      y: Math.min(Math.max(locationY - zoomHeight / 2, 0), height - zoomHeight),
-      width: zoomWidth,
-      height: zoomHeight,
+      ...zoomRectAround(tap.x, tap.y, width, height, DOUBLE_TAP_ZOOM),
       animated: true,
     });
+  }
+
+  function handleTouchCancel() {
+    touchStartRef.current = null;
   }
 
   function handleScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
@@ -80,29 +111,32 @@ export function PhotoZoomViewer({ uri, onClose }: PhotoZoomViewerProps) {
 
   function handleClose() {
     setZoomed(false);
+    touchStartRef.current = null;
+    lastTapRef.current = null;
     onClose();
   }
 
   return (
-    <Modal visible animationType="fade" transparent onRequestClose={handleClose} supportedOrientations={['portrait']}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       <View style={styles.bg}>
         <ScrollView
-          // 写真が替わったら倍率・位置を引き継がない
-          key={uri}
+          // 開くたび・写真が替わるたびに倍率と位置を等倍へ戻す（メインカメラの拡大表示と同じ方法）
+          key={visible ? `open:${uri}` : 'closed'}
           ref={scrollRef}
-          style={StyleSheet.absoluteFill}
-          contentContainerStyle={{ width, height }}
+          style={{ width, height }}
+          contentContainerStyle={[styles.scrollContent, { width, height }]}
           minimumZoomScale={1}
           maximumZoomScale={MAX_ZOOM}
           centerContent
           bouncesZoom
           scrollEventThrottle={32}
           onScroll={handleScroll}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchCancel}
           showsHorizontalScrollIndicator={false}
           showsVerticalScrollIndicator={false}>
-          <Pressable onPress={handleTap} accessible={false}>
-            <Image source={{ uri }} style={{ width, height }} contentFit="contain" />
-          </Pressable>
+          <Image source={{ uri }} style={{ width, height }} contentFit="contain" />
         </ScrollView>
 
         <View style={[styles.topBar, { top: insets.top + 8 }]} pointerEvents="box-none">
@@ -145,6 +179,7 @@ export function PhotoZoomViewer({ uri, onClose }: PhotoZoomViewerProps) {
 
 const styles = StyleSheet.create({
   bg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.94)' },
+  scrollContent: { justifyContent: 'center', alignItems: 'center' },
   topBar: {
     position: 'absolute',
     left: 16,
