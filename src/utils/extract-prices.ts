@@ -14,41 +14,61 @@ function dbg(...args: unknown[]): void {
 // 旧実装の正規表現は数字の途中から・途中までを拾うことがあった：
 //   USD `$1,250.00` → `1,25`（=1.25）と `250.00`／`$12,000` → `12,00`（=12.00）／
 //   日付 `2026.10.24` → `10.24`（`\b`はカンマ・ピリオドの直後でも成立するため）
-// 一致した数字の前後に桁・桁区切り・小数点が続く時は、まとまり全体を1つの金額として読み直し、
-// 金額として読めないまとまり（日付・バージョン等）は候補にしない。
+// 一致した数字の前後に桁・桁区切り・小数点が続く時は、まとまり全体を1つの金額として読み直す。
 // 前後に何も続かない一致（従来どおりの`$12.50`・`4, 99`等）はこれまでと同じ経路で扱う。
+// 桁区切りと小数点の向きは通貨で決める（USD/GBP：`1,250.00`、EUR：`1.250,00`）。
+// 小数点側の記号の後ろが3桁（燃料・単価の`$3.999`・`€1,799`）は桁区切りにせず、従来どおり小数第2位まで読む。
 
-/** 通貨記号・通貨コードが付いた金額の上限（桁区切りの付いた `$12,000` 等を読むため。KRW/JPYの999,999と揃える） */
+/** 通貨記号・コード付きで、桁区切りのある金額の上限（`$12,000`等を読むため。KRW/JPYの999,999と揃える）。
+ *  桁区切りの無い長い数字（`$123456`）は電話番号・コードの恐れがあるため従来の上限のまま */
 const MARKED_AMOUNT_MAX = 999_999.99;
 
-/** 小数（1〜2桁）の直後が%・量の単位なら価格ではない。サイズ表記の`L`（`M 10.50 L 12.50`）は数字が続く時は残す */
-const NOT_PRICE_AFTER_DECIMAL =
-  /^\s*(?:%|(?:ml|cl|fl\.?\s?oz|oz|lbs?|kg|mg|g|kcal|cal)\b|l\b(?!\s*\$?\s*\d))/i;
+/** 記号なしの小数の直後が%・容量なら価格ではない（`Tax 4.99%`・`Water 1.50 L`）。
+ *  重さ（`0.69 lb`・`2,99 kg`）は量り売りの単価のことが多いので除外しない。
+ *  サイズ表記の`L`（`M 10.50 L 12.50`）は後ろに数字が続く時は残す */
+const NOT_PRICE_AFTER_DECIMAL = /^\s*(?:%|(?:ml|cl|fl\.?\s?oz)\b|l\b(?!\s*\$?\s*\d))/i;
 
 const isDigitChar = (c: string | undefined): boolean => c !== undefined && c >= '0' && c <= '9';
 const isSeparatorChar = (c: string | undefined): boolean => c === '.' || c === ',';
 
+/** 小数点の記号。USD/GBP＝`.`（桁区切りは`,`）、EUR＝`,`（桁区切りは`.`） */
+type DecimalMark = '.' | ',';
+
+/** 読み取った金額。grouped＝桁区切りで読んだ（記号付きなら上限を広げてよい） */
+type AmountReading = { value: string; grouped: boolean };
+
 /**
- * 数字のまとまり（`1,250.00`・`1.250,00`・`12,50`・`2026.10.24`等）を1つの金額として読む。
- * 桁区切りは3桁ごと・小数は1〜2桁だけを認め、それ以外（日付・バージョン番号等）は null。
+ * 数字のまとまり（`1,250.00`・`1.250,00`・`12,50`・`3.999`・`2026.10.24`等）を1つの金額として読む。
+ * 桁区切りは3桁ごとだけを認める。読めない（日付・バージョン番号・価格の連結等）なら null。
  */
-function parseAmountToken(token: string): number | null {
+function parseAmountToken(token: string, decimalMark: DecimalMark): AmountReading | null {
   const s = token.replace(/[ \t]/g, '');
-  if (/^\d+$/.test(s)) return Number(s);
+  if (/^\d+$/.test(s)) return { value: s, grouped: false };
   const dec = /^(\d+)[.,](\d{1,2})$/.exec(s);
-  if (dec) return Number(`${dec[1]}.${dec[2]}`);
-  if (/^\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?$/.test(s)) return Number(s.replace(/,/g, ''));
-  if (/^\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?$/.test(s)) return Number(s.replace(/\./g, '').replace(',', '.'));
+  if (dec) return { value: `${dec[1]}.${dec[2]}`, grouped: false };
+  // 桁区切り＋小数（`1,250.00`／`1.250,00`）は記号の並びで向きが決まる
+  if (/^\d{1,3}(?:,\d{3})+\.\d{1,2}$/.test(s)) return { value: s.replace(/,/g, ''), grouped: true };
+  if (/^\d{1,3}(?:\.\d{3})+,\d{1,2}$/.test(s)) {
+    return { value: s.replace(/\./g, '').replace(',', '.'), grouped: true };
+  }
+  // 桁区切りだけ（`1,250`／EURの`1.250`）は通貨の桁区切り記号の時だけ
+  const groupOnly = decimalMark === '.' ? /^\d{1,3}(?:,\d{3})+$/ : /^\d{1,3}(?:\.\d{3})+$/;
+  if (groupOnly.test(s)) return { value: s.replace(/[.,]/g, ''), grouped: true };
+  // 小数点の後ろが3桁（`$3.999`・`€1,799`）：従来どおり小数第2位までで読む
+  const dec3 = (decimalMark === '.' ? /^(\d+)\.(\d{3})$/ : /^(\d+),(\d{3})$/).exec(s);
+  if (dec3) return { value: `${dec3[1]}.${dec3[2].slice(0, 2)}`, grouped: false };
   return null;
 }
 
 /**
  * text[start]から始まる一致`numStr`を、前後に続く桁・桁区切り・小数点まで広げて読む。
- * 広がらなければ`numStr`をそのまま返し（従来の解釈を変えない）、広がったら全体の値を文字列で返す。
- * 全体が金額として読めなければ null（候補にしない）。
+ * - 広がらなければ`numStr`をそのまま返す（従来の解釈を変えない）
+ * - 広がったまとまりが金額として読めればその値
+ * - 読めず、ピリオドだけのまとまり（日付`2026.10.24`・`10.24.2026`等）なら null＝候補にしない
+ * - 読めず、カンマを含むまとまり（空白の抜けた価格の連結`$10.50,12.50`等）なら従来どおり`numStr`
  * Hermesで後読み（lookbehind）を使わないよう、前後の文字を1つずつ確かめる。
  */
-function wholeNumber(text: string, start: number, numStr: string): string | null {
+function wholeNumber(text: string, start: number, numStr: string, decimalMark: DecimalMark): AmountReading | null {
   const end = start + numStr.length;
   let s = start;
   let e = end;
@@ -62,15 +82,19 @@ function wholeNumber(text: string, start: number, numStr: string): string | null
     else if (isSeparatorChar(text[e]) && isDigitChar(text[e + 1])) e += 2;
     else break;
   }
-  if (s === start && e === end) return numStr;
-  const n = parseAmountToken(text.slice(s, e));
-  return n == null ? null : String(n);
+  if (s === start && e === end) {
+    return { value: numStr, grouped: parseAmountToken(numStr, decimalMark)?.grouped ?? false };
+  }
+  const token = text.slice(s, e);
+  const reading = parseAmountToken(token, decimalMark);
+  if (reading) return reading;
+  return token.includes(',') ? { value: numStr, grouped: false } : null;
 }
 
 /** 正規表現の一致mのうち、末尾にある数字グループ（通貨記号が前に付く形）の開始位置 */
 const trailingGroupStart = (m: RegExpExecArray, group: string): number => m.index + m[0].length - group.length;
 
-/** 小数の一致の直後が%・量の単位か（text[end]以降を見る） */
+/** 小数の一致の直後が%・容量か（text[end]以降を見る） */
 const isQuantityAfter = (text: string, end: number): boolean => NOT_PRICE_AFTER_DECIMAL.test(text.slice(end, end + 12));
 
 /**
@@ -145,9 +169,8 @@ export function extractPriceCandidates(text: string, currency: string = 'USD'): 
   const seen = new Set<string>();
   const results: { value: string; idx: number }[] = [];
 
-  // 上限：記号なしの小数は従来どおり10000未満、$付きは桁区切りの`$12,000`も読めるようMARKED_AMOUNT_MAXまで
-  function add(numStr: string | null, idx: number, max: number = 9999.99) {
-    if (numStr == null) return;
+  // 上限：従来どおり10000未満。$付きで桁区切りのある金額（`$12,000`）だけMARKED_AMOUNT_MAXまで
+  function add(numStr: string, idx: number, max: number = 9999.99) {
     const n = parseFloat(numStr.replace(',', '.'));
     if (!isFinite(n) || n <= 0 || n > max) return;
     const key = n.toFixed(2);
@@ -157,18 +180,24 @@ export function extractPriceCandidates(text: string, currency: string = 'USD'): 
     }
   }
 
+  // 数字のまとまり全体で読んで加える（marked＝$付き）
+  function addWhole(start: number, numStr: string, idx: number, marked: boolean) {
+    const w = wholeNumber(norm, start, numStr, '.');
+    if (w) add(w.value, idx, marked && w.grouped ? MARKED_AMOUNT_MAX : undefined);
+  }
+
   // Pass 1: $XX.XX など通貨記号付き（優先）。$1,250.00 / $12,000 は数字のまとまり全体で読む
   const dollarRe = /\$\s*(\d{1,4}(?:[.,]\d{1,2})?)/g;
   let m: RegExpExecArray | null;
   while ((m = dollarRe.exec(norm)) !== null) {
-    add(wholeNumber(norm, trailingGroupStart(m, m[1]), m[1]), m.index, MARKED_AMOUNT_MAX);
+    addWhole(trailingGroupStart(m, m[1]), m[1], m.index, true);
   }
 
-  // Pass 2: XX.XX（小数2桁）。日付（2026.10.24）の一部・%・量（1.50 L）は拾わない
+  // Pass 2: XX.XX（小数2桁）。日付（2026.10.24）の一部・%・容量（1.50 L）は拾わない
   const decRe = /\b(\d{1,3}\.\d{2})\b/g;
   while ((m = decRe.exec(norm)) !== null) {
     if (isQuantityAfter(norm, m.index + m[1].length)) continue;
-    add(wholeNumber(norm, m.index, m[1]), m.index);
+    addWhole(m.index, m[1], m.index, false);
   }
 
   // OCR出現順
@@ -575,9 +604,8 @@ function extractGbpPriceCandidates(text: string): string[] {
   const seen = new Set<string>();
   const results: { value: string; idx: number }[] = [];
 
-  // 上限：記号なしは従来どおり9999.99、£/GBP付きは桁区切りの`£12,000`も読めるようMARKED_AMOUNT_MAXまで
-  function addGbp(numStr: string | null, idx: number, max: number = 9999.99) {
-    if (numStr == null) return;
+  // 上限：従来どおり9999.99。£/GBP付きで桁区切りのある金額（`£12,000`）だけMARKED_AMOUNT_MAXまで
+  function addGbp(numStr: string, idx: number, max: number = 9999.99) {
     const s = numStr.replace(/[ \t]/g, '');
     let n: number;
     // カンマ千区切り: 1,299 / 1,299.99
@@ -594,7 +622,13 @@ function extractGbpPriceCandidates(text: string): string[] {
     }
   }
 
-  // GBP数値パターン共通（P1-P5は数字のまとまり全体で読む。£1,250.00の一部・日付の一部を拾わない）:
+  // 数字のまとまり全体で読んで加える（marked＝£/GBP付き）。P1-P5で使い、£1,250.00の一部・日付の一部を拾わない
+  function addGbpWhole(src: string, start: number, numStr: string, idx: number, marked: boolean) {
+    const w = wholeNumber(src, start, numStr, '.');
+    if (w) addGbp(w.value, idx, marked && w.grouped ? MARKED_AMOUNT_MAX : undefined);
+  }
+
+  // GBP数値パターン共通:
   //   Alt1: カンマ千区切り + オプション小数 (1,299 / 1,299.99)
   //   Alt2: 小数ドット (1.99 / 9.99)
   //   Alt3: 整数 (%直後は除外)
@@ -605,26 +639,24 @@ function extractGbpPriceCandidates(text: string): string[] {
   const gbpPfxRe =
     /£[ \t]*(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+\.\d{1,2}|\d+\b(?!\s*%))/g;
   while ((m = gbpPfxRe.exec(text)) !== null) {
-    addGbp(wholeNumber(text, trailingGroupStart(m, m[1]), m[1]), m.index, MARKED_AMOUNT_MAX);
+    addGbpWhole(text, trailingGroupStart(m, m[1]), m[1], m.index, true);
   }
 
   // P2: £ suffix — 1.99£ / 9.99 £
   const gbpSfxRe =
     /(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+\.\d{1,2}|\d+\b(?!\s*%))[ \t]*£/g;
-  while ((m = gbpSfxRe.exec(text)) !== null) addGbp(wholeNumber(text, m.index, m[1]), m.index, MARKED_AMOUNT_MAX);
+  while ((m = gbpSfxRe.exec(text)) !== null) addGbpWhole(text, m.index, m[1], m.index, true);
 
   // P3: GBP suffix — 1.99 GBP
   const gbpCodeSfxRe =
     /(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+\.\d{1,2}|\d+\b(?!\s*%))[ \t]+GBP\b/gi;
-  while ((m = gbpCodeSfxRe.exec(text)) !== null) {
-    addGbp(wholeNumber(text, m.index, m[1]), m.index, MARKED_AMOUNT_MAX);
-  }
+  while ((m = gbpCodeSfxRe.exec(text)) !== null) addGbpWhole(text, m.index, m[1], m.index, true);
 
   // P4: GBP prefix — GBP 1.99
   const gbpCodePfxRe =
     /\bGBP[ \t]+(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+\.\d{1,2}|\d+\b(?!\s*%))/gi;
   while ((m = gbpCodePfxRe.exec(text)) !== null) {
-    addGbp(wholeNumber(text, trailingGroupStart(m, m[1]), m[1]), m.index, MARKED_AMOUNT_MAX);
+    addGbpWhole(text, trailingGroupStart(m, m[1]), m[1], m.index, true);
   }
 
   // [GBP診断] P1-P4 中間結果 — リリース前に削除
@@ -659,12 +691,12 @@ function extractGbpPriceCandidates(text: string): string[] {
           const intPart = parseInt(m[1], 10);
           if (intPart >= 1900 && intPart <= 2099) continue;
           if (isQuantityAfter(line, m.index + m[1].length)) continue;
-          addGbp(wholeNumber(line, m.index, m[1]), p5TextOffset + trimLeading + m.index);
+          addGbpWhole(line, m.index, m[1], p5TextOffset + trimLeading + m.index, false);
         }
         // カンマ整数: 1,299
         const commaRe = /\b(\d{1,3}(?:,\d{3})+)\b/g;
         while ((m = commaRe.exec(line)) !== null) {
-          addGbp(wholeNumber(line, m.index, m[1]), p5TextOffset + trimLeading + m.index);
+          addGbpWhole(line, m.index, m[1], p5TextOffset + trimLeading + m.index, false);
         }
       }
     }
@@ -765,9 +797,8 @@ function extractEurPriceCandidates(text: string): string[] {
   const seen = new Set<string>();
   const results: { value: string; idx: number }[] = [];
 
-  // 上限：記号なしは従来どおり9999.99、€/EUR付きは桁区切りの`€12.000`も読めるようMARKED_AMOUNT_MAXまで
-  function addEur(numStr: string | null, idx: number, max: number = 9999.99) {
-    if (numStr == null) return;
+  // 上限：従来どおり9999.99。€/EUR付きで桁区切りのある金額（`€12.000`）だけMARKED_AMOUNT_MAXまで
+  function addEur(numStr: string, idx: number, max: number = 9999.99) {
     let n: number;
     // OCR崩れの空白を除去してから解析（例: "4, 99" → "4,99"）
     const s = numStr.replace(/[ \t]/g, '');
@@ -788,7 +819,13 @@ function extractEurPriceCandidates(text: string): string[] {
 
   let m: RegExpExecArray | null;
 
-  // EUR数値パターン（改行またぎ防止。P1-P5は数字のまとまり全体で読む：€1.250・1,250.00 EURの一部を拾わない）
+  // 数字のまとまり全体で読んで加える（marked＝€/EUR付き）。P1-P5で使い、€1.250・1,250.00 EURの一部を拾わない
+  function addEurWhole(src: string, start: number, numStr: string, idx: number, marked: boolean) {
+    const w = wholeNumber(src, start, numStr, ',');
+    if (w) addEur(w.value, idx, marked && w.grouped ? MARKED_AMOUNT_MAX : undefined);
+  }
+
+  // EUR数値パターン（改行またぎ防止）
   // Alt1: 欧州桁区切り (1.234,56)
   // Alt2: 小数（カンマ/ドット周囲のOCR崩れスペース許容: 4,99 / 4, 99 / 4.99 / 4. 99）
   // Alt3: 整数 (12)。ただし 25% のようなパーセント表記は除外
@@ -796,23 +833,21 @@ function extractEurPriceCandidates(text: string): string[] {
   // Priority 1: € prefix（€4.99 / €4,99 / € 4, 99 / €1.234,56）
   const eurPfxRe = /€[ \t]*(\d{1,3}(?:\.\d{3})+,\d{1,2}|\d+[ \t]*[.,][ \t]*\d{1,2}|\d+\b(?!\s*%))/g;
   while ((m = eurPfxRe.exec(text)) !== null) {
-    addEur(wholeNumber(text, trailingGroupStart(m, m[1]), m[1]), m.index, MARKED_AMOUNT_MAX);
+    addEurWhole(text, trailingGroupStart(m, m[1]), m[1], m.index, true);
   }
 
   // Priority 2: € suffix（4.99€ / 4,99€ / 4, 99€ / 4, 99 €）
   const eurSfxRe = /(\d{1,3}(?:\.\d{3})+,\d{1,2}|\d+[ \t]*[.,][ \t]*\d{1,2}|\d+\b(?!\s*%))[ \t]*€/g;
-  while ((m = eurSfxRe.exec(text)) !== null) addEur(wholeNumber(text, m.index, m[1]), m.index, MARKED_AMOUNT_MAX);
+  while ((m = eurSfxRe.exec(text)) !== null) addEurWhole(text, m.index, m[1], m.index, true);
 
   // Priority 3: EUR suffix（4.99 EUR / 4,99 EUR / 4, 99 EUR）
   const eurCodeSfxRe = /(\d{1,3}(?:\.\d{3})+,\d{1,2}|\d+[ \t]*[.,][ \t]*\d{1,2}|\d+\b(?!\s*%))[ \t]+EUR\b/gi;
-  while ((m = eurCodeSfxRe.exec(text)) !== null) {
-    addEur(wholeNumber(text, m.index, m[1]), m.index, MARKED_AMOUNT_MAX);
-  }
+  while ((m = eurCodeSfxRe.exec(text)) !== null) addEurWhole(text, m.index, m[1], m.index, true);
 
   // Priority 4: EUR prefix（EUR 4.99 / EUR 4,99 / EUR 4, 99）
   const eurCodePfxRe = /\bEUR[ \t]+(\d{1,3}(?:\.\d{3})+,\d{1,2}|\d+[ \t]*[.,][ \t]*\d{1,2}|\d+\b(?!\s*%))/gi;
   while ((m = eurCodePfxRe.exec(text)) !== null) {
-    addEur(wholeNumber(text, trailingGroupStart(m, m[1]), m[1]), m.index, MARKED_AMOUNT_MAX);
+    addEurWhole(text, trailingGroupStart(m, m[1]), m[1], m.index, true);
   }
 
   // [EUR診断] P1-P4 中間結果 — リリース前に削除
@@ -860,7 +895,7 @@ function extractEurPriceCandidates(text: string): string[] {
       }
       if (isQuantityAfter(line, m.index + m[1].length)) continue;
       dbg('[EUR OCR P5] match:', m[1], '/ line:', lineShort);
-      addEur(wholeNumber(line, m.index, m[1]), m.index);
+      addEurWhole(line, m.index, m[1], m.index, false);
     }
   }
 

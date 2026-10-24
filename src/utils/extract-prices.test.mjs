@@ -246,7 +246,6 @@ test('USD: 桁区切りの金額をまとまり全体で読む（1.25・12.00に
     ['$9,999.99', ['9999.99']],
     ['$10,000.00', ['10000.00']],
     ['1,250.00', ['1250.00']],
-    ['$12345', ['12345.00']],
   ];
   for (const [text, expected] of cases) {
     await t.test(text, () => assert.deepEqual(extractPriceCandidates(text, 'USD'), expected));
@@ -358,4 +357,51 @@ test('KRW/JPY/THB/TWD: 桁区切り・日付の読みは従来どおり', async 
   for (const [currency, text, expected] of cases) {
     await t.test(`${currency} ${text}`, () => assert.deepEqual(extractPriceCandidates(text, currency), expected));
   }
+});
+
+// 独立監査（2026-10-24）で見つかった、最初の修正版の後退を防ぐ
+test('USD/GBP/EUR: 小数点の後ろが3桁（燃料・単価）は桁区切りにせず従来どおり小数第2位まで', async (t) => {
+  const cases = [
+    ['USD', '$3.999', ['3.99']],
+    ['USD', 'Regular $1.459 /gal', ['1.45']],
+    ['GBP', '£1.459', ['1.45']],
+    ['EUR', '€1,799', ['1.79']],
+    ['EUR', '€ 1, 799', ['1.79']],
+    ['EUR', 'Super E10 1,859 €/l', ['1.85']],
+  ];
+  for (const [currency, text, expected] of cases) {
+    await t.test(`${currency} ${text}`, () => assert.deepEqual(extractPriceCandidates(text, currency), expected));
+  }
+});
+
+test('重さ付きの単価（量り売り）は従来どおり価格として残す', async (t) => {
+  const cases = [
+    ['USD', '4.99 lb', ['4.99']],
+    ['USD', 'Bananas 0.69 lb', ['0.69']],
+    ['EUR', 'Tomaten 2,99 kg', ['2.99']],
+    ['GBP', '1.50 kg', ['1.50']],
+  ];
+  for (const [currency, text, expected] of cases) {
+    await t.test(`${currency} ${text}`, () => assert.deepEqual(extractPriceCandidates(text, currency), expected));
+  }
+});
+
+test('空白の抜けた価格の連結は従来どおり両方残す（まとめて捨てない）', async (t) => {
+  const cases = [
+    ['USD', '$10.50,12.50', ['10.50', '12.50']],
+    ['USD', '$5.00,6.00', ['5.00', '6.00']],
+    ['GBP', '£1.99,2.99', ['1.99']],
+    ['EUR', '1,25,2,50', ['1.25', '2.50']],
+  ];
+  for (const [currency, text, expected] of cases) {
+    await t.test(`${currency} ${text}`, () => assert.deepEqual(extractPriceCandidates(text, currency), expected));
+  }
+});
+
+test('記号の後ろの桁区切りの無い長い数字は、上限を広げない（電話番号・コードの恐れ）', async (t) => {
+  for (const text of ['$12345', '$123456', '$ 555123', '$1234567890']) {
+    await t.test(text, () => assert.deepEqual(extractPriceCandidates(text, 'USD'), []));
+  }
+  await t.test('€12345', () => assert.deepEqual(extractPriceCandidates('€12345', 'EUR'), []));
+  await t.test('$1234 は従来どおり', () => assert.deepEqual(extractPriceCandidates('$1234', 'USD'), ['1234.00']));
 });
