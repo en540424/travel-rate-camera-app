@@ -114,6 +114,24 @@ test('翻訳ページで円換算する価格（USD）', async (t) => {
     assert.equal(result.includes(250), false);
     assert.equal(result.some((amount) => jpy(amount, 163) === 204), false);
   });
+  await t.test('小数の無い桁区切り（"$1,250"・"$12,000"）も一部だけを価格にしない', () => {
+    for (const [text, fragment] of [
+      ['$1,250', 1.25],
+      ['$12,000', 12],
+      ['Tour $2,500 per person', 2.5],
+    ]) {
+      const result = prices(text, 'USD');
+      assert.equal(result.includes(fragment), false, `${text} → ${JSON.stringify(result)}`);
+      assert.ok(result.every((amount) => amount >= 1000), `${text} → ${JSON.stringify(result)}`);
+    }
+    const eur = prices('1.250 €', 'EUR');
+    assert.ok(eur.every((amount) => amount === 1250), `1.250 € → ${JSON.stringify(eur)}`);
+  });
+  await t.test('サイズ表記のL・Mは量にしない（通貨記号付きの金額）', () => {
+    assert.deepEqual(prices('Latte S $4.50 M $5.25 L $6.00', 'USD'), [4.5, 5.25, 6]);
+    assert.deepEqual(prices('$4.50 M $5.25 L $6.00', 'USD'), [4.5, 5.25, 6]);
+    assert.deepEqual(prices('Water 1.50 L', 'USD'), []);
+  });
   await t.test('数字の無い文章・空文字', () => {
     assert.deepEqual(prices('Fresh salad with seasonal vegetables', 'USD'), []);
     assert.deepEqual(prices('', 'USD'), []);

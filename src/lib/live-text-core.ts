@@ -685,7 +685,9 @@ function maskNonPriceNumbers(text: string): string {
     .replace(/\d[\d.,]*\s*%/g, ' ')
     .replace(
       /\d[\d.,]*\s*(?:kcal|cal|ml|cl|l|kg|mg|g|oz|lbs?|cm|mm|pcs?|pieces?|servings?|mins?|hrs?)(?![A-Za-z])/gi,
-      ' ',
+      // 通貨記号の付いた金額は量にしない（"M $5.25 L $6.00"のLはサイズ）
+      (match: string, offset: number, whole: string) =>
+        /(?:NT\$|US\$|[$€£¥￥₩￦฿])\s*$/.test(whole.slice(0, offset)) ? match : ' ',
     )
     .replace(/\d{2,4}-\d{3,4}-\d{4}/g, ' ');
 }
@@ -693,15 +695,16 @@ function maskNonPriceNumbers(text: string): string {
 /**
  * 行内の数字のまとまり（"1,250.00"・"4,99"・"18,000"等）が表しうる値。
  * 桁区切りが「,」でも「.」でも読めるよう両方の解釈を返す（形として成り立つものだけ）。
+ * 小数部は1〜2桁に限る（区切りの後ろが3桁なら桁区切り。"1,250"を1.25と読まない）。
  */
 function numericTokenValues(text: string): number[] {
   const values: number[] = [];
   for (const raw of text.match(/\d[\d.,]*/g) ?? []) {
     const token = raw.replace(/[.,]+$/, '');
-    if (/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(token) || /^\d+(?:\.\d+)?$/.test(token)) {
+    if (/^\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?$/.test(token) || /^\d+(?:\.\d{1,2})?$/.test(token)) {
       values.push(Number(token.replace(/,/g, '')));
     }
-    if (/^\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(token) || /^\d+,\d+$/.test(token)) {
+    if (/^\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?$/.test(token) || /^\d+,\d{1,2}$/.test(token)) {
       values.push(Number(token.replace(/\./g, '').replace(',', '.')));
     }
   }
