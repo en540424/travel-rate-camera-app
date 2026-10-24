@@ -95,6 +95,8 @@ App Storeは、**同一`version`内で`buildNumber`（CFBundleVersion）が一�
 
 **ASC上のアプリレコードが未作成なら、それがHuman作業の最初の1歩。**
 
+> **2026-10-25追記（現状）**：ASCアプリレコードは**作成済み**（2026-10-22 Human確認：Apple ID／`ascAppId` **6788988252**・SKU `travelratecamera-ios`・iOSバージョン「1.0」提出準備中）。Production Build 1.0.0 (4)（`619c292d`）はASCへアップロード済みでTestFlight配布中。`submit.production` は空のまま（記載はHuman GO）。上の「未作成」は2026-09-12時点の記述。提出物・残作業の現在地はVault `旅レートカメラ_AppStore提出パッケージ_2026-09-12.md` §0・§G
+
 ---
 
 ## 4. RevenueCat（コード側の定義・実設定はHuman確認）
@@ -229,7 +231,7 @@ production Buildは**未実行**。実行前に詰まる要因だけを洗い出
 | EAS環境変数 `production` | `EXPO_PUBLIC_REVENUECAT_IOS_KEY` 設定済み（sensitive・値は未表示） | ✅ | ✅ |
 | 暗号申告 | `ITSAppUsesNonExemptEncryption: false` | ✅ | ✅ 質問されない想定 |
 | **`submit.production`** | **空 `{}`** | ✅ Buildには無関係 | ⚠️ **`eas submit`が対話で Apple ID・`ascAppId` を聞く** |
-| **ASCアプリレコード** | **未作成** | ✅ Buildには無関係 | ❌ **`ascAppId`が存在しないため submit できない** |
+| **ASCアプリレコード** | **未作成**（2026-09-12時点）→ **2026-10-22作成済みを確認（ascAppId 6788988252）** | ✅ Buildには無関係 | ✅ 2026-10-24にBuild 4をsubmit済み |
 
 ### 結論
 
