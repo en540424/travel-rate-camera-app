@@ -129,13 +129,14 @@ const INPUT_MODE_ITEMS: {
 }[] = [
   { mode: 'text', label: 'テキスト・音声', icon: { ios: 'keyboard', android: 'keyboard', web: 'keyboard' } },
   { mode: 'photo', label: '写真', icon: { ios: 'photo.on.rectangle', android: 'image', web: 'image' } },
-  { mode: 'camera', label: 'カメラ', icon: { ios: 'camera.viewfinder', android: 'photo_camera', web: 'photo_camera' } },
+  { mode: 'camera', label: 'ライブ翻訳', icon: { ios: 'camera.viewfinder', android: 'photo_camera', web: 'photo_camera' } },
 ];
 
 const INPUT_MODE_SUBTITLE: Record<InputMode, string> = {
   text: '入力した文章や話した言葉を翻訳します',
   photo: 'メニューや説明文を写真から読み取って翻訳します',
-  camera: 'カメラを向けた文字をその場で翻訳します',
+  // 375pt幅（ライブ翻訳が動く最小のiPhone）でも1行に収める。2行になると切替のたびに下の表示がずれる
+  camera: 'カメラを向けるだけで、文字をその場で翻訳します',
 };
 
 function delay(ms: number): Promise<void> {
@@ -839,7 +840,7 @@ export default function TranslationScreen() {
             <ErrorMessage message="この端末で利用できる翻訳言語を取得できませんでした。アプリを再起動してもう一度お試しください。" />
           )}
 
-          {/* 入力方法の切替（テキスト・音声／写真／カメラ）。メインカメラのモード切替と同じ見た目 */}
+          {/* 入力方法の切替（テキスト・音声／写真／ライブ翻訳）。メインカメラのモード切替と同じ見た目 */}
           <View style={styles.modeSegment}>
             {INPUT_MODE_ITEMS.map((item) => {
               const selected = inputMode === item.mode;
@@ -856,7 +857,11 @@ export default function TranslationScreen() {
                     weight="semibold"
                     size={15}
                   />
-                  <ThemedText style={[styles.modeSegmentText, selected && styles.modeSegmentTextActive]}>
+                  <ThemedText
+                    style={[styles.modeSegmentText, selected && styles.modeSegmentTextActive]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}>
                     {item.label}
                   </ThemedText>
                 </Pressable>
@@ -1111,7 +1116,7 @@ export default function TranslationScreen() {
 
           {/* カメラはこの画面にフォーカスがある間だけマウントする（メインカメラとsessionを同時に動かさない） */}
           {inputMode === 'camera' && !isLiveTextPlatformSupported && (
-            <ErrorMessage message="カメラ翻訳はiPhoneでのみ利用できます。写真から翻訳をお試しください。" />
+            <ErrorMessage message="ライブ翻訳はiPhoneでのみ利用できます。写真から翻訳をお試しください。" />
           )}
           {inputMode === 'camera' && isLiveTextPlatformSupported && isScreenFocused && source != null && target != null && (
             <LiveTranslationCamera
@@ -1204,7 +1209,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     elevation: 3,
   },
-  modeSegmentText: { fontSize: 13, fontWeight: '600', color: color.muted },
+  // 小さいiPhone・大きい文字設定でも折り返さず縮める（アイコンの横で幅を譲れるようflexShrink）
+  modeSegmentText: { flexShrink: 1, fontSize: 13, fontWeight: '600', color: color.muted },
   modeSegmentTextActive: { color: color.text, fontWeight: '700' },
   langCard: {
     flex: 1,

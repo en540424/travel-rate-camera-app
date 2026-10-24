@@ -331,7 +331,7 @@ export function LiveTranslationCamera({
 
   const statusLabel =
     scannerStatus === 'unavailable'
-      ? 'このカメラではリアルタイム翻訳を使えません'
+      ? 'このカメラではライブ翻訳を使えません'
       : !cameraReady || scannerStatus === 'waiting' || scannerStatus === 'off'
         ? 'カメラを準備しています…'
         : zoomSettling
@@ -340,7 +340,7 @@ export function LiveTranslationCamera({
           ? '文字にカメラを向けてください'
           : translationSupported === false
             ? '翻訳はiOS 18以降で利用できます'
-            : 'リアルタイム翻訳中';
+            : 'ライブ翻訳中';
 
   return (
     <View style={styles.root}>
