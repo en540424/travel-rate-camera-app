@@ -7,6 +7,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ErrorMessage, GhostButton, PrimaryButton, SecondaryButton } from '@/components/ui';
 import type { PhotoTranslationState } from '@/hooks/use-photo-translation';
+import { canRetryPhotoTranslation, countPhotoTranslationProgress } from '@/lib/photo-translation-core';
 import type { MemoTranslationErrorCode } from '@/lib/translation-types';
 import { color, radius, shadow, spacing } from '@/theme/tokens';
 
@@ -15,6 +16,7 @@ const TRANSLATION_ERROR_MESSAGES: Partial<Record<MemoTranslationErrorCode, strin
   unsupported_language: 'この言語の組み合わせには対応していません。翻訳元・翻訳先を変えてお試しください。',
   host_unavailable: '翻訳を開始できませんでした。もう一度お試しください。',
   translation_failed: '一部を翻訳できませんでした。通信状況を確認してもう一度お試しください。',
+  cancelled: '翻訳が中断されました。もう一度お試しください。',
 };
 
 export type PhotoTranslationPanelProps = {
@@ -71,6 +73,8 @@ export function PhotoTranslationPanel({
     .join('\n');
   const originalText = blocks.map((block) => block.original).join('\n');
   const hasTranslation = blocks.some((block) => block.translated != null);
+  const progress = countPhotoTranslationProgress(blocks);
+  const canRetry = state.phase === 'done' && canRetryPhotoTranslation(state.errorCode, state.blocks);
 
   return (
     <View style={styles.wrap}>
@@ -124,8 +128,21 @@ export function PhotoTranslationPanel({
             <View style={styles.progressInline}>
               <ActivityIndicator size="small" color={color.primaryDark} />
               <ThemedText style={styles.progressText}>
-                翻訳しています…（初回は言語データの準備に時間がかかる場合があります）
+                {state.needsDownload
+                  ? '翻訳データのダウンロードが必要です。Appleの案内が表示されたら「ダウンロード」を選んでください（完了まで時間がかかる場合があります）'
+                  : `翻訳しています…（${progress.translated}/${progress.total}件）`}
               </ThemedText>
+            </View>
+          )}
+
+          {state.phase === 'translating' && state.slow && (
+            <View style={styles.errorWrap}>
+              <ThemedText style={styles.note}>
+                {state.needsDownload
+                  ? 'ダウンロード中はそのままお待ちください。案内が出ない・進まない場合は、やり直してください。'
+                  : '時間がかかっています。初回は言語データの準備に時間がかかることがあります。このまま待つか、やり直してください。'}
+              </ThemedText>
+              <GhostButton title="やり直す" tone="primary" onPress={onRetry} />
             </View>
           )}
 
@@ -144,33 +161,37 @@ export function PhotoTranslationPanel({
             </View>
           ))}
 
-          {state.phase === 'done' && state.errorCode != null && (
+          {state.phase === 'done' && (state.errorCode != null || canRetry) && (
             <View style={styles.errorWrap}>
-              <ErrorMessage message={TRANSLATION_ERROR_MESSAGES[state.errorCode] ?? '翻訳できませんでした。'} />
-              {(state.errorCode === 'host_unavailable' || state.errorCode === 'translation_failed') && (
-                <GhostButton title="もう一度翻訳する" tone="primary" onPress={onRetry} />
-              )}
+              <ErrorMessage
+                message={
+                  (state.errorCode != null ? TRANSLATION_ERROR_MESSAGES[state.errorCode] : undefined) ??
+                  '翻訳できなかった項目があります。'
+                }
+              />
+              {canRetry && <GhostButton title="もう一度翻訳する" tone="primary" onPress={onRetry} />}
             </View>
           )}
 
-          {state.phase === 'done' && (
-            <View style={styles.resultActions}>
-              {onSpeak != null && hasTranslation && (
-                <Pressable
-                  style={({ pressed }) => [styles.actionBtn, isSpeaking && styles.actionBtnActive, pressed && styles.pressed]}
-                  onPress={() => onSpeak(translatedText)}
-                  accessibilityRole="button"
-                  accessibilityLabel={isSpeaking ? '読み上げを停止' : '訳文を読み上げる'}>
-                  <SymbolView
-                    name={{ ios: isSpeaking ? 'stop.fill' : 'speaker.wave.2.fill', android: 'volume_up', web: 'volume_up' }}
-                    tintColor={isSpeaking ? '#fff' : color.primaryDark}
-                    size={15}
-                  />
-                  <ThemedText style={[styles.actionBtnText, isSpeaking && styles.actionBtnTextActive]}>
-                    {isSpeaking ? '停止' : '読み上げ'}
-                  </ThemedText>
-                </Pressable>
-              )}
+          {/* 原文を編集は翻訳の途中でも使える（翻訳を待たずに誤読を直して訳し直せるように） */}
+          <View style={styles.resultActions}>
+            {state.phase === 'done' && onSpeak != null && hasTranslation && (
+              <Pressable
+                style={({ pressed }) => [styles.actionBtn, isSpeaking && styles.actionBtnActive, pressed && styles.pressed]}
+                onPress={() => onSpeak(translatedText)}
+                accessibilityRole="button"
+                accessibilityLabel={isSpeaking ? '読み上げを停止' : '訳文を読み上げる'}>
+                <SymbolView
+                  name={{ ios: isSpeaking ? 'stop.fill' : 'speaker.wave.2.fill', android: 'volume_up', web: 'volume_up' }}
+                  tintColor={isSpeaking ? '#fff' : color.primaryDark}
+                  size={15}
+                />
+                <ThemedText style={[styles.actionBtnText, isSpeaking && styles.actionBtnTextActive]}>
+                  {isSpeaking ? '停止' : '読み上げ'}
+                </ThemedText>
+              </Pressable>
+            )}
+            {state.phase === 'done' && (
               <Pressable
                 style={({ pressed }) => [styles.actionBtn, pressed && styles.pressed]}
                 onPress={() => onCopy(translatedText)}
@@ -178,16 +199,16 @@ export function PhotoTranslationPanel({
                 <SymbolView name={{ ios: 'doc.on.doc', android: 'content_copy', web: 'content_copy' }} tintColor={color.primaryDark} size={15} />
                 <ThemedText style={styles.actionBtnText}>コピー</ThemedText>
               </Pressable>
-              <Pressable
-                style={({ pressed }) => [styles.actionBtn, pressed && styles.pressed]}
-                onPress={() => onUseAsInput(originalText)}
-                accessibilityRole="button"
-                accessibilityLabel="読み取った原文をテキスト入力へ移して編集する">
-                <SymbolView name={{ ios: 'square.and.pencil', android: 'edit', web: 'edit' }} tintColor={color.primaryDark} size={15} />
-                <ThemedText style={styles.actionBtnText}>原文を編集</ThemedText>
-              </Pressable>
-            </View>
-          )}
+            )}
+            <Pressable
+              style={({ pressed }) => [styles.actionBtn, pressed && styles.pressed]}
+              onPress={() => onUseAsInput(originalText)}
+              accessibilityRole="button"
+              accessibilityLabel="読み取った原文をテキスト入力へ移して編集する">
+              <SymbolView name={{ ios: 'square.and.pencil', android: 'edit', web: 'edit' }} tintColor={color.primaryDark} size={15} />
+              <ThemedText style={styles.actionBtnText}>原文を編集</ThemedText>
+            </Pressable>
+          </View>
           {speakFailed && <ThemedText style={styles.note}>読み上げできませんでした</ThemedText>}
         </View>
       )}

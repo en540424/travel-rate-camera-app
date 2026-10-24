@@ -30,8 +30,12 @@ export const isTranslationPlatformSupported = Platform.OS === 'ios';
  * `#available(iOS 18.0, *)`でガードしており、podspecも`weak_frameworks = 'Translation'`だが、
  * JS側でも`isSupportedOs()`で止めることで「iOS 16.4〜17.xはTranslation.frameworkに触れない」を
  * 二重に保証する（翻訳はunsupported_osとして原文フォールバックになる）。
+ *
+ * `instanceKey`を変えるとnativeのホストView（＝coordinator）を作り直す。応答が返らない要求が
+ * 残ったホストの後ろに新しい要求が並び続けないよう、写真翻訳の「やり直す」で使う
+ * （Expoのnative Viewは再利用されないため、keyが変われば必ず新しいcoordinatorになる）。
  */
-export function TranslationHost({ active }: { active: boolean }) {
+export function TranslationHost({ active, instanceKey = 0 }: { active: boolean; instanceKey?: number }) {
   const [Host, setHost] = useState<ComponentType<ViewProps> | null>(null);
 
   useEffect(() => {
@@ -54,7 +58,7 @@ export function TranslationHost({ active }: { active: boolean }) {
   }, []);
 
   if (!active || Host == null) return null;
-  return <Host style={styles.host} pointerEvents="none" />;
+  return <Host key={instanceKey} style={styles.host} pointerEvents="none" />;
 }
 
 const styles = StyleSheet.create({

@@ -306,8 +306,15 @@ export default function TranslationScreen() {
   const source = languageOverride?.source ?? initialLanguages?.source ?? null;
   const target = languageOverride?.target ?? initialLanguages?.target ?? null;
 
-  // 写真翻訳（写真を撮る／選ぶ → 静止画OCR → 段落ごとに翻訳）。翻訳元・翻訳先を変えると同じ写真で訳し直す
-  const photo = usePhotoTranslation({ sourceLanguage: source, targetLanguage: target });
+  // 写真翻訳（写真を撮る／選ぶ → 静止画OCR → 段落ごとに翻訳）。翻訳元・翻訳先を変えると同じ写真で訳し直す。
+  // やり直し時は翻訳ホストを作り直す（応答が返らない要求の後ろに並び続けないように）
+  const [translationHostKey, setTranslationHostKey] = useState(0);
+  const resetTranslationHost = useCallback(() => setTranslationHostKey((key) => key + 1), []);
+  const photo = usePhotoTranslation({
+    sourceLanguage: source,
+    targetLanguage: target,
+    onResetTranslationHost: resetTranslationHost,
+  });
 
   // MARK: - 言語選択画面からの戻り値（route params）を消費する
 
@@ -729,7 +736,7 @@ export default function TranslationScreen() {
   return (
     <View style={styles.screen}>
       {/* 描画物を持たない透明View。フォーカス中だけマウントする（冒頭の安全規約を参照） */}
-      <TranslationHost active={isScreenFocused} />
+      <TranslationHost active={isScreenFocused} instanceKey={translationHostKey} />
 
       <SafeAreaView style={styles.safe} edges={['top']}>
         <ScrollView
