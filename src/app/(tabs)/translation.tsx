@@ -56,7 +56,7 @@ import { getLanguageDisplayName } from '@/config/translation-language-names';
 import { getTranslationSourceLanguage } from '@/config/translation-languages';
 import { usePhotoTranslation } from '@/hooks/use-photo-translation';
 import { resolveTripPriceConversion } from '@/lib/live-text-core';
-import { openPhotoViewerUri } from '@/lib/photo-zoom-core';
+import { openPhotoViewerUri, shouldReopenPhotoViewer } from '@/lib/photo-zoom-core';
 import { useTrips } from '@/hooks/use-trips';
 import type { SpeechRecognitionErrorCode } from '@/lib/speech-recognition-service';
 import {
@@ -336,6 +336,16 @@ export default function TranslationScreen() {
   const [photoViewerUri, setPhotoViewerUri] = useState<string | null>(null);
   const currentPhotoUri = photo.state.phase === 'idle' ? null : photo.state.uri;
   const openViewerUri = inputMode === 'photo' ? openPhotoViewerUri(photoViewerUri, currentPhotoUri) : null;
+
+  /** 写真のタップ。開いているはずなのに写真をタップできた（＝iOSが表示を断った）時は、閉じてから開き直す */
+  function handleOpenPhoto(uri: string) {
+    if (shouldReopenPhotoViewer(photoViewerUri, uri)) {
+      setPhotoViewerUri(null);
+      requestAnimationFrame(() => setPhotoViewerUri(uri));
+      return;
+    }
+    setPhotoViewerUri(uri);
+  }
 
   // MARK: - 言語選択画面からの戻り値（route params）を消費する
 
@@ -1095,7 +1105,7 @@ export default function TranslationScreen() {
               isSpeaking={isSpeaking}
               speakFailed={speakFailed}
               priceConversion={priceConversion}
-              onOpenPhoto={setPhotoViewerUri}
+              onOpenPhoto={handleOpenPhoto}
             />
           )}
 

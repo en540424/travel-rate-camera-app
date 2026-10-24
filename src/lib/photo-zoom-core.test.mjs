@@ -10,7 +10,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const { openPhotoViewerUri, isPhotoTap, isDoubleTap, zoomRectAround } = await import('./photo-zoom-core.ts');
+const { openPhotoViewerUri, shouldReopenPhotoViewer, isPhotoTap, isDoubleTap, zoomRectAround } = await import(
+  './photo-zoom-core.ts'
+);
+
+test('開き直し：開いているはずの写真をタップできた（＝表示に失敗している）時だけ', async (t) => {
+  await t.test('閉じている写真をタップ → 普通に開く', () => {
+    assert.equal(shouldReopenPhotoViewer(null, 'file:///a.jpg'), false);
+  });
+  await t.test('開いているはずの写真をタップ → いったん閉じて開き直す', () => {
+    assert.equal(shouldReopenPhotoViewer('file:///a.jpg', 'file:///a.jpg'), true);
+  });
+  await t.test('前の写真の値が残っていても、別の写真は普通に開く', () => {
+    assert.equal(shouldReopenPhotoViewer('file:///a.jpg', 'file:///b.jpg'), false);
+  });
+});
 
 test('開いている写真：今の写真と同じ時だけ開く', async (t) => {
   await t.test('タップした写真を開く', () => {

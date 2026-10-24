@@ -16,6 +16,16 @@ export function openPhotoViewerUri(viewerUri: string | null, currentUri: string 
   return currentUri != null && viewerUri === currentUri ? currentUri : null;
 }
 
+/**
+ * 写真をタップした時、拡大表示を「開き直す」必要があるか。
+ * 拡大表示が見えている間は下の写真をタップできないので、開いているはずの写真（`viewerUri`）を
+ * もう一度タップできた＝表示に失敗している。同じ値を入れ直しても再描画されず二度と開けなくなるため、
+ * いったん閉じてから開き直す（iOSが表示を断った時の復帰。独立レビューの指摘）。
+ */
+export function shouldReopenPhotoViewer(viewerUri: string | null, tappedUri: string): boolean {
+  return viewerUri === tappedUri;
+}
+
 /** 1本指で触れて離した1回のタップ（画面座標・ms） */
 export type PhotoTap = { x: number; y: number; time: number };
 
