@@ -861,7 +861,7 @@ export default function TranslationScreen() {
                     style={[styles.modeSegmentText, selected && styles.modeSegmentTextActive]}
                     numberOfLines={1}
                     adjustsFontSizeToFit
-                    minimumFontScale={0.8}>
+                    minimumFontScale={0.7}>
                     {item.label}
                   </ThemedText>
                 </Pressable>
