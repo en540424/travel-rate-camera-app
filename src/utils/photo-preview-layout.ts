@@ -27,7 +27,7 @@ export const FALLBACK_PHOTO_ASPECT = 3 / 4;
 export const MIN_PHOTO_FRAME_ASPECT = 0.4;
 export const MAX_PHOTO_FRAME_ASPECT = 2.5;
 
-export type PhotoSurface = 'ocrResult' | 'detail' | 'savePhoto' | 'editThumb' | 'compareThumb';
+export type PhotoSurface = 'ocrResult' | 'detail' | 'photoTranslation' | 'savePhoto' | 'editThumb' | 'compareThumb';
 
 type SurfaceLimit =
   /** 幅は親の幅いっぱい（実測）。高さの上限は画面の縦幅に比例させ、上下限で挟む */
@@ -42,6 +42,9 @@ const PHOTO_SURFACES: Record<PhotoSurface, SurfaceLimit> = {
   // 商品詳細の大判写真（写真が主役の画面。操作ボタンは固定フッター）
   // （SE→320pt／iPhone 15→409pt／Pro Max→440pt）
   detail: { kind: 'screen', heightRatio: 0.48, minHeight: 300, maxHeight: 440 },
+  // 翻訳ページの写真翻訳（撮った文字を確かめる写真。下の翻訳結果へスクロールで進める高さで止める。
+  // タップで全画面の拡大表示を開く）（SE→334pt／iPhone 15→443pt／Pro Max→460pt）
+  photoTranslation: { kind: 'screen', heightRatio: 0.52, minHeight: 300, maxHeight: 460 },
   // 保存の設定「履歴に残す写真」（右に説明文が並ぶ行。SEでも説明文の列を約140pt残す）
   savePhoto: { kind: 'box', maxWidth: 136, maxHeight: 180 },
   // 履歴編集の保存写真サムネ

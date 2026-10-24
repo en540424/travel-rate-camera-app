@@ -1,5 +1,5 @@
 import { Image, type ImageLoadEventData } from 'expo-image';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 
 import { ResilientPhoto } from '@/components/resilient-photo';
@@ -15,6 +15,10 @@ interface FitPhotoProps {
   borderRadius: number;
   /** タップで拡大（各画面の既存の拡大Modalを開く） */
   onPress?: () => void;
+  /** タップで拡大する時の読み上げ用ラベル */
+  accessibilityLabel?: string;
+  /** 写真の上に重ねる表示（「タップで拡大」等。タップは奪わない） */
+  overlay?: ReactNode;
 }
 
 /**
@@ -24,14 +28,14 @@ interface FitPhotoProps {
  * 写真自体は常にcontainなので、どの場合も写真全体が見える。写真（uri）が替わったら測り直す。
  * 撮影結果画面・商品詳細（親の幅いっぱいの面）は親の幅を実測して上限にする。
  */
-export function FitPhoto({ uri, surface, saved = false, borderRadius, onPress }: FitPhotoProps) {
+export function FitPhoto({ uri, surface, saved = false, borderRadius, onPress, accessibilityLabel, overlay }: FitPhotoProps) {
   const { height: windowHeight } = useWindowDimensions();
   // 測った縦横比は、測った写真のuriと組で持つ（写真が替わったら前の写真の形を使わない）
   const [measured, setMeasured] = useState<{ uri: string; aspect: number } | null>(null);
   const [availableWidth, setAvailableWidth] = useState<number | null>(null);
   const aspect = measured?.uri === uri ? measured.aspect : null;
   const box = getPhotoBoxSize(surface, aspect, windowHeight, availableWidth);
-  const fillsParentWidth = surface === 'ocrResult' || surface === 'detail';
+  const fillsParentWidth = surface === 'ocrResult' || surface === 'detail' || surface === 'photoTranslation';
 
   function handleLoad(event: ImageLoadEventData) {
     const next = photoAspectFromSize(event.source?.width, event.source?.height);
@@ -50,10 +54,16 @@ export function FitPhoto({ uri, surface, saved = false, borderRadius, onPress }:
     <>
       {photo}
       <View pointerEvents="none" style={[styles.edge, { borderRadius }]} />
+      {overlay}
     </>
   );
   const frame = onPress ? (
-    <TouchableOpacity style={frameStyle} onPress={onPress} activeOpacity={0.85}>
+    <TouchableOpacity
+      style={frameStyle}
+      onPress={onPress}
+      activeOpacity={0.85}
+      accessibilityRole={accessibilityLabel != null ? 'imagebutton' : undefined}
+      accessibilityLabel={accessibilityLabel}>
       {content}
     </TouchableOpacity>
   ) : (

@@ -54,6 +54,7 @@ import {
 import { getLanguageDisplayName } from '@/config/translation-language-names';
 import { getTranslationSourceLanguage } from '@/config/translation-languages';
 import { usePhotoTranslation } from '@/hooks/use-photo-translation';
+import { resolveTripPriceConversion } from '@/lib/live-text-core';
 import { useTrips } from '@/hooks/use-trips';
 import type { SpeechRecognitionErrorCode } from '@/lib/speech-recognition-service';
 import {
@@ -310,9 +311,20 @@ export default function TranslationScreen() {
   // やり直し時は翻訳ホストを作り直す（応答が返らない要求の後ろに並び続けないように）
   const [translationHostKey, setTranslationHostKey] = useState(0);
   const resetTranslationHost = useCallback(() => setTranslationHostKey((key) => key + 1), []);
+  // 写真翻訳・カメラ翻訳の円換算に使う旅行の通貨・レート（保存と同じ`manual_rate`。為替の取得はしない）。
+  // 国内（JPY）・旅行なしはnull＝円換算を出さない
+  const tripCurrency = activeTrip?.base_currency;
+  const tripRate = activeTrip?.manual_rate;
+  const priceConversion = useMemo(
+    () =>
+      tripCurrency == null ? null : resolveTripPriceConversion({ base_currency: tripCurrency, manual_rate: tripRate }),
+    [tripCurrency, tripRate],
+  );
+
   const photo = usePhotoTranslation({
     sourceLanguage: source,
     targetLanguage: target,
+    priceCurrency: priceConversion?.currency ?? null,
     onResetTranslationHost: resetTranslationHost,
   });
 
@@ -1073,6 +1085,7 @@ export default function TranslationScreen() {
               }
               isSpeaking={isSpeaking}
               speakFailed={speakFailed}
+              priceConversion={priceConversion}
             />
           )}
 
@@ -1085,6 +1098,7 @@ export default function TranslationScreen() {
               sourceLanguage={source}
               targetLanguage={target}
               onCapture={handleLiveCameraCapture}
+              priceConversion={priceConversion}
             />
           )}
 

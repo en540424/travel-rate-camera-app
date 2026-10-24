@@ -628,6 +628,268 @@ export function selectOverlayLines(
     .slice(0, options.maxEntries);
 }
 
+// MARK: - 翻訳ページの価格・円換算（2026-10-24）
+//
+// 翻訳ページ（カメラ翻訳・写真翻訳）で、写っている価格に円換算を添えるための判定。
+// 価格の抽出そのものは既存の`extractPriceCandidates`（保存の価格OCRと同じ）を呼び出し側から受け取り、
+// ここでは「翻訳ページで円換算を出してよい価格か」の絞り込みだけを足す（抽出処理自体は変えない）。
+// 翻訳ページは値札だけを狙う価格OCRより価格以外の数字（日付・時刻・量・電話番号）が多く写るため:
+// - 日付・時刻・割合・量（g・ml等）の数字は価格として扱わない
+// - 旅行の通貨以外の通貨記号・通貨コードがある行は換算しない（€12.00をUSDのレートで換算しない）
+// - 抽出値が行内の数字の一部だけの時（"$1,250.00"→1.25）は採らない（誤った円換算より、出さない方を選ぶ）
+
+/** 価格の数値（現地通貨）を返す抽出関数。`extractTranslationPrices`を部分適用したもの */
+export type PriceAmountExtractor = (text: string) => number[];
+
+/** 旅行の通貨・レート（1現地通貨あたりの円）。レート未設定は0 */
+export type TripPriceConversion<C extends string = string> = { currency: C; rate: number };
+
+/**
+ * 翻訳ページで円換算に使う旅行の通貨・レート。保存と同じ`trips.manual_rate`を使い、為替の取得はしない。
+ * 旅行が無い・国内（JPY）の旅行ではnull（円換算を出さない）。
+ */
+export function resolveTripPriceConversion<C extends string>(
+  trip: { base_currency: C; manual_rate: number | null | undefined } | null | undefined,
+): TripPriceConversion<C> | null {
+  if (trip == null || trip.base_currency === 'JPY') return null;
+  const rate = trip.manual_rate;
+  return {
+    currency: trip.base_currency,
+    rate: typeof rate === 'number' && Number.isFinite(rate) && rate > 0 ? rate : 0,
+  };
+}
+
+/** 行に書かれている通貨（記号・単位・通貨コード）。`NT$`は台湾ドルとして`$`より先に見る */
+function detectCurrencyMarkers(text: string, tripCurrency: string): Set<string> {
+  const found = new Set<string>();
+  let rest = text;
+  if (/NT\$|\bNTD\b|\bTWD\b|元/i.test(rest)) found.add('TWD');
+  rest = rest.replace(/NT\$/gi, ' ');
+  if (/US\$|\bUSD\b/i.test(rest)) found.add('USD');
+  rest = rest.replace(/US\$/gi, ' ');
+  // 台湾では「$120」も台湾ドル（既存の価格OCRのTWDモードと同じ扱い）
+  if (rest.includes('$')) found.add(tripCurrency === 'TWD' ? 'TWD' : 'USD');
+  if (/€|\bEUR\b/i.test(rest)) found.add('EUR');
+  if (/£|\bGBP\b/i.test(rest)) found.add('GBP');
+  if (/[₩￦원]|\bKRW\b/i.test(rest)) found.add('KRW');
+  if (/[¥￥円]|\bJPY\b/i.test(rest)) found.add('JPY');
+  if (/฿|บาท|\bTHB\b|\bbaht\b/i.test(rest)) found.add('THB');
+  return found;
+}
+
+/** 価格ではない数字（日付・時刻・割合・量・電話番号）を空白に置き換える */
+function maskNonPriceNumbers(text: string): string {
+  return text
+    .replace(/\d{1,4}[./-]\d{1,2}[./-]\d{1,4}/g, ' ')
+    .replace(/\d{1,2}\s*:\s*\d{2}(?:\s*:\s*\d{2})?(?:\s*[ap]\.?m\.?)?/gi, ' ')
+    .replace(/\d[\d.,]*\s*%/g, ' ')
+    .replace(
+      /\d[\d.,]*\s*(?:kcal|cal|ml|cl|l|kg|mg|g|oz|lbs?|cm|mm|pcs?|pieces?|servings?|mins?|hrs?)(?![A-Za-z])/gi,
+      ' ',
+    )
+    .replace(/\d{2,4}-\d{3,4}-\d{4}/g, ' ');
+}
+
+/**
+ * 行内の数字のまとまり（"1,250.00"・"4,99"・"18,000"等）が表しうる値。
+ * 桁区切りが「,」でも「.」でも読めるよう両方の解釈を返す（形として成り立つものだけ）。
+ */
+function numericTokenValues(text: string): number[] {
+  const values: number[] = [];
+  for (const raw of text.match(/\d[\d.,]*/g) ?? []) {
+    const token = raw.replace(/[.,]+$/, '');
+    if (/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(token) || /^\d+(?:\.\d+)?$/.test(token)) {
+      values.push(Number(token.replace(/,/g, '')));
+    }
+    if (/^\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(token) || /^\d+,\d+$/.test(token)) {
+      values.push(Number(token.replace(/\./g, '').replace(',', '.')));
+    }
+  }
+  return values;
+}
+
+function sameAmount(a: number, b: number): boolean {
+  return Math.abs(a - b) < 0.005;
+}
+
+/**
+ * 翻訳ページで円換算を添えてよい価格（現地通貨の数値・出現順・重複なし）。
+ * `extractPrices`には既存の`extractPriceCandidates`を旅行の通貨で部分適用して渡す。
+ */
+export function extractTranslationPrices(text: string, tripCurrency: string, extractPrices: PriceExtractor): number[] {
+  const markers = detectCurrencyMarkers(text, tripCurrency);
+  for (const marker of markers) {
+    if (marker !== tripCurrency) return [];
+  }
+  const masked = maskNonPriceNumbers(text);
+  if (!/\d/.test(masked)) return [];
+  const tokenValues = numericTokenValues(masked);
+  const amounts: number[] = [];
+  for (const candidate of extractPrices(masked)) {
+    const amount = Number(candidate);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    if (!tokenValues.some((value) => sameAmount(value, amount))) continue;
+    if (amounts.some((existing) => sameAmount(existing, amount))) continue;
+    amounts.push(amount);
+  }
+  return amounts;
+}
+
+function hasTranslatableLabel(text: string): boolean {
+  return isTranslatableText(stripPriceTokens(text), Number.POSITIVE_INFINITY);
+}
+
+function addAmounts(target: number[], amounts: readonly number[]): void {
+  for (const amount of amounts) {
+    if (!target.some((existing) => sameAmount(existing, amount))) target.push(amount);
+  }
+}
+
+export type TranslationPriceEntry = {
+  /** 価格の行の識別子（Reactのkey用） */
+  id: string;
+  /** 価格（現地通貨）。1行に複数の価格（S/M/L等）があれば出現順に全て */
+  amounts: number[];
+  /** 商品名（価格と同じ行の文字、または左隣・直上の行）。見つからなければnull */
+  label: string | null;
+  box: NormalizedBox;
+  centerDistance: number;
+};
+
+/**
+ * 翻訳ページのカメラで、円換算を出す価格を選ぶ（メインカメラの`buildSmartCameraEntries`と同じ組み立て）。
+ * 追跡中の行から毎回作り直すため、カメラを動かして見えなくなった価格は追跡の`staleMs`経過で自然に消える。
+ */
+export function buildTranslationPriceEntries(
+  tracked: readonly TrackedLine[],
+  extractAmounts: PriceAmountExtractor,
+  options: SmartCameraEntryOptions,
+): TranslationPriceEntry[] {
+  const stable = tracked.filter(
+    (line) => isStableLine(line, options.minHits) && isBoxInRegion(line.box, options.visibleRegion),
+  );
+  const priceLines: { line: TrackedLine; amounts: number[] }[] = [];
+  const textLines: TrackedLine[] = [];
+  for (const line of stable) {
+    const amounts = extractAmounts(line.text);
+    if (amounts.length > 0) {
+      priceLines.push({ line, amounts });
+    } else if (isTranslatableText(stripPriceTokens(line.text), options.maxTextLength)) {
+      textLines.push(line);
+    }
+  }
+
+  return priceLines
+    .map(({ line, amounts }) => {
+      const ownLabel = stripPriceTokens(line.text);
+      let label: string | null = null;
+      let box = line.box;
+      if (isTranslatableText(ownLabel, options.maxTextLength)) {
+        label = ownLabel;
+      } else {
+        const labelLine = findLabelLine(line, textLines);
+        if (labelLine) {
+          label = normalizeRecognizedText(labelLine.text);
+          box = unionBox(line.box, labelLine.box);
+        }
+      }
+      return { id: line.id, amounts, label, box, centerDistance: distanceFromRegionCenter(box, options.visibleRegion) };
+    })
+    .sort((a, b) => a.centerDistance - b.centerDistance)
+    .slice(0, options.maxEntries);
+}
+
+export type PhotoPriceBlock = { original: string; box?: NormalizedBox | null };
+
+export type PhotoBlockPrices = {
+  /** この段落に添える価格（自分の価格＋結び付けた「価格だけの段落」の価格。重複なし） */
+  amounts: number[];
+  /** 価格だけの段落（訳す文字が無い） */
+  priceOnly: boolean;
+  /** 商品名の段落へ結び付けたため、単独の行としては出さない「価格だけの段落」の結び付け先 */
+  mergedInto: number | null;
+};
+
+/**
+ * 写真翻訳の段落ごとに、円換算を添える価格を決める（段落の並び・原文・翻訳には触れない）。
+ *
+ * 「価格だけの段落」は、商品名の段落との対応が位置から一意に決まる時だけその段落へ結び付ける:
+ * 1. 同じ高さで左にある、いちばん近い商品名（間に別の価格が無いこと）＝「商品名 …… 価格」型のメニュー
+ * 2. 1が無い時、すぐ上にある商品名がちょうど1つ＝「商品名／価格」型の値札
+ * 対応が分からない価格は、無理に結び付けず単独の行として円換算を出す。
+ */
+export function annotatePhotoBlockPrices(
+  blocks: readonly PhotoPriceBlock[],
+  extractAmounts: PriceAmountExtractor,
+): PhotoBlockPrices[] {
+  const own = blocks.map((block) => extractAmounts(block.original));
+  const priceOnly = blocks.map((block, index) => own[index].length > 0 && !hasTranslatableLabel(block.original));
+  const result: PhotoBlockPrices[] = blocks.map((_, index) => ({
+    amounts: [...own[index]],
+    priceOnly: priceOnly[index],
+    mergedInto: null,
+  }));
+
+  const isLabel = (index: number) =>
+    own[index].length === 0 && blocks[index].box != null && hasTranslatableLabel(blocks[index].original);
+
+  blocks.forEach((block, index) => {
+    const priceBox = block.box;
+    if (!priceOnly[index] || priceBox == null) return;
+
+    // 1. 同じ高さで左にある、いちばん近い商品名
+    let target: number | null = null;
+    let labelBox: NormalizedBox | null = null;
+    let bestGap = Infinity;
+    for (let candidateIndex = 0; candidateIndex < blocks.length; candidateIndex += 1) {
+      const box = blocks[candidateIndex].box;
+      if (!isLabel(candidateIndex) || box == null) continue;
+      if (verticalOverlapRatio(box, priceBox) < 0.5) continue;
+      const right = box.x + box.width;
+      if (right > priceBox.x + 0.02) continue;
+      const gap = priceBox.x - right;
+      if (gap <= 0.6 && gap < bestGap) {
+        bestGap = gap;
+        target = candidateIndex;
+        labelBox = box;
+      }
+    }
+    if (labelBox != null) {
+      const left = labelBox.x + labelBox.width;
+      // 間に別の価格があれば、その価格の商品名かもしれないので結び付けない
+      const blocked = blocks.some((other, otherIndex) => {
+        const box = other.box;
+        if (otherIndex === index || own[otherIndex].length === 0 || box == null) return false;
+        return (
+          verticalOverlapRatio(box, priceBox) >= 0.5 &&
+          box.x >= left - 0.02 &&
+          box.x + box.width <= priceBox.x + 0.02
+        );
+      });
+      if (blocked) target = null;
+    } else {
+      // 2. すぐ上にある商品名がちょうど1つ
+      const maxGap = Math.max(priceBox.height * 1.5, 0.02);
+      const above = blocks
+        .map((candidate, candidateIndex) => ({ candidate, candidateIndex }))
+        .filter(({ candidate, candidateIndex }) => {
+          const box = candidate.box;
+          if (!isLabel(candidateIndex) || box == null) return false;
+          const gap = priceBox.y - (box.y + box.height);
+          if (gap < -priceBox.height * 0.3 || gap > maxGap) return false;
+          return horizontalOverlap(box, priceBox) > 0 || Math.abs(box.x - priceBox.x) <= 0.1;
+        });
+      if (above.length === 1) target = above[0].candidateIndex;
+    }
+
+    if (target == null) return;
+    result[index].mergedInto = target;
+    addAmounts(result[target].amounts, own[index]);
+  });
+
+  return result;
+}
+
 // MARK: - 写真翻訳の段落分割
 
 export type TextBlock = { text: string; lines: RecognizedLine[]; box: NormalizedBox };

@@ -15,7 +15,12 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { groupLinesIntoBlocks, resolveSourceLanguageForText, type TextBlock } from '@/lib/live-text-core';
+import {
+  extractTranslationPrices,
+  groupLinesIntoBlocks,
+  resolveSourceLanguageForText,
+  type TextBlock,
+} from '@/lib/live-text-core';
 import {
   PHOTO_TRANSLATION_STALL_HINT_MS,
   applyPhotoChunkTranslations,
@@ -31,6 +36,7 @@ import {
   translateSceneTexts,
 } from '@/lib/scene-translation-service';
 import type { MemoTranslationErrorCode } from '@/lib/translation-types';
+import { extractPriceCandidates } from '@/utils/extract-prices';
 
 export type { PhotoBlockTranslation } from '@/lib/photo-translation-core';
 
@@ -84,10 +90,16 @@ async function needsLanguageDownload(sources: readonly string[], target: string)
 export function usePhotoTranslation({
   sourceLanguage,
   targetLanguage,
+  priceCurrency = null,
   onResetTranslationHost,
 }: {
   sourceLanguage: string | null;
   targetLanguage: string | null;
+  /**
+   * 円換算する旅行の通貨（国内・旅行なしはnull）。価格の行を前後の文章とつながない（1段落に複数品目の
+   * 価格が混ざらない）ようにするためだけに使う。円換算の表示は`PhotoTranslationPanel`が行う
+   */
+  priceCurrency?: string | null;
   /** 翻訳ホストを作り直す（やり直し時）。未指定なら作り直さずに送り直す */
   onResetTranslationHost?: () => void;
 }) {
@@ -121,7 +133,7 @@ export function usePhotoTranslation({
       const isCurrent = () => generationRef.current === generation;
       clearStallTimer();
 
-      const ocrKey = `${uri}|${source}`;
+      const ocrKey = `${uri}|${source}|${priceCurrency ?? ''}`;
       let blocks = ocrCacheRef.current?.key === ocrKey ? ocrCacheRef.current.blocks : null;
 
       if (blocks == null) {
@@ -140,7 +152,13 @@ export function usePhotoTranslation({
           setState({ phase: 'error', uri, reason: 'ocr_failed' });
           return;
         }
-        blocks = groupLinesIntoBlocks(recognized.lines).slice(0, MAX_BLOCKS);
+        const hasPrice =
+          priceCurrency == null
+            ? undefined
+            : (text: string) =>
+                extractTranslationPrices(text, priceCurrency, (value) => extractPriceCandidates(value, priceCurrency))
+                  .length > 0;
+        blocks = groupLinesIntoBlocks(recognized.lines, hasPrice).slice(0, MAX_BLOCKS);
         ocrCacheRef.current = { key: ocrKey, blocks };
       }
 
@@ -149,8 +167,8 @@ export function usePhotoTranslation({
         const blockSource = resolveSourceLanguageForText(block.text, source, target);
         const cached = blockSource == null ? undefined : getCachedSceneTranslation(blockSource, target, block.text);
         return cached !== undefined
-          ? { original: block.text, translated: cached, sourceLanguage: blockSource, status: 'translated' }
-          : { original: block.text, translated: null, sourceLanguage: blockSource, status: 'untranslated' };
+          ? { original: block.text, translated: cached, sourceLanguage: blockSource, status: 'translated', box: block.box }
+          : { original: block.text, translated: null, sourceLanguage: blockSource, status: 'untranslated', box: block.box };
       });
       setState({ phase: 'translating', uri, blocks: current, needsDownload: false, slow: false });
 
@@ -208,7 +226,7 @@ export function usePhotoTranslation({
 
       setState({ phase: 'done', uri, blocks: finalizePhotoBlocks(current), errorCode });
     },
-    [clearStallTimer],
+    [clearStallTimer, priceCurrency],
   );
 
   /** 新しい写真で翻訳を始める（前の一時ファイルは削除する） */

@@ -6,6 +6,7 @@
  * **1つずつ順番に**送り、終わったまとまりから画面へ出す。翻訳の品質は変わらない
  * （Apple側も1件ずつ独立したRequestとして訳すため、まとめ方で訳文は変わらない）。
  */
+import type { NormalizedBox } from './live-text-core';
 import type { MemoTranslationErrorCode } from './translation-types';
 
 /** 最初のまとまり。少なくして、最初の訳文をなるべく早く出す */
@@ -24,6 +25,8 @@ export type PhotoBlockTranslation = {
   /** 翻訳元（文字種から判定）。nullは翻訳不要（翻訳先と同じ言語・数字だけ等） */
   sourceLanguage: string | null;
   status: 'translated' | 'untranslated' | 'failed';
+  /** 写真上の位置（価格だけの段落を商品名の段落へ結び付ける判定に使う。翻訳には使わない） */
+  box?: NormalizedBox;
 };
 
 export type PhotoTranslationChunk = {

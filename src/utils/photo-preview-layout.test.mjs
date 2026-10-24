@@ -186,3 +186,34 @@ test('上限が0・不正なら枠も0（描画しない）', () => {
   deepEqual(fitPhotoBox(PORTRAIT, 345, 0), { width: 0, height: 0 });
   deepEqual(fitPhotoBox(PORTRAIT, 345, Number.NaN), { width: 0, height: 0 });
 });
+
+// 翻訳ページの親の幅（pt）＝画面幅−左右余白18×2
+const TRANSLATION_WIDTH = { se: 375 - 36, iphone15: 393 - 36, proMax: 430 - 36 };
+
+test('写真翻訳：縦撮り写真を大きく出す（旧：高さ220固定の枠でcontain＝幅165の細い写真）', () => {
+  const iphone15 = getPhotoBoxSize('photoTranslation', PORTRAIT, IPHONE_15, TRANSLATION_WIDTH.iphone15);
+  deepEqual(iphone15, { width: 332, height: 443 });
+  // 旧表示（165×220）の約4倍の面積・幅の9割以上
+  ok(iphone15.width * iphone15.height >= 165 * 220 * 3.5);
+  ok(iphone15.width / TRANSLATION_WIDTH.iphone15 >= 0.9);
+
+  deepEqual(getPhotoBoxSize('photoTranslation', PORTRAIT, SE, TRANSLATION_WIDTH.se), { width: 260, height: 347 });
+  deepEqual(getPhotoBoxSize('photoTranslation', PORTRAIT, PRO_MAX, TRANSLATION_WIDTH.proMax), { width: 345, height: 460 });
+});
+
+test('写真翻訳：横撮り写真は幅いっぱい・形を保つ（引き伸ばさない）', () => {
+  for (const [windowHeight, width] of [
+    [SE, TRANSLATION_WIDTH.se],
+    [IPHONE_15, TRANSLATION_WIDTH.iphone15],
+    [PRO_MAX, TRANSLATION_WIDTH.proMax],
+  ]) {
+    const box = getPhotoBoxSize('photoTranslation', LANDSCAPE, windowHeight, width);
+    equal(box.width, width);
+    ok(Math.abs(box.width / box.height - LANDSCAPE) < 0.01, `形が一致 ${box.width}x${box.height}`);
+  }
+});
+
+test('写真翻訳：高さに上限（翻訳結果へスクロールで進める）', () => {
+  ok(getPhotoSurfaceLimit('photoTranslation', 2000).maxHeight <= 460);
+  ok(getPhotoSurfaceLimit('photoTranslation', 568).maxHeight >= 300);
+});

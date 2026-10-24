@@ -5,6 +5,9 @@
 // - シャッター＝静止画を撮って「写真翻訳」（長文を段落ごとにまとめて高精度に読む）へ渡す。
 //   メインカメラのシャッター（価格OCR→保存）とは役割が違う
 // - 映像フレームは端末内で認識して捨てる。撮影した写真もアプリのキャッシュにだけ置き、保存しない
+// - 写っている価格には、旅行の通貨・レート（保存と同じ`manual_rate`）での円換算を添える（2026-10-24）。
+//   位置が揺れる価格の上へ直接重ねず、枠の下部の帯（中央に近い3件）と枠の下の一覧に出す。
+//   価格は追跡中の行から毎回作り直すので、カメラを動かして見えなくなった価格は自然に消える
 //
 // このコンポーネントは「翻訳ページにフォーカスがあり、カメラモードを選んでいる間」だけマウントする
 // （メインカメラとsessionを同時に動かさないため。呼び出し側の責務）。
@@ -14,10 +17,16 @@ import { ActivityIndicator, Linking, Pressable, StyleSheet, View, type LayoutCha
 
 import { ThemedText } from '@/components/themed-text';
 import { LiveTextScanner, type LiveTextScannerStatus } from '@/components/live-text/LiveTextScanner';
+import {
+  formatTranslationPrice,
+  type TranslationPriceConversion,
+} from '@/components/live-text/translation-price-format';
 import { PrimaryButton } from '@/components/ui';
 import { getLanguageDisplayName } from '@/config/translation-language-names';
 import { useLiveTextFrames, useSceneTranslationQueue } from '@/hooks/use-live-text-translation';
 import {
+  buildTranslationPriceEntries,
+  extractTranslationPrices,
   getVisionLanguagesForSource,
   mapBoxToView,
   resolveSourceLanguageForText,
@@ -26,6 +35,8 @@ import {
   type Size,
 } from '@/lib/live-text-core';
 import { color, radius, shadow } from '@/theme/tokens';
+import { extractPriceCandidates } from '@/utils/extract-prices';
+import { formatRate } from '@/utils/format';
 
 /** 認識の間隔(ms) */
 const LIVE_TRANSLATION_INTERVAL_MS = 800;
@@ -33,12 +44,29 @@ const LIVE_TRANSLATION_INTERVAL_MS = 800;
 const MAX_OVERLAY_LABELS = 8;
 /** 1件の最大文字数（長い文章は写真翻訳へ） */
 const MAX_LIVE_TEXT_LENGTH = 80;
+/** 円換算を出す価格の最大件数（枠の下の一覧） */
+const MAX_PRICE_ENTRIES = 6;
+/** 枠の中の帯に出す価格の件数（映像を隠しすぎない） */
+const MAX_FRAME_PRICE_ROWS = 3;
 
 export type LiveTranslationCameraProps = {
   sourceLanguage: string;
   targetLanguage: string;
   /** シャッターで撮った写真（アプリのキャッシュ上の一時ファイル）を写真翻訳へ渡す */
   onCapture: (uri: string) => void;
+  /** 円換算に使う旅行の通貨・レート（国内・旅行なしはnull＝円換算を出さない） */
+  priceConversion: TranslationPriceConversion | null;
+};
+
+type PriceRow = {
+  id: string;
+  /** 商品名（訳せていれば訳）。商品名が分からない価格はnull */
+  name: string | null;
+  /** 訳した時の原文 */
+  original: string | null;
+  foreign: string;
+  /** 円換算。レート未設定ならnull */
+  jpy: string | null;
 };
 
 type PlacedLabel = {
@@ -51,7 +79,12 @@ type PlacedLabel = {
   translated: boolean;
 };
 
-export function LiveTranslationCamera({ sourceLanguage, targetLanguage, onCapture }: LiveTranslationCameraProps) {
+export function LiveTranslationCamera({
+  sourceLanguage,
+  targetLanguage,
+  onCapture,
+  priceConversion,
+}: LiveTranslationCameraProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const [cameraReady, setCameraReady] = useState(false);
@@ -73,14 +106,39 @@ export function LiveTranslationCamera({ sourceLanguage, targetLanguage, onCaptur
     });
   }, [tracked, frameSize, viewSize]);
 
-  const translationItems = useMemo(
-    () =>
-      overlayEntries.map((entry) => ({
-        text: entry.text,
-        sourceLanguage: resolveSourceLanguageForText(entry.text, sourceLanguage, targetLanguage),
-      })),
-    [overlayEntries, sourceLanguage, targetLanguage],
-  );
+  // 価格（メインカメラと同じ「商品名＋価格」の組み立て）。日付・時刻・量・他の通貨の金額は除く
+  const priceEntries = useMemo(() => {
+    if (priceConversion == null || frameSize == null || viewSize == null) return [];
+    const { currency } = priceConversion;
+    return buildTranslationPriceEntries(
+      tracked,
+      (text) => extractTranslationPrices(text, currency, (value) => extractPriceCandidates(value, currency)),
+      {
+        maxEntries: MAX_PRICE_ENTRIES,
+        maxTextLength: MAX_LIVE_TEXT_LENGTH,
+        minHits: 2,
+        visibleRegion: visibleRegionInImage(frameSize, viewSize),
+      },
+    );
+  }, [tracked, frameSize, viewSize, priceConversion]);
+
+  // 訳を重ねる行を先に、価格の商品名（価格を除いた文字）を後ろに足す（同じ文字は1回だけ）
+  const translationItems = useMemo(() => {
+    const items = overlayEntries.map((entry) => ({
+      text: entry.text,
+      sourceLanguage: resolveSourceLanguageForText(entry.text, sourceLanguage, targetLanguage),
+    }));
+    const seen = new Set(items.map((item) => item.text));
+    for (const entry of priceEntries) {
+      if (entry.label == null || seen.has(entry.label)) continue;
+      seen.add(entry.label);
+      items.push({
+        text: entry.label,
+        sourceLanguage: resolveSourceLanguageForText(entry.label, sourceLanguage, targetLanguage),
+      });
+    }
+    return items;
+  }, [overlayEntries, priceEntries, sourceLanguage, targetLanguage]);
 
   const { lookup, notice, activate, translationSupported } = useSceneTranslationQueue({
     enabled: active && !isCapturing,
@@ -92,6 +150,27 @@ export function LiveTranslationCamera({ sourceLanguage, targetLanguage, onCaptur
     const translated = lookup(translationItems[index]?.sourceLanguage ?? null, entry.text);
     return { entry, translated: translated != null && translated !== '' ? translated : null };
   });
+
+  const priceRows: PriceRow[] =
+    priceConversion == null
+      ? []
+      : priceEntries.flatMap((entry) => {
+          const translated =
+            entry.label != null
+              ? lookup(resolveSourceLanguageForText(entry.label, sourceLanguage, targetLanguage), entry.label)
+              : undefined;
+          const hasTranslation = translated != null && translated !== '' && translated !== entry.label;
+          return entry.amounts.map((amount, index) => {
+            const price = formatTranslationPrice(amount, priceConversion);
+            return {
+              id: `${entry.id}#${index}`,
+              name: hasTranslation ? translated : entry.label,
+              original: hasTranslation ? entry.label : null,
+              foreign: price.foreign,
+              jpy: price.jpy,
+            };
+          });
+        });
 
   // 元の文字の位置へ訳を重ねる。重なりすぎる札は省く（下の一覧には全件出る）
   const labels: PlacedLabel[] = [];
@@ -174,7 +253,7 @@ export function LiveTranslationCamera({ sourceLanguage, targetLanguage, onCaptur
       ? 'このカメラではリアルタイム翻訳を使えません'
       : !cameraReady || scannerStatus === 'waiting' || scannerStatus === 'off'
         ? 'カメラを準備しています…'
-        : rows.length === 0
+        : rows.length === 0 && priceRows.length === 0
           ? '文字にカメラを向けてください'
           : translationSupported === false
             ? '翻訳はiOS 18以降で利用できます'
@@ -219,22 +298,47 @@ export function LiveTranslationCamera({ sourceLanguage, targetLanguage, onCaptur
           <ThemedText style={styles.statusText}>{statusLabel}</ThemedText>
         </View>
 
-        {notice != null && !isCapturing && (
-          <Pressable
-            style={({ pressed }) => [styles.notice, pressed && notice.status !== 'unsupported' && styles.pressed]}
-            onPress={() => {
-              if (notice.status !== 'unsupported') activate(notice.sourceLanguage);
-            }}
-            disabled={notice.status === 'unsupported'}
-            accessibilityRole="button">
-            <ThemedText style={styles.noticeText} numberOfLines={2}>
-              {notice.status === 'unsupported'
-                ? `${getLanguageDisplayName(notice.sourceLanguage)}の翻訳には対応していません`
-                : notice.status === 'needs_download'
-                  ? `${getLanguageDisplayName(notice.sourceLanguage)}の翻訳データが必要です（タップでダウンロード）`
-                  : `${getLanguageDisplayName(notice.sourceLanguage)}を翻訳できませんでした（タップで再試行）`}
-            </ThemedText>
-          </Pressable>
+        {!isCapturing && (notice != null || priceRows.length > 0) && (
+          <View style={styles.bottomArea} pointerEvents="box-none">
+            {notice != null && (
+              <Pressable
+                style={({ pressed }) => [styles.notice, pressed && notice.status !== 'unsupported' && styles.pressed]}
+                onPress={() => {
+                  if (notice.status !== 'unsupported') activate(notice.sourceLanguage);
+                }}
+                disabled={notice.status === 'unsupported'}
+                accessibilityRole="button">
+                <ThemedText style={styles.noticeText} numberOfLines={2}>
+                  {notice.status === 'unsupported'
+                    ? `${getLanguageDisplayName(notice.sourceLanguage)}の翻訳には対応していません`
+                    : notice.status === 'needs_download'
+                      ? `${getLanguageDisplayName(notice.sourceLanguage)}の翻訳データが必要です（タップでダウンロード）`
+                      : `${getLanguageDisplayName(notice.sourceLanguage)}を翻訳できませんでした（タップで再試行）`}
+                </ThemedText>
+              </Pressable>
+            )}
+
+            {/* 円換算の帯（中央に近い価格から）。位置の揺れる価格の上には重ねない */}
+            {priceRows.length > 0 && (
+              <View style={styles.priceStrip} pointerEvents="none">
+                {priceRows.slice(0, MAX_FRAME_PRICE_ROWS).map((row, index) => (
+                  <View key={row.id} style={[styles.priceStripRow, index > 0 && styles.priceStripDivider]}>
+                    <ThemedText style={styles.priceStripName} numberOfLines={1}>
+                      {row.name ?? '価格'}
+                    </ThemedText>
+                    <View style={styles.priceStripAmount}>
+                      <ThemedText style={styles.priceStripForeign} numberOfLines={1}>
+                        {row.foreign}
+                      </ThemedText>
+                      <ThemedText style={row.jpy != null ? styles.priceStripJpy : styles.priceStripNoRate} numberOfLines={1}>
+                        {row.jpy ?? 'レート未設定'}
+                      </ThemedText>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
         )}
 
         {isCapturing && (
@@ -255,6 +359,36 @@ export function LiveTranslationCamera({ sourceLanguage, targetLanguage, onCaptur
         メニューの説明や注意書きなど長い文章は、撮影すると段落ごとにまとめて翻訳します
       </ThemedText>
       {captureFailed && <ThemedText style={styles.errorText}>撮影できませんでした。もう一度お試しください。</ThemedText>}
+
+      {/* 見えている価格と円換算（枠の中の帯に入りきらない分も含めて一覧で出す） */}
+      {priceConversion != null && priceRows.length > 0 && (
+        <View style={styles.listCard}>
+          <View style={styles.listTitleRow}>
+            <ThemedText style={styles.listTitle}>見えている価格（円換算）</ThemedText>
+            <ThemedText style={styles.listRate}>{formatRate(priceConversion.rate, priceConversion.currency)}</ThemedText>
+          </View>
+          {priceRows.map((row, index) => (
+            <View key={row.id} style={[styles.priceListRow, index > 0 && styles.listRowDivider]}>
+              <View style={styles.priceListText}>
+                <ThemedText style={styles.listTranslated} numberOfLines={2}>
+                  {row.name ?? '価格'}
+                </ThemedText>
+                {row.original != null && (
+                  <ThemedText style={styles.listOriginal} numberOfLines={1}>
+                    {row.original}
+                  </ThemedText>
+                )}
+              </View>
+              <View style={styles.priceListAmount}>
+                <ThemedText style={styles.priceListForeign}>{row.foreign}</ThemedText>
+                <ThemedText style={row.jpy != null ? styles.priceListJpy : styles.priceListNoRate}>
+                  {row.jpy ?? 'レート未設定'}
+                </ThemedText>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* 位置が揺れても読めるよう、見えている文字の訳を一覧でも出す */}
       {rows.length > 0 && (
@@ -325,11 +459,14 @@ const styles = StyleSheet.create({
   },
   statusText: { color: '#fff', fontSize: 12, fontWeight: '700' },
 
-  notice: {
+  bottomArea: {
     position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 12,
+    left: 10,
+    right: 10,
+    bottom: 10,
+    gap: 6,
+  },
+  notice: {
     backgroundColor: 'rgba(17,32,30,0.85)',
     borderRadius: 12,
     borderWidth: 1,
@@ -339,6 +476,20 @@ const styles = StyleSheet.create({
   },
   noticeText: { color: '#fff', fontSize: 12.5, fontWeight: '600', textAlign: 'center' },
   pressed: { opacity: 0.8 },
+
+  priceStrip: {
+    backgroundColor: 'rgba(17,32,30,0.80)',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 3,
+  },
+  priceStripRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
+  priceStripDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.18)' },
+  priceStripName: { flex: 1, minWidth: 0, color: '#fff', fontSize: 14, fontWeight: '700' },
+  priceStripAmount: { alignItems: 'flex-end', flexShrink: 0, maxWidth: '55%' },
+  priceStripForeign: { color: color.darkSub, fontSize: 11.5, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  priceStripJpy: { color: color.primaryAccent, fontSize: 16, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  priceStripNoRate: { color: color.darkMuted, fontSize: 11.5, fontWeight: '600' },
 
   capturingOverlay: {
     ...StyleSheet.absoluteFill,
@@ -362,6 +513,14 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   listTitle: { fontSize: 12.5, fontWeight: '700', color: color.primaryDark, marginBottom: 4 },
+  listTitleRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 },
+  listRate: { fontSize: 11, fontWeight: '600', color: color.muted, marginBottom: 4 },
+  priceListRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
+  priceListText: { flex: 1, minWidth: 0, gap: 2 },
+  priceListAmount: { alignItems: 'flex-end', flexShrink: 0 },
+  priceListForeign: { fontSize: 12.5, fontWeight: '600', color: color.muted, fontVariant: ['tabular-nums'] },
+  priceListJpy: { fontSize: 16, fontWeight: '800', color: color.primaryDark, fontVariant: ['tabular-nums'] },
+  priceListNoRate: { fontSize: 12, fontWeight: '600', color: color.muted },
   listRow: { paddingVertical: 8, gap: 2 },
   listRowDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: color.line2 },
   listTranslated: { fontSize: 15, fontWeight: '700', color: color.text },
