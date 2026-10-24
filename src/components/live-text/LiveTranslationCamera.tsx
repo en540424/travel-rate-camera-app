@@ -35,7 +35,7 @@ import {
   type Size,
 } from '@/lib/live-text-core';
 import { color, radius, shadow } from '@/theme/tokens';
-import { extractPriceCandidates } from '@/utils/extract-prices';
+import { extractConfidentPriceCandidates } from '@/utils/extract-prices';
 import { formatRate } from '@/utils/format';
 
 /** 認識の間隔(ms) */
@@ -112,7 +112,7 @@ export function LiveTranslationCamera({
     const { currency } = priceConversion;
     return buildTranslationPriceEntries(
       tracked,
-      (text) => extractTranslationPrices(text, currency, (value) => extractPriceCandidates(value, currency)),
+      (text) => extractTranslationPrices(text, currency, (value) => extractConfidentPriceCandidates(value, currency)),
       {
         maxEntries: MAX_PRICE_ENTRIES,
         maxTextLength: MAX_LIVE_TEXT_LENGTH,

@@ -25,7 +25,7 @@ import {
 } from '@/lib/live-text-core';
 import { color } from '@/theme/tokens';
 import { convert } from '@/utils/currency';
-import { extractPriceCandidates } from '@/utils/extract-prices';
+import { extractConfidentPriceCandidates } from '@/utils/extract-prices';
 import { formatForeign, formatJpy } from '@/utils/format';
 
 /** 認識の間隔(ms)。毎フレームではなく約1秒ごと（端末負荷と見やすさの両立） */
@@ -75,7 +75,7 @@ export function SmartCameraLayer({
 
   const entries = useMemo<SmartCameraEntry[]>(() => {
     if (!active || frameSize == null || viewSize == null) return [];
-    return buildSmartCameraEntries(tracked, (text) => extractPriceCandidates(text, currency), {
+    return buildSmartCameraEntries(tracked, (text) => extractConfidentPriceCandidates(text, currency), {
       ...DEFAULT_SMART_CAMERA_OPTIONS,
       visibleRegion: visibleRegionInImage(frameSize, viewSize),
     });

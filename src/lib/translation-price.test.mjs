@@ -15,7 +15,7 @@ import { test } from 'node:test';
 // extract-prices.ts の dbg() が __DEV__ を参照するため、読み込み前に定義する
 globalThis.__DEV__ = false;
 
-const { extractPriceCandidates } = await import('../utils/extract-prices.ts');
+const { extractPriceCandidates, extractConfidentPriceCandidates } = await import('../utils/extract-prices.ts');
 const { convert } = await import('../utils/currency.ts');
 const core = await import('./live-text-core.ts');
 
@@ -30,8 +30,9 @@ const {
 } = core;
 
 /** 翻訳ページと同じ組み合わせ（旅行の通貨で既存の価格抽出を部分適用） */
+// アプリ（LiveTranslationCamera・PhotoTranslationPanel）と同じく、確かな候補だけを渡す
 const prices = (text, currency) =>
-  extractTranslationPrices(text, currency, (value) => extractPriceCandidates(value, currency));
+  extractTranslationPrices(text, currency, (value) => extractConfidentPriceCandidates(value, currency));
 const extractorFor = (currency) => (text) => prices(text, currency);
 
 /** 円換算の丸め（`formatJpy`と同じ`Math.round`） */
@@ -323,4 +324,26 @@ test('写真翻訳の段落分割：価格のある行を前後の文章とつ�
   ];
   const hasPrice = (text) => prices(text, 'USD').length > 0;
   assert.equal(groupLinesIntoBlocks(lines, hasPrice).length, 2);
+});
+
+test('曖昧な価格は、スマートカメラ・翻訳画面で円換算を出さない（アプリと同じ配線）', async (t) => {
+  const { buildSmartCameraEntries } = core;
+  const confident = (currency) => (text) => extractConfidentPriceCandidates(text, currency);
+  for (const [currency, text] of [['EUR', '€1.250'], ['EUR', '€12,500'], ['USD', '$3.999'], ['USD', '$1,250,00'], ['EUR', '1 250,00 €']]) {
+    await t.test(`${currency} ${text}`, () => {
+      assert.deepEqual(prices(`Pasta ${text}`, currency), []);
+      const tracked = trackTwice([line(`Pasta ${text}`, 0.2, 0.45, 0.6)]);
+      assert.equal(buildSmartCameraEntries(tracked, confident(currency)).filter((e) => e.kind === 'price').length, 0);
+      assert.deepEqual(buildTranslationPriceEntries(tracked, extractorFor(currency), LIVE_OPTIONS), []);
+      // メインカメラ（全候補）には出る
+      assert.ok(extractPriceCandidates(`Pasta ${text}`, currency).length > 0);
+    });
+  }
+  await t.test('確かな価格は従来どおり円換算を出す', () => {
+    const tracked = trackTwice([line('Pasta €12,50', 0.2, 0.45, 0.6)]);
+    const entries = buildSmartCameraEntries(tracked, confident('EUR')).filter((e) => e.kind === 'price');
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].amount, 12.5);
+    assert.deepEqual(prices('Pasta €12,50', 'EUR'), [12.5]);
+  });
 });

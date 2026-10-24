@@ -20,7 +20,7 @@ import { annotatePhotoBlockPrices, extractTranslationPrices } from '@/lib/live-t
 import { canRetryPhotoTranslation, countPhotoTranslationProgress } from '@/lib/photo-translation-core';
 import type { MemoTranslationErrorCode } from '@/lib/translation-types';
 import { color, radius, shadow, spacing } from '@/theme/tokens';
-import { extractPriceCandidates } from '@/utils/extract-prices';
+import { extractConfidentPriceCandidates } from '@/utils/extract-prices';
 
 const TRANSLATION_ERROR_MESSAGES: Partial<Record<MemoTranslationErrorCode, string>> = {
   unsupported_os: '翻訳はiOS 18以降で利用できます。読み取った原文のみ表示しています。',
@@ -89,7 +89,7 @@ export function PhotoTranslationPanel({
     if (priceConversion == null) return null;
     const { currency } = priceConversion;
     return annotatePhotoBlockPrices(blocks, (text) =>
-      extractTranslationPrices(text, currency, (value) => extractPriceCandidates(value, currency)),
+      extractTranslationPrices(text, currency, (value) => extractConfidentPriceCandidates(value, currency)),
     );
   }, [blocks, priceConversion]);
 
