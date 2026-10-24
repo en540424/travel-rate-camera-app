@@ -3,7 +3,8 @@
 // - iOSのScrollViewのズーム（ピンチで拡大・縮小、拡大中はドラッグで移動）を使い、新しいnative依存を足さない
 //   （保存写真の`PhotoModal`・撮影結果の拡大表示と同じ仕組み）
 // - ダブルタップで拡大／元の大きさ、拡大中は「元の大きさ」ボタンでも戻せる
-// - 閉じる・元の大きさのボタンはSafe Areaの内側に置く
+// - 閉じる・元の大きさのボタンはSafe Areaの内側に置く。白いアイコン＋半透明の暗い円（細い白の縁）にして、
+//   白い写真・拡大した明るい部分の上でも見えるようにする（2026-10-24。以前は半透明の白の円で、白い写真に溶けた）
 // - 写真は表示するだけ（一時ファイルの削除・翻訳結果は呼び出し側のまま。閉じても翻訳結果は消えない）
 //
 // ■ 置き場所（2026-10-24 TestFlight 1.0.0 (4) の不具合対応）
@@ -163,7 +164,7 @@ export function PhotoZoomViewer({ uri, visible, onClose }: PhotoZoomViewerProps)
             hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel="拡大表示を閉じる">
-            <SymbolView name={{ ios: 'xmark', android: 'close', web: 'close' }} tintColor="#fff" size={16} />
+            <SymbolView name={{ ios: 'xmark', android: 'close', web: 'close' }} tintColor="#fff" size={17} weight="bold" />
           </Pressable>
         </View>
 
@@ -188,11 +189,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  // 写真の色に関係なく見えるよう、暗い円＋細い白の縁（タップ領域は44pt＋hitSlop）
   closeBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -203,7 +207,9 @@ const styles = StyleSheet.create({
     height: 36,
     paddingHorizontal: 14,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
   },
   pillBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   pressed: { opacity: 0.75 },

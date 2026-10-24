@@ -8,12 +8,18 @@
 // - 写っている価格には、旅行の通貨・レート（保存と同じ`manual_rate`）での円換算を添える（2026-10-24）。
 //   位置が揺れる価格の上へ直接重ねず、枠の下部の帯（中央に近い3件）と枠の下の一覧に出す。
 //   価格は追跡中の行から毎回作り直すので、カメラを動かして見えなくなった価格は自然に消える
+// - ピンチで拡大・縮小、ダブルタップで2×⇄元の倍率（2026-10-24）。映像を引き伸ばさず、カメラそのものの倍率を
+//   変える（認識する映像・撮影する写真も同じように拡大されるので、訳を重ねる位置の計算はそのまま使える）。
+//   倍率を変えた直後は、変える前の映像で読んだ結果を誤った位置に出さないよう、追跡中の文字をいったん捨てて
+//   読み取り直す。倍率の計算は`live-camera-zoom-core.ts`。ジェスチャーはメインカメラのピンチと同じ仕組み
+//   （react-native-gesture-handler）だが、メインカメラ（価格OCR）のファイルは共有も変更もしない
 //
 // このコンポーネントは「翻訳ページにフォーカスがあり、カメラモードを選んでいる間」だけマウントする
 // （メインカメラとsessionを同時に動かさないため。呼び出し側の責務）。
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 import { ThemedText } from '@/components/themed-text';
 import { LiveTextScanner, type LiveTextScannerStatus } from '@/components/live-text/LiveTextScanner';
@@ -25,6 +31,11 @@ import { PrimaryButton } from '@/components/ui';
 import { getLanguageDisplayName } from '@/config/translation-language-names';
 import { useLiveTextFrames, useSceneTranslationQueue } from '@/hooks/use-live-text-translation';
 import {
+  isLiveCameraZoomed,
+  pinchStepLiveCameraZoom,
+  toggleLiveCameraZoom,
+} from '@/lib/live-camera-zoom-core';
+import {
   buildTranslationPriceEntries,
   extractTranslationPrices,
   getVisionLanguagesForSource,
@@ -32,6 +43,7 @@ import {
   resolveSourceLanguageForText,
   selectOverlayLines,
   visibleRegionInImage,
+  type LiveTextFrame,
   type Size,
 } from '@/lib/live-text-core';
 import { color, radius, shadow } from '@/theme/tokens';
@@ -48,6 +60,11 @@ const MAX_LIVE_TEXT_LENGTH = 80;
 const MAX_PRICE_ENTRIES = 6;
 /** 枠の中の帯に出す価格の件数（映像を隠しすぎない） */
 const MAX_FRAME_PRICE_ROWS = 3;
+/**
+ * 倍率を変えてから読み取りを再開するまで(ms)。倍率の反映を待ち、変わる途中の訳を出さない。
+ * 変える前に撮った映像の結果（認識に時間がかかると、この時間より後に届く）は、別に「変えた後の最初の1フレーム」として捨てる
+ */
+const ZOOM_SETTLE_MS = LIVE_TRANSLATION_INTERVAL_MS + 100;
 
 export type LiveTranslationCameraProps = {
   sourceLanguage: string;
@@ -92,9 +109,44 @@ export function LiveTranslationCamera({
   const [captureFailed, setCaptureFailed] = useState(false);
   const [viewSize, setViewSize] = useState<Size | null>(null);
   const [scannerStatus, setScannerStatus] = useState<LiveTextScannerStatus>('off');
+  // expo-cameraのzoom（0〜1）。このコンポーネントは入力方法の切替・画面離脱・撮影でアンマウントされるので、
+  // 次に開いた時は必ず元の倍率から始まる
+  const [zoom, setZoom] = useState(0);
+  // ピンチ中・倍率を変えた直後（ZOOM_SETTLE_MSの間）は、映像の文字を読まない（変える前の結果を誤った位置に出さない）。
+  // 倍率を変えるたびに`zoomChangeCount`を進め、待ち終えた番号（`settledZoomChangeCount`）が追いつくまでを「直後」とする
+  const [isPinching, setIsPinching] = useState(false);
+  const [zoomChangeCount, setZoomChangeCount] = useState(0);
+  const [settledZoomChangeCount, setSettledZoomChangeCount] = useState(0);
+  const zoomSettling = isPinching || zoomChangeCount !== settledZoomChangeCount;
+
+  useEffect(() => {
+    if (zoomChangeCount === settledZoomChangeCount) return;
+    // 続けて倍率を変えた時は前の予約を取り消し、最後に変えてから待つ。アンマウント時も取り消す
+    const timer = setTimeout(() => setSettledZoomChangeCount(zoomChangeCount), ZOOM_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [zoomChangeCount, settledZoomChangeCount]);
 
   const active = cameraReady && permission?.granted === true;
-  const { tracked, frameSize, onFrame } = useLiveTextFrames(active);
+  // 読み取りを止めると、追跡中の文字は捨てられ、再開後は新しい倍率の映像だけで組み立て直す（既存のhookの動き）
+  const { tracked, frameSize, onFrame } = useLiveTextFrames(active && !zoomSettling);
+
+  // 倍率を変えた後に最初に届く1フレームは捨てる。nativeは1フレームずつ順に認識し、届く時刻は認識が終わった時刻なので、
+  // 変える前に撮って認識中だったフレーム（最大1つ）が待ち時間の後に届くことがある。同じ文字は位置に関係なく
+  // 同じ行として追跡されるため、1件でも残すと訳の位置がずれる（独立レビューの指摘）
+  const dropNextFrameRef = useRef(false);
+  useEffect(() => {
+    if (zoomChangeCount > 0) dropNextFrameRef.current = true;
+  }, [zoomChangeCount]);
+  const handleFrame = useCallback(
+    (frame: LiveTextFrame) => {
+      if (dropNextFrameRef.current) {
+        dropNextFrameRef.current = false;
+        return;
+      }
+      onFrame(frame);
+    },
+    [onFrame],
+  );
 
   const overlayEntries = useMemo(() => {
     if (frameSize == null || viewSize == null) return [];
@@ -202,6 +254,35 @@ export function LiveTranslationCamera({
     }
   }
 
+  const canZoom = cameraReady && !isCapturing;
+
+  // ピンチで拡大・縮小（メインカメラのピンチと同じ仕組み）。撮影中は受け付けない
+  const pinchGesture = Gesture.Pinch()
+    .runOnJS(true)
+    .enabled(canZoom)
+    .onStart(() => setIsPinching(true))
+    .onChange((event) => {
+      setZoom((current) => pinchStepLiveCameraZoom(current, event.scale, event.scaleChange));
+    })
+    // 始まったピンチが終わった（取り消された時も含む）：少し待ってから読み取りを再開する
+    .onEnd(() => setZoomChangeCount((count) => count + 1))
+    // 始まらずに終わったピンチ（指が1本だけ等）も含め、ピンチ中の状態は必ず解く
+    .onFinalize(() => setIsPinching(false));
+
+  // ダブルタップで2×⇄元の倍率。1回のタップには何も割り当てない（従来どおり）
+  const doubleTapGesture = Gesture.Tap()
+    .runOnJS(true)
+    .enabled(canZoom)
+    .numberOfTaps(2)
+    .onEnd((_event, success) => {
+      if (!success) return;
+      setZoom((current) => toggleLiveCameraZoom(current));
+      setZoomChangeCount((count) => count + 1);
+    });
+
+  const zoomGesture = Gesture.Race(pinchGesture, doubleTapGesture);
+  const zoomed = isLiveCameraZoomed(zoom);
+
   function handleLayout(event: LayoutChangeEvent) {
     const { width, height } = event.nativeEvent.layout;
     setViewSize((prev) => (prev && prev.width === width && prev.height === height ? prev : { width, height }));
@@ -253,7 +334,9 @@ export function LiveTranslationCamera({
       ? 'このカメラではリアルタイム翻訳を使えません'
       : !cameraReady || scannerStatus === 'waiting' || scannerStatus === 'off'
         ? 'カメラを準備しています…'
-        : rows.length === 0 && priceRows.length === 0
+        : zoomSettling
+          ? '読み取り直しています…'
+          : rows.length === 0 && priceRows.length === 0
           ? '文字にカメラを向けてください'
           : translationSupported === false
             ? '翻訳はiOS 18以降で利用できます'
@@ -261,10 +344,13 @@ export function LiveTranslationCamera({
 
   return (
     <View style={styles.root}>
+      {/* ピンチ・ダブルタップは枠の中だけ。1本指のスクロールはページのまま */}
+      <GestureDetector gesture={zoomGesture}>
       <View style={styles.frame} onLayout={handleLayout}>
         <CameraView
           ref={cameraRef}
           style={StyleSheet.absoluteFill}
+          zoom={zoom}
           onCameraReady={() => setCameraReady(true)}
         />
         <LiveTextScanner
@@ -272,7 +358,7 @@ export function LiveTranslationCamera({
           paused={isCapturing}
           languages={getVisionLanguagesForSource(sourceLanguage)}
           intervalMs={LIVE_TRANSLATION_INTERVAL_MS}
-          onFrame={onFrame}
+          onFrame={handleFrame}
           onStatusChange={setScannerStatus}
         />
 
@@ -297,6 +383,12 @@ export function LiveTranslationCamera({
         <View style={styles.statusChip} pointerEvents="none">
           <ThemedText style={styles.statusText}>{statusLabel}</ThemedText>
         </View>
+
+        {zoomed && (
+          <View style={styles.zoomChip} pointerEvents="none">
+            <ThemedText style={styles.statusText}>拡大中</ThemedText>
+          </View>
+        )}
 
         {!isCapturing && (notice != null || priceRows.length > 0) && (
           <View style={styles.bottomArea} pointerEvents="box-none">
@@ -348,6 +440,7 @@ export function LiveTranslationCamera({
           </View>
         )}
       </View>
+      </GestureDetector>
 
       <PrimaryButton
         title="撮影して詳しく翻訳"
@@ -356,7 +449,7 @@ export function LiveTranslationCamera({
         disabled={!cameraReady}
       />
       <ThemedText style={styles.caption}>
-        メニューの説明や注意書きなど長い文章は、撮影すると段落ごとにまとめて翻訳します
+        ピンチ・ダブルタップで拡大できます。メニューの説明や注意書きなど長い文章は、撮影すると段落ごとにまとめて翻訳します
       </ThemedText>
       {captureFailed && <ThemedText style={styles.errorText}>撮影できませんでした。もう一度お試しください。</ThemedText>}
 
@@ -452,12 +545,23 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 12,
     left: 12,
+    // 右上の「拡大中」と重ならない幅に収める（長い文は折り返す）
+    maxWidth: '68%',
     backgroundColor: 'rgba(0,0,0,0.52)',
     borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
   statusText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  zoomChip: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: 'rgba(0,0,0,0.52)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
 
   bottomArea: {
     position: 'absolute',
