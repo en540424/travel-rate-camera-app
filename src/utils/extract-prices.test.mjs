@@ -411,3 +411,36 @@ test('記号の後ろの桁区切りの無い長い数字は、上限を広げ�
   await t.test('€12345', () => assert.deepEqual(extractPriceCandidates('€12345', 'EUR'), []));
   await t.test('$1234 は従来どおり', () => assert.deepEqual(extractPriceCandidates('$1234', 'USD'), ['1234.00']));
 });
+
+// 統合候補の独立監査（Fable 5.1・2026-10-24）
+test('「整数部2桁＋小数点の記号＋3桁」は000の時だけ桁区切り（$12.00 1 の空白落ちを12001にしない）', async (t) => {
+  const cases = [
+    ['USD', '$12.001', ['12.00']],
+    ['GBP', '£12.001', ['12.00']],
+    ['EUR', '€12,001', ['12.00']],
+    ['EUR', '€12,500', ['12.50']],
+    ['USD', '$12.000', ['12000.00']],
+    ['EUR', '12,000 EUR', ['12000.00']],
+    ['EUR', '€12,000', ['12000.00']],
+    ['EUR', '€ 12.500', ['12500.00']],
+    ['USD', '$12,500', ['12500.00']],
+    ['USD', 'SUBTOTAL 1,245.00\nTAX 8.875% 110.49\nTOTAL 1,355.49', ['1245.00', '110.49', '1355.49']],
+  ];
+  for (const [currency, text, expected] of cases) {
+    await t.test(`${currency} ${JSON.stringify(text)}`, () => assert.deepEqual(extractPriceCandidates(text, currency), expected));
+  }
+});
+
+test('既知の残り（Productionと同じか、誤った値を出さず候補が減るだけ）を固定する', async (t) => {
+  const cases = [
+    // EURの「1桁＋ピリオド＋3桁」は1250ユーロとも1.25ユーロとも書かれるため従来の読み
+    ['EUR', '€1.250', ['1.25']],
+    // 行末のL（サイズ）は容量と見分けられず候補にしない（誤った値は出さない）
+    ['USD', 'Latte 4.50 L', []],
+    // ピリオドだけで連結した崩れは読めないため候補にしない
+    ['USD', '12.50.13.50', []],
+  ];
+  for (const [currency, text, expected] of cases) {
+    await t.test(`${currency} ${text}`, () => assert.deepEqual(extractPriceCandidates(text, currency), expected));
+  }
+});

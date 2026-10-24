@@ -55,10 +55,16 @@ function parseAmountToken(token: string, decimalMark: DecimalMark): AmountReadin
   const single = /^(\d{1,3})((?:,\d{3})+|(?:\.\d{3})+)$/.exec(s);
   if (single) {
     const [, head, rest] = single;
-    // 桁区切りと読む：区切りが2つ以上／整数部が2桁以上（3桁小数の価格は考えにくい）／USD・GBPのカンマ（`$1,250`）。
-    // 残る「1桁＋記号＋3桁」（燃料・単価の`$3.999`・`€1,799`、アイルランド式の`€1.799`）は
-    // 桁区切りとも小数とも書かれるため、従来どおり小数第2位までで読む（`€1.250`も従来の1.25のまま）
-    if (rest.length > 4 || head.length > 1 || (rest[0] === ',' && decimalMark === '.')) {
+    // 桁区切りと読む：区切りが2つ以上／USD・GBPのカンマ（`$1,250`）／EURのピリオドで整数部2桁以上（`€ 12.000`）／
+    // 通貨の小数点の記号でも整数部2桁以上かつ`000`（`12,000 EUR`・OCRがカンマをピリオドと読んだ`$12.000`）。
+    // `$12.001`・`€12,001`（`$12.00 1`の空白落ち）や「1桁＋記号＋3桁」（燃料・単価の`$3.999`・`€1,799`、
+    // アイルランド式の`€1.799`）は桁区切りとも小数とも書かれるため、従来どおり小数第2位までで読む（`€1.250`も従来の1.25のまま）
+    const isDecimalMark = rest[0] === decimalMark;
+    if (
+      rest.length > 4 ||
+      (!isDecimalMark && (head.length > 1 || decimalMark === '.')) ||
+      (isDecimalMark && head.length > 1 && rest.slice(1) === '000')
+    ) {
       return { value: head + rest.replace(/[.,]/g, ''), grouped: true };
     }
     return { value: `${head}.${rest.slice(1, 3)}`, grouped: false };
