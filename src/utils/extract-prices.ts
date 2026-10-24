@@ -99,9 +99,16 @@ function parseAmountToken(token: string, decimalMark: DecimalMark): AmountReadin
 /** `1 250,00`のように空白で3桁ごとに区切った数字のまとまり（フランス式等）の位置 */
 type SpacedNumber = { start: number; end: number; token: string };
 
+/** 空白区切りのまとまりのすぐ前・すぐ後ろにある通貨記号・コード */
+const SPACED_MARKER_BEFORE = /(?:\$|€|£|\bUSD|\bEUR|\bGBP)\s*$/i;
+const SPACED_MARKER_AFTER = /^\s*(?:\$|€|£|USD\b|EUR\b|GBP\b)/i;
+
 /**
  * 空白区切りの数字のまとまりを1回の走査で集める。`1 250,00 €`の`250,00`だけ・`$ 1 250.00`の`1`だけを
- * 確かな価格にしないために使う（数量＋価格の`2 125.50`とも見分けられないので、確かとはしない）。
+ * 確かな価格にしないために使う。すぐ前か後ろに通貨記号・コードがある時だけ対象にする
+ * （`Table 5 125.00`・`Room 101 250.00`・`2 125.50`のような番号・数量＋価格を巻き込まないため。独立監査の指摘）。
+ * 時刻・番号の後ろ（`10:30 250,00 €`・`#12 125.00`）も対象外。数量＋価格の`Nr 3 250,00 €`とは見分けられないので、
+ * 対象になった時も確かとはしない。
  */
 function spacedNumbers(text: string): SpacedNumber[] {
   const out: SpacedNumber[] = [];
@@ -112,6 +119,11 @@ function spacedNumbers(text: string): SpacedNumber[] {
     const end = start + m[0].length;
     if (isDigitChar(text[start - 1]) || (isSeparatorChar(text[start - 1]) && isDigitChar(text[start - 2]))) continue;
     if (isDigitChar(text[end]) || (isSeparatorChar(text[end]) && isDigitChar(text[end + 1]))) continue;
+    if (text[start - 1] === ':' || text[start - 1] === '/' || text[start - 1] === '-' || text[start - 1] === '#') continue;
+    const marked =
+      SPACED_MARKER_BEFORE.test(text.slice(Math.max(0, start - 6), start)) ||
+      SPACED_MARKER_AFTER.test(text.slice(end, end + 6));
+    if (!marked) continue;
     out.push({ start, end, token: m[0] });
   }
   return out;
@@ -160,12 +172,10 @@ function wholeNumber(
   if (around == null) return reading;
   const joinedReading = parseAmountToken(around.token.replace(/ /g, ''), decimalMark);
   if (joinedReading == null) return { ...reading, uncertain: true };
-  return {
-    value: joinedReading.value,
-    grouped: true,
-    uncertain: true,
-    alt: e === around.end ? { value: reading.value, grouped: reading.grouped, uncertain: true } : undefined,
-  };
+  const joined: AmountReading = { value: joinedReading.value, grouped: true, uncertain: true };
+  // 一致がまとまりの末尾（`1 250,00 €`の`250,00`）なら一致の読みを先に・つないだ値を2つ目に。
+  // 先頭（`$ 1 250.00`の`1`）なら一致の読みは意味が無いので、つないだ値だけ
+  return e === around.end ? { value: reading.value, grouped: reading.grouped, uncertain: true, alt: joined } : joined;
 }
 
 /**

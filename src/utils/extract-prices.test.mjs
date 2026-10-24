@@ -461,7 +461,8 @@ test('曖昧・OCR崩れの表記：候補には出すが、確かな候補（�
     ['EUR', 'EUR 1,250', ['1.25', '1250.00']],
     ['EUR', '€1,799', ['1.79', '1799.00']],
     ['EUR', '€0,999', ['0.99']],
-    ['EUR', '1 250,00 €', ['1250.00', '250.00']],
+    ['EUR', '1 250,00 €', ['250.00', '1250.00']],
+    ['EUR', 'Nr 3 250,00 €', ['250.00', '3250.00']],
     ['EUR', '€ 1.250.00', ['1250.00']],
     ['EUR', '1,250,00 €', ['1250.00']],
     ['USD', '$1,250,00', ['1250.00']],
@@ -514,4 +515,24 @@ test('空白区切りの判定は改行をまたがない（前の行の数字�
   assert.deepEqual(extractPriceCandidates('Table 2\n125.00', 'USD'), ['125.00']);
   assert.deepEqual(extractConfidentPriceCandidates('Table 2\n125.00', 'USD'), ['125.00']);
   assert.deepEqual(extractConfidentPriceCandidates('Table 2\n125,00 €', 'EUR'), ['125.00']);
+});
+
+test('番号・数量・時刻の後ろの価格は、空白区切りの桁区切りとつながない（独立監査の指摘）', async (t) => {
+  const cases = [
+    ['USD', 'Table 5 125.00', ['125.00']],
+    ['USD', 'Deluxe Suite\n1 450.00', ['450.00']],
+    ['USD', '2 125.50', ['125.50']],
+    ['USD', 'Room 101 250.00', ['250.00']],
+    ['USD', '#12 125.00', ['125.00']],
+    ['USD', '10:30 250.00', ['250.00']],
+    ['EUR', 'Tisch 12 125,50', ['125.50']],
+    ['EUR', '10:30 250,00 €', ['250.00']],
+    ['GBP', '2 125.50', ['125.50']],
+  ];
+  for (const [currency, text, expected] of cases) {
+    await t.test(`${currency} ${JSON.stringify(text)}`, () => {
+      assert.deepEqual(extractPriceCandidates(text, currency), expected);
+      assert.deepEqual(extractConfidentPriceCandidates(text, currency), expected);
+    });
+  }
 });
