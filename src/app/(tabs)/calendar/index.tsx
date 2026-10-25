@@ -14,6 +14,7 @@ import type { HistoryRow } from '@/db/queries/history';
 import { useAllHistory } from '@/hooks/use-all-history';
 import { useTrips } from '@/hooks/use-trips';
 import { color, radius, shadow } from '@/theme/tokens';
+import { sumBudgetTotals } from '@/utils/budget-core';
 import { formatJpy, formatRate } from '@/utils/format';
 import { monthDateKeyRange, rowToDateKey, toDateKey } from '@/utils/history-date-core';
 import { deleteStoredPhotoFile } from '@/utils/resolve-image-uri';
@@ -105,7 +106,8 @@ export default function CalendarScreen() {
 
   // 下タブでこのタブ（カレンダー）を押した時（＝タブ切替で入ってきた時）だけ先頭へ戻す。
   // (tabs)/_layout.tsxのtabPress（タブバー押下）からtriggerTabScrollResetで呼ばれる。
-  // タブ内の詳細画面遷移は無いため、通常のフォーカスでは影響しない。
+  // 記録の詳細・編集（このタブのStack）から戻る時はtabPressが発火しないので、表示月・選択日・
+  // スクロール位置はそのまま残る（この画面はStackの下でマウントされたまま）。
   const scrollRef = useRef<ScrollView>(null);
   useEffect(() => {
     return registerTabScrollReset('calendar', () => {
@@ -147,14 +149,11 @@ export default function CalendarScreen() {
     return history.filter((r) => rowToDateKey(r).startsWith(prefix));
   }, [history, displayYear, displayMonth]);
 
-  const monthPurchasedTotal = useMemo(
-    () => monthRows.filter((r) => r.is_purchased === 1).reduce((s, r) => s + r.jpy_amount, 0),
-    [monthRows],
-  );
-  const monthCandidateTotal = useMemo(
-    () => monthRows.filter((r) => r.is_purchased === 0).reduce((s, r) => s + r.jpy_amount, 0),
-    [monthRows],
-  );
+  // 合計は履歴・旅行管理・残り予算と同じ`sumBudgetTotals`（1件ずつ円へ丸めてから足す）。
+  // 生値を足してから丸めると、一覧に並ぶ各記録の円額の合計と1円ずれることがあった（2026-10-25）
+  const monthTotals = useMemo(() => sumBudgetTotals(monthRows), [monthRows]);
+  const monthPurchasedTotal = monthTotals.purchasedTotalJpy;
+  const monthCandidateTotal = monthTotals.candidateTotalJpy;
 
   const cells = useMemo(
     () => buildCalendar(displayYear, displayMonth),
@@ -429,10 +428,9 @@ export default function CalendarScreen() {
                     const trip = tripId !== null ? tripMap.get(tripId) : undefined;
                     const tripName = trip?.name ?? (tripId !== null ? `旅行 #${tripId}` : '未分類');
 
-                    const purchasedRows = rows.filter((r) => r.is_purchased === 1);
-                    const candidateRows = rows.filter((r) => r.is_purchased === 0);
-                    const purchasedTotal = purchasedRows.reduce((s, r) => s + r.jpy_amount, 0);
-                    const candidateTotal = candidateRows.reduce((s, r) => s + r.jpy_amount, 0);
+                    // 月の合計と同じ規則（1件ずつ円へ丸めてから足す）
+                    const { purchasedTotalJpy: purchasedTotal, candidateTotalJpy: candidateTotal } =
+                      sumBudgetTotals(rows);
 
                     return (
                       <View
@@ -480,8 +478,10 @@ export default function CalendarScreen() {
                               <Pressable
                                 key={item.id}
                                 onPress={() =>
+                                  // カレンダータブのStackへ積む（`calendar/_layout.tsx`）。`/history/item-detail`へ
+                                  // pushすると下タブが履歴へ切り替わり、戻ると履歴一覧へ着いてしまう
                                   router.push({
-                                    pathname: '/history/item-detail',
+                                    pathname: '/calendar/item-detail',
                                     params: { id: String(item.id) },
                                   })
                                 }

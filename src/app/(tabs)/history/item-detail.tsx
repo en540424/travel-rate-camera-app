@@ -1,4 +1,4 @@
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams, usePathname } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -14,6 +14,7 @@ import { useHistory } from '@/hooks/use-history';
 import { useTrips } from '@/hooks/use-trips';
 import { color, radius, shadow } from '@/theme/tokens';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
+import { itemEditPathnameFor, itemStackBaseOf } from '@/utils/item-route-core';
 import { deleteStoredPhotoFile } from '@/utils/resolve-image-uri';
 
 function formatSavedAt(row: HistoryRow): string {
@@ -35,6 +36,9 @@ function formatSavedAt(row: HistoryRow): string {
 export default function ItemDetailScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
   const id = params.id != null ? parseInt(params.id, 10) : NaN;
+  // この画面は履歴タブとカレンダータブの両方のStackにある（`utils/item-route-core.ts`）。
+  // 編集・戻れない時の戻り先は、いま開いているタブのStackの中で決める（別のタブへ移らない）
+  const pathname = usePathname();
   const { history, reload, removeEntry } = useHistory();
   const { activeTrip, isReadOnlyTrip } = useTrips();
   const db = useSQLiteContext();
@@ -94,7 +98,9 @@ export default function ItemDetailScreen() {
     return (
       <View style={[styles.screen, styles.center]}>
         <ThemedText style={styles.missingText}>この記録は見つかりません</ThemedText>
-        <Pressable onPress={() => router.back()} style={styles.missingBtn}>
+        <Pressable
+          onPress={() => (router.canGoBack() ? router.back() : router.replace(itemStackBaseOf(pathname)))}
+          style={styles.missingBtn}>
           <ThemedText style={styles.missingBtnText}>戻る</ThemedText>
         </Pressable>
       </View>
@@ -130,7 +136,8 @@ export default function ItemDetailScreen() {
           if (item.image_uri && Platform.OS !== 'web') {
             try { await deleteStoredPhotoFile(item.image_uri); } catch {}
           }
-          router.back();
+          if (router.canGoBack()) router.back();
+          else router.replace(itemStackBaseOf(pathname));
         },
       },
     ]);
@@ -238,7 +245,7 @@ export default function ItemDetailScreen() {
           <ThemedText style={styles.deleteIcon}>🗑</ThemedText>
         </Pressable>
         <Pressable
-          onPress={() => router.push({ pathname: '/history/item-edit', params: { id: String(item.id) } })}
+          onPress={() => router.push({ pathname: itemEditPathnameFor(pathname), params: { id: String(item.id) } })}
           style={({ pressed }) => [styles.editBtn, pressed && styles.pressed]}>
           <ThemedText style={styles.editBtnText}>編集する</ThemedText>
         </Pressable>

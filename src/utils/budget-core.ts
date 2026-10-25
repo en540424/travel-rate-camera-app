@@ -52,8 +52,15 @@ export const EMPTY_BUDGET_TOTALS: BudgetTotals = {
   purchasedTotalJpy: 0,
 };
 
-/** 有限でない金額は0として扱い、集計を壊さない */
-function safeAmount(value: number): number {
+/**
+ * 1件の記録の円額（画面の一覧・詳細に出る円額。`formatJpy`と同じ`Math.round`）。
+ * 有限でない金額は0として扱い、集計を壊さない。
+ *
+ * **アプリ内の円の合計はすべて「この値を1件ずつ足す」**（履歴・旅行管理・残り予算・カレンダー・分析。
+ * SQLの`SUM(ROUND(jpy_amount))`も同じ）。分析用の`analytics-core.ts`は自己完結のため同じ規則の写しを持つ
+ * （一致はテストで固定）。保存済みの`jpy_amount`は書き換えない（外貨記録は小数のまま保存されている）。
+ */
+export function toRecordJpy(value: number): number {
   return Number.isFinite(value) ? Math.round(value) : 0;
 }
 
@@ -69,7 +76,7 @@ export function sumBudgetTotals(rows: readonly BudgetInputRow[]): BudgetTotals {
   let purchasedTotalJpy = 0;
 
   for (const row of list) {
-    const amount = safeAmount(row.jpy_amount);
+    const amount = toRecordJpy(row.jpy_amount);
     if ((row.is_purchased ?? 0) === 1) {
       purchasedCount += 1;
       purchasedTotalJpy += amount;

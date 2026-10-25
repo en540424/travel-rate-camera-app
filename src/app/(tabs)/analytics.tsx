@@ -12,6 +12,7 @@ import { useAllHistory } from '@/hooks/use-all-history';
 import { useIsPro } from '@/hooks/use-purchases';
 import { color, radius, shadow } from '@/theme/tokens';
 import { summarizePeriodSpending, type SpendEntry } from '@/utils/analytics-core';
+import { toRecordJpy } from '@/utils/budget-core';
 import { formatJpy } from '@/utils/format';
 import {
   dateKeyRangeForPeriod,
@@ -153,7 +154,8 @@ export default function AnalyticsScreen() {
         map.set(row.trip_id, { name: trip.name, currency: trip.base_currency, purchased: 0, count: 0 });
       }
       const entry = map.get(row.trip_id)!;
-      entry.purchased += row.jpy_amount;
+      // まとめ・グラフ・履歴・旅行管理と同じ規則（1件ずつ円へ丸めてから足す）
+      entry.purchased += toRecordJpy(row.jpy_amount);
       entry.count++;
     }
     return Array.from(map.values()).sort((a, b) => b.purchased - a.purchased);

@@ -1,4 +1,4 @@
-import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams, useNavigation, usePathname } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Keyboard, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
@@ -18,6 +18,7 @@ import { useHistory } from '@/hooks/use-history';
 import { useUnsavedChangesStore } from '@/stores/unsaved-changes-store';
 import { color, radius, shadow } from '@/theme/tokens';
 import { resolveEditedAmount } from '@/utils/edit-amount-core';
+import { itemStackBaseOf } from '@/utils/item-route-core';
 import { deleteStoredPhotoFile } from '@/utils/resolve-image-uri';
 import { formatJpy } from '@/utils/format';
 
@@ -28,6 +29,8 @@ export default function ItemEditScreen() {
   const setHasUnsavedChanges = useUnsavedChangesStore((s) => s.setHasUnsavedChanges);
   const setDiscardHandler = useUnsavedChangesStore((s) => s.setDiscardHandler);
   const navigation = useNavigation();
+  // 戻れない時（直接開いた等）の戻り先。履歴・カレンダーどちらのStackでも、そのタブの一覧へ戻す
+  const pathname = usePathname();
   const db = useSQLiteContext();
   /**
    * activeTrip外の旅行の記録用fallback。`item-detail.tsx`と同じ理由・同じ規律
@@ -84,6 +87,10 @@ export default function ItemEditScreen() {
    */
   const savingRef = useRef(false);
   const [isSaving, setIsSaving] = useState(false);
+  /** 最新の「未保存の変更あり」。フォーカス時の下書きの作り直しを、編集中には行わないための判定 */
+  const hasUnsavedChangesRef = useRef(false);
+  /** フォーカスで記録を読み直した後、次に届いた記録で下書きを作り直す印（未保存の変更が無い時だけ） */
+  const refreshDraftOnNextItemRef = useRef(false);
   // ScrollView自体の表示可能高さとcontentContainerの実測高さを比較し、
   // 本当に収まっている時だけscrollEnabledをfalseにする（item-detailと同じ実測ベースの方式）。
   const [scrollAreaHeight, setScrollAreaHeight] = useState(0);
@@ -108,6 +115,10 @@ export default function ItemEditScreen() {
       allowLeaveRef.current = false;
       // fallbackの「取得済み」印もフォーカスごとに外し、他旅行の記録を最新で読み直す（item-detailと同じ）
       fetchedFallbackIdRef.current = null;
+      // 読み直した記録で下書きを作り直す（未保存の変更が無い時だけ。判定は下の初期化effect）。
+      // この画面は履歴・カレンダー・旅行の記録の各Stackに同時に載り得るため、別のStackで同じ記録を
+      // 保存してから戻ると古い値の下書きのまま残り、そこで保存すると金額・メモが古い値へ戻っていた
+      refreshDraftOnNextItemRef.current = true;
       reload();
     }, [reload]),
   );
@@ -134,8 +145,12 @@ export default function ItemEditScreen() {
   const item = history.find((r) => r.id === id) ?? fallbackItem ?? undefined;
 
   useEffect(() => {
-    if (item && initedRef.current !== item.id) {
+    if (!item) return;
+    const refresh =
+      refreshDraftOnNextItemRef.current && !savingRef.current && !hasUnsavedChangesRef.current;
+    if (initedRef.current !== item.id || refresh) {
       initedRef.current = item.id;
+      refreshDraftOnNextItemRef.current = false;
       // JPYは整数円で表示・編集する（一覧の`formatJpy`と同じ`Math.round`）。DBに小数JPYが残っている既存記録でも
       // 欄には丸めた値を出し、金額を触らなければ`resolveEditedAmount`が同値と判定してDBの値は書き換えない。
       const initialAmount = item.currency === 'JPY' ? String(Math.round(item.jpy_amount)) : String(item.foreign_amount);
@@ -170,6 +185,7 @@ export default function ItemEditScreen() {
     draftPhotoUri !== originalPhotoUri;
 
   useEffect(() => {
+    hasUnsavedChangesRef.current = hasUnsavedChanges;
     setHasUnsavedChanges(hasUnsavedChanges);
   }, [hasUnsavedChanges, setHasUnsavedChanges]);
 
@@ -210,13 +226,21 @@ export default function ItemEditScreen() {
 
   // 下タブ側のガード（(tabs)/_layout.tsx）から「破棄して移動」時に呼んでもらう。
   // あちらはStackの外側にいて編集画面のstateを知らないため、処理側をここから預ける。
-  useEffect(() => {
-    setDiscardHandler(() => {
-      allowLeaveRef.current = true;
-      discardDraft();
-    });
-    return () => setDiscardHandler(null);
-  }, [setDiscardHandler, discardDraft]);
+  // この画面は履歴タブ・カレンダータブ・旅行の記録（`trip-record-edit`）の各Stackに同時に載り得るため、
+  // 預けるのは**表示中（フォーカス中）の間だけ**にし、外す時は自分が預けたものの時だけ外す
+  // （マウント単位だと、後から開いた別のStackの編集画面が閉じた時に、残った編集画面の処理まで消えていた）。
+  useFocusEffect(
+    useCallback(() => {
+      const handler = () => {
+        allowLeaveRef.current = true;
+        discardDraft();
+      };
+      setDiscardHandler(handler);
+      return () => {
+        if (useUnsavedChangesStore.getState().discardHandler === handler) setDiscardHandler(null);
+      };
+    }, [setDiscardHandler, discardDraft]),
+  );
 
   /*
    * ヘッダー戻る・iOSスワイプバックのガード。tabPress（下タブ）はタブバー押下でしか発火せず、
@@ -269,7 +293,9 @@ export default function ItemEditScreen() {
     return (
       <View style={[styles.screen, styles.center]}>
         <ThemedText style={styles.missingText}>この記録は見つかりません</ThemedText>
-        <Pressable onPress={() => router.back()} style={styles.missingBtn}>
+        <Pressable
+          onPress={() => (router.canGoBack() ? router.back() : router.replace(itemStackBaseOf(pathname)))}
+          style={styles.missingBtn}>
           <ThemedText style={styles.missingBtnText}>戻る</ThemedText>
         </Pressable>
       </View>

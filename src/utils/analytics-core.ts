@@ -4,10 +4,15 @@
  * **react-native・nativeモジュール・`@/`エイリアス・相対の値importを一切持たない自己完結モジュール。**
  * `node --test`から直接importして検証できる状態を保つ（`history-date-core.ts`・`categories.ts`と同じ規律）。
  *
- * ■ 集計の意味は従来の`analytics.tsx`内のuseMemoと同じ（2026-10-20・分析画面再設計で移しただけ）
+ * ■ 集計の意味は従来の`analytics.tsx`内のuseMemoと同じ（2026-10-20・分析画面再設計で移しただけ）。
+ *   2026-10-25に金額の丸め方だけを下のとおり変更した（期間・購入済みの絞り込みは不変）
  *   - 期間の判定は呼び出し側から`isInPeriod`（＝`matchesPeriod(dateKey, ...)`）を受け取る
  *   - 保存件数・候補合計は期間内の全件、購入済み合計・棒グラフ・カテゴリー別は**期間内の購入済みだけ**
- *   - 金額は`jpy_amount`の生値を足す（丸めは表示時の`formatJpy`だけ。外貨記録は小数を持ち得る）
+ *   - 金額は**1件ずつ円へ丸めてから足す**（`toRecordJpy`。外貨記録の`jpy_amount`は小数を持ち得る）。
+ *     履歴・旅行管理・残り予算（`budget-core.ts`の`sumBudgetTotals`・SQL `SUM(ROUND(jpy_amount))`）と同じ規則で、
+ *     一覧に並ぶ各記録の円額（`formatJpy`＝`Math.round`）を足した値と合計が一致する。
+ *     2026-10-25までは生値を足してから表示時に丸めていたため、$9.99と$1.99（1 USD = ¥163）の
+ *     購入済み2件が、履歴では¥1,628＋¥324＝¥1,952、分析・カレンダーでは1,952.74→¥1,953と1円ずれていた
  *   旧実装は棒1本ごとに全件を走査し（月表示で31×件数）、そのたびに日付キーを作り直していた。
  *   ここでは日付キーを呼び出し側で1回だけ作り、1回の走査で合計・棒・カテゴリー入力をまとめて出す。
  *
@@ -32,7 +37,7 @@ export interface SpendBucket {
   key: string;
   /** 年表示は月（1〜12）、月表示は日（1〜31） */
   index: number;
-  /** その期間の購入済み合計（円・生値） */
+  /** その期間の購入済み合計（円。1件ずつ丸めた円額の合計＝`toRecordJpy`） */
   amount: number;
   /** 月表示のみ：曜日（0=日〜6=土） */
   weekday?: number;
@@ -41,9 +46,9 @@ export interface SpendBucket {
 export type SpendChartKind = 'year' | 'month' | 'none';
 
 export interface PeriodSpendSummary {
-  /** 期間内の購入済み合計（円・生値） */
+  /** 期間内の購入済み合計（円。1件ずつ丸めた円額の合計＝`toRecordJpy`） */
   purchasedTotal: number;
-  /** 期間内の候補合計（円・生値） */
+  /** 期間内の候補合計（円。1件ずつ丸めた円額の合計＝`toRecordJpy`） */
   candidateTotal: number;
   /** 期間内の保存件数（候補＋購入済み） */
   totalCount: number;
@@ -51,8 +56,17 @@ export interface PeriodSpendSummary {
   purchasedCount: number;
   /** 棒グラフ。`chartKind === 'none'`（今日表示）は空配列 */
   buckets: SpendBucket[];
-  /** カテゴリー別集計（`aggregateByCategory`）へそのまま渡す入力。期間内の購入済みだけ */
+  /** カテゴリー別集計（`aggregateByCategory`）へそのまま渡す入力。期間内の購入済みだけ（金額は`toRecordJpy`済み） */
   categoryInputs: { category: string | null; jpyAmount: number }[];
+}
+
+/**
+ * 1件の記録の円額（画面の一覧・詳細に出る円額。`formatJpy`と同じ`Math.round`）。有限でない値は0。
+ * **`budget-core.ts`の`toRecordJpy`と同じ規則の写し**（このモジュールは自己完結のため値importしない。
+ * 一致は`analytics-core.test.mjs`で固定）。
+ */
+export function toRecordJpy(jpyAmount: number): number {
+  return Number.isFinite(jpyAmount) ? Math.round(jpyAmount) : 0;
 }
 
 /** `month`は1〜12 */
@@ -93,23 +107,25 @@ export function summarizePeriodSpending(
   for (const entry of entries) {
     if (!isInPeriod(entry.dateKey)) continue;
     totalCount++;
+    // 合計・棒・カテゴリー別のすべてで同じ丸め済みの円額を使う（3つの合計が常に一致する）
+    const amount = toRecordJpy(entry.jpyAmount);
     if (!entry.isPurchased) {
-      candidateTotal += entry.jpyAmount;
+      candidateTotal += amount;
       continue;
     }
-    purchasedTotal += entry.jpyAmount;
+    purchasedTotal += amount;
     purchasedCount++;
-    categoryInputs.push({ category: entry.category, jpyAmount: entry.jpyAmount });
+    categoryInputs.push({ category: entry.category, jpyAmount: amount });
 
     if (chartKind === 'none') continue;
     const [y, m, d] = entry.dateKey.split('-').map(Number);
     if (y !== chartYear) continue;
     if (chartKind === 'year') {
       const bucket = buckets[m - 1];
-      if (bucket) bucket.amount += entry.jpyAmount;
+      if (bucket) bucket.amount += amount;
     } else if (m === chartMonth) {
       const bucket = buckets[d - 1];
-      if (bucket) bucket.amount += entry.jpyAmount;
+      if (bucket) bucket.amount += amount;
     }
   }
 

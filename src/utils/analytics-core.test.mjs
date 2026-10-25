@@ -3,8 +3,12 @@
  *
  * 最重要の観点は2つ。
  *   (1) 分析画面の数字（購入済み合計・候補合計・件数・棒グラフ・カテゴリー別）が、2026-10-20の
- *       再設計前に`analytics.tsx`内で計算していた値と**1円も変わらない**こと（下の`legacy*`が旧実装の写し）
+ *       再設計前に`analytics.tsx`内で計算していた値と同じ絞り込み（期間・購入済み）になること（下の`legacy*`が旧実装の写し）。
+ *       **2026-10-25に金額の丸めだけ変更**：旧実装は生値を足していたが、履歴・旅行管理と同じ「1件ずつ円へ丸めてから足す」へ。
+ *       整数円だけの記録では旧実装と1円も変わらない（下でそれも固定）。外貨の小数の円換算を含む場合は、
+ *       旧実装の写しを1件ずつ丸めた値と比べる
  *   (2) 同じ期間の「購入済み合計＝棒グラフの合計＝カテゴリー別の合計」が常に成り立つこと
+ * 画面間（履歴・旅行管理・カレンダー・分析）の合計一致は`record-jpy-total.test.mjs`。
  */
 import { deepEqual, equal, ok } from 'node:assert/strict';
 import { test } from 'node:test';
@@ -19,6 +23,7 @@ import {
   niceAxisMax,
   summarizePeriodSpending,
   toDisplayPercents,
+  toRecordJpy,
 } from './analytics-core.ts';
 import { matchesPeriod, rowToDateKey } from './history-date-core.ts';
 
@@ -61,7 +66,7 @@ const ROWS = [
   row('2026-09-01', true, 1200, 'food'),
   row('2026-09-01', false, 3000, 'souvenir'),
   row('2026-09-14', true, 4719, 'clothing'),
-  row('2026-09-14', true, 38.5 * 155.3, 'food'), // 外貨：小数の円換算（5979.15）
+  row('2026-09-14', true, 38.5 * 155.3, 'food'), // 外貨：小数の円換算（5979.05 → 1件の円額は¥5,979）
   row('2026-09-14', true, 900, null), // 未分類
   row('2026-09-30', true, 1650, 'transport'),
   row('2026-08-31', true, 9999, 'food'), // 前月
@@ -128,19 +133,32 @@ const CASES = [
   ['today', 2026, 9, '2026-09-15'],
 ];
 
+/** 旧実装の写しへ渡す前に、各記録の円額を1件ずつ丸める（2026-10-25の丸め規則。絞り込みは旧実装のまま比べる） */
+const roundedRows = (rows) => rows.map((r) => ({ ...r, jpy_amount: toRecordJpy(r.jpy_amount) }));
+
+/** 整数円だけの記録（外貨の小数を含まない）。旧実装の生値の合計と1円も変わらないことを確かめる */
+const INTEGER_ROWS = ROWS.filter((r) => Number.isInteger(r.jpy_amount));
+
+function assertSameAsLegacy(s, legacyRows, period, year, month, todayKey) {
+  const legacy = legacyPeriodStats(legacyRows, period, year, month, todayKey);
+  equal(s.purchasedTotal, legacy.purchasedTotal);
+  equal(s.candidateTotal, legacy.candidateTotal);
+  equal(s.totalCount, legacy.totalCount);
+  equal(s.purchasedCount, legacy.purchasedCount);
+  deepEqual(s.buckets.map((b) => b.amount), legacyChartAmounts(legacyRows, period, year, month));
+  deepEqual(
+    aggregateByCategory(s.categoryInputs),
+    aggregateByCategory(legacyCategoryInputs(legacyRows, period, year, month, todayKey)),
+  );
+}
+
 for (const [period, year, month, todayKey] of CASES) {
-  test(`summarizePeriodSpending: 旧実装と同じ値（${period} ${year}-${month} today=${todayKey}）`, () => {
-    const s = summarize(ROWS, period, year, month, todayKey);
-    const legacy = legacyPeriodStats(ROWS, period, year, month, todayKey);
-    equal(s.purchasedTotal, legacy.purchasedTotal);
-    equal(s.candidateTotal, legacy.candidateTotal);
-    equal(s.totalCount, legacy.totalCount);
-    equal(s.purchasedCount, legacy.purchasedCount);
-    deepEqual(s.buckets.map((b) => b.amount), legacyChartAmounts(ROWS, period, year, month));
-    deepEqual(
-      aggregateByCategory(s.categoryInputs),
-      aggregateByCategory(legacyCategoryInputs(ROWS, period, year, month, todayKey)),
-    );
+  test(`summarizePeriodSpending: 旧実装と同じ絞り込み・1件ずつ丸めた円額の合計（${period} ${year}-${month} today=${todayKey}）`, () => {
+    assertSameAsLegacy(summarize(ROWS, period, year, month, todayKey), roundedRows(ROWS), period, year, month, todayKey);
+  });
+
+  test(`summarizePeriodSpending: 整数円だけなら旧実装と1円も変わらない（${period} ${year}-${month} today=${todayKey}）`, () => {
+    assertSameAsLegacy(summarize(INTEGER_ROWS, period, year, month, todayKey), INTEGER_ROWS, period, year, month, todayKey);
   });
 }
 
@@ -150,9 +168,10 @@ for (const [period, year, month, todayKey] of CASES) {
   test(`合計一致：購入済み合計＝棒の合計＝カテゴリー別の合計（${period} ${year}-${month}）`, () => {
     const s = summarize(ROWS, period, year, month, todayKey);
     const categoryTotal = sum(aggregateByCategory(s.categoryInputs).map((c) => c.total));
-    // 生値どうしで比べる（表示は1件ずつformatJpyで丸めるので、表示上は±1円ずれ得る）
-    ok(Math.abs(categoryTotal - s.purchasedTotal) < 1e-9);
-    if (period !== 'today') ok(Math.abs(sum(s.buckets.map((b) => b.amount)) - s.purchasedTotal) < 1e-9);
+    // どれも1件ずつ丸めた整数円の合計なので、誤差なしで一致する
+    ok(Number.isInteger(s.purchasedTotal));
+    equal(categoryTotal, s.purchasedTotal);
+    if (period !== 'today') equal(sum(s.buckets.map((b) => b.amount)), s.purchasedTotal);
     const categoryCount = sum(aggregateByCategory(s.categoryInputs).map((c) => c.count));
     equal(categoryCount, s.purchasedCount);
   });
@@ -160,7 +179,7 @@ for (const [period, year, month, todayKey] of CASES) {
 
 test('期間変更：2026年9月→8月→2026年→今日で、それぞれの期間の記録だけが数えられる', () => {
   const sep = summarize(ROWS, 'month', 2026, 9, '2026-09-14');
-  equal(sep.purchasedTotal, 1200 + 4719 + 38.5 * 155.3 + 900 + 1650);
+  equal(sep.purchasedTotal, 1200 + 4719 + 5979 + 900 + 1650);
   equal(sep.candidateTotal, 3000);
   equal(sep.totalCount, 6);
   equal(sep.purchasedCount, 5);
@@ -181,7 +200,7 @@ test('期間変更：2026年9月→8月→2026年→今日で、それぞれの�
 
   const today = summarize(ROWS, 'today', 2026, 9, '2026-09-14');
   deepEqual(today.buckets, []);
-  equal(today.purchasedTotal, 4719 + 38.5 * 155.3 + 900);
+  equal(today.purchasedTotal, 4719 + 5979 + 900);
   equal(today.purchasedCount, 3);
 });
 
@@ -231,7 +250,7 @@ test('複数カテゴリー＋未分類：金額の降順、未分類は独立�
   const s = summarize(ROWS, 'month', 2026, 9, '2026-09-14');
   const cats = aggregateByCategory(s.categoryInputs);
   deepEqual(cats.map((c) => c.label), ['食事', '衣類', '交通', '未分類']);
-  equal(cats[0].total, 1200 + 38.5 * 155.3);
+  equal(cats[0].total, 1200 + 5979);
   const labels = buildShareLabels(cats.map((c) => c.total));
   equal(labels.length, 4);
   equal(sum(toDisplayPercents(cats.map((c) => c.total))), 100);
