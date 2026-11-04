@@ -1,11 +1,9 @@
 import { create } from 'zustand';
 import type { CustomerInfo, PurchasesOffering, PurchasesPackage } from 'react-native-purchases';
 
-import {
-  REVENUECAT_ANNUAL_PRODUCT_ID,
-  REVENUECAT_ENTITLEMENT_ID,
-  REVENUECAT_MONTHLY_PRODUCT_ID,
-} from '@/config/revenuecat';
+import { REVENUECAT_ANNUAL_PRODUCT_ID, REVENUECAT_MONTHLY_PRODUCT_ID } from '@/config/revenuecat';
+import { getPlanTier } from '@/lib/plan-tier';
+import { hasProAccess, type PlanTier } from '@/lib/plan-tier-core';
 import { resolveAnnualPackage, resolveMonthlyPackage } from '@/lib/revenuecat-package-core';
 
 interface PurchasesStore {
@@ -14,6 +12,9 @@ interface PurchasesStore {
   /** 初回のCustomerInfo取得が完了したか（成功/失敗を問わない） */
   isInitialized: boolean;
   isLoading: boolean;
+  /** 契約プラン（正本はCustomerInfo。導出は`lib/plan-tier.ts`）。`isPro`と必ず同じ`set()`で更新する */
+  planTier: PlanTier;
+  /** Pro以上（Pro・Pro+）の権利があるか。`planTier`から導出した既存の判定。参照元（`useIsPro()`等）は変えない */
   isPro: boolean;
   customerInfo: CustomerInfo | null;
   offering: PurchasesOffering | null;
@@ -33,6 +34,7 @@ export const usePurchasesStore = create<PurchasesStore>((set) => ({
   isConfigured: false,
   isInitialized: false,
   isLoading: false,
+  planTier: 'free',
   isPro: false,
   customerInfo: null,
   offering: null,
@@ -44,11 +46,10 @@ export const usePurchasesStore = create<PurchasesStore>((set) => ({
   setLoading: (isLoading) => set({ isLoading }),
   setInitialized: (isInitialized) => set({ isInitialized }),
 
-  setCustomerInfo: (customerInfo) =>
-    set({
-      customerInfo,
-      isPro: customerInfo != null && REVENUECAT_ENTITLEMENT_ID in customerInfo.entitlements.active,
-    }),
+  setCustomerInfo: (customerInfo) => {
+    const planTier = getPlanTier(customerInfo);
+    set({ customerInfo, planTier, isPro: hasProAccess(planTier) });
+  },
 
   // `offering.monthly` / `.annual`はDashboardで定義済みidentifier（$rc_monthly等）を
   // 使っている場合しか埋まらない。独自identifier構成でも価格が出るよう、

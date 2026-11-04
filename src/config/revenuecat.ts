@@ -7,6 +7,13 @@
 // RevenueCat Dashboard側のEntitlement識別子（表示名ではなくSDK参照用ID）
 export const REVENUECAT_ENTITLEMENT_ID = 'pro';
 
+// Pro+（Proの上位プラン）のEntitlement識別子。**暫定・未確定**。
+// RevenueCat Dashboardには未作成で、Pro+の価格・商品構成・機能は未承認（調査H-2・H-3）。
+// どの商品にも紐付いていないため、このIDが有効になるCustomerInfoは現時点で存在せず、判定結果は従来と同一。
+// Dashboardへ登録する名前が変わる場合はここだけを直す（判定は`lib/plan-tier.ts`経由で参照される）。
+// Pro+の商品IDはここに置かない（未登録の商品を購入対象にしないため。購入画面の対象はProの2商品のみ）。
+export const REVENUECAT_PRO_PLUS_ENTITLEMENT_ID = 'pro_plus';
+
 // RevenueCat Dashboard側のOffering識別子
 export const REVENUECAT_OFFERING_ID = 'default';
 

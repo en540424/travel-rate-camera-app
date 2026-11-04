@@ -14,6 +14,7 @@ import {
   restorePurchases as restorePurchasesOnDevice,
 } from '@/lib/revenuecat';
 import type { PurchaseOutcome, RestoreOutcome } from '@/lib/revenuecat';
+import { isTierAtLeast, type PlanTier } from '@/lib/plan-tier-core';
 import { diagnosePurchaseSetup } from '@/lib/revenuecat-package-core';
 import { usePurchasesStore } from '@/stores/purchases-store';
 
@@ -234,9 +235,22 @@ export function usePurchases() {
   return { ...state, isPurchasing, isRestoring, refreshCustomerInfo, refreshOfferings, purchase, restore };
 }
 
-/** Pro権利の有無だけを参照する軽量セレクタ。正本はRevenueCatのCustomerInfo。 */
+/**
+ * Pro以上（Pro・Pro+）の権利の有無だけを参照する軽量セレクタ。正本はRevenueCatのCustomerInfo。
+ * Pro+はProを包含するため、従来Pro限定だった機能はPro+でも使える（判定は`lib/plan-tier-core.ts`）。
+ */
 export function useIsPro(): boolean {
   return usePurchasesStore((s) => s.isPro);
+}
+
+/** 現在の契約プラン（free / pro / pro_plus）。Pro+固有の機能を判定する新規コード向け。 */
+export function usePlanTier(): PlanTier {
+  return usePurchasesStore((s) => s.planTier);
+}
+
+/** 契約プランが`required`以上か。例：`useHasTier('pro_plus')`。Pro+に含める機能は未承認のため、現時点で呼び出し元はない。 */
+export function useHasTier(required: PlanTier): boolean {
+  return usePurchasesStore((s) => isTierAtLeast(s.planTier, required));
 }
 
 export interface ProPlanDetails {

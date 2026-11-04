@@ -8,7 +8,9 @@ import type {
   PurchasesPackage,
 } from 'react-native-purchases';
 
-import { getRevenueCatIosApiKey, REVENUECAT_ENTITLEMENT_ID, REVENUECAT_OFFERING_ID } from '@/config/revenuecat';
+import { getRevenueCatIosApiKey, REVENUECAT_OFFERING_ID } from '@/config/revenuecat';
+import { getPlanTier } from '@/lib/plan-tier';
+import { hasProAccess } from '@/lib/plan-tier-core';
 import { resolvePurchaseOutcome } from '@/lib/revenuecat-purchase-core';
 
 let configured = false;
@@ -119,8 +121,12 @@ function isUserCancelledError(error: unknown): boolean {
   return e.userCancelled === true || e.code === 'PURCHASE_CANCELLED_ERROR';
 }
 
+/**
+ * Pro以上（Pro・Pro+）の権利が有効か。storeの`isPro`と**同じ導出**（`lib/plan-tier.ts`）を使う。
+ * 現時点でPro+は未登録のため、proのEntitlementが有効かどうかと結果は一致する。
+ */
 function hasProEntitlement(customerInfo: CustomerInfo): boolean {
-  return REVENUECAT_ENTITLEMENT_ID in customerInfo.entitlements.active;
+  return hasProAccess(getPlanTier(customerInfo));
 }
 
 /**
@@ -189,10 +195,13 @@ export async function purchasePackage(
 export async function restorePurchases(): Promise<RestoreOutcome> {
   try {
     const customerInfo = await Purchases.restorePurchases();
+    // SDKの型上はnullにならないが、万一nullが返っても「Proの権利が無かった」とは扱わない
+    // （storeをFreeへ落とさず、従来どおりerror。旧実装は`in`がnullで例外→catchで同じ結果だった）。
+    if (customerInfo == null) return { status: 'error' };
     return {
       status: 'success',
       customerInfo,
-      hasEntitlement: REVENUECAT_ENTITLEMENT_ID in customerInfo.entitlements.active,
+      hasEntitlement: hasProEntitlement(customerInfo),
     };
   } catch {
     return { status: 'error' };
