@@ -9,7 +9,18 @@
 > - 既存の良好なOCRは維持する。高性能OCRの採否・Pro+の価格・Freeの制限値・買い物マップの詳細は**未確定**
 > - 現行の提出線（本branch）はFree＋Pro前提。3プラン同時初回公開を実行する場合、`20bfe92` のBuildは初回提出物にならない。**最終Production BuildのGOは、3プラン同時初回公開のHuman承認の後に判断する**
 > - 正本：Vault `旅レートカメラ_ProPlus・高性能OCR・クラウド機能_構想設計書_v1` 冒頭。調査結果・工程・未確定事項：Vault `旅レートカメラ_Free-Pro-ProPlus_3プラン実現調査_2026-11-04`
-> - アプリ本体の実装は未着手（次工程。範囲はHuman承認後）
+> - **【2026-11-04続報】Tier基盤を別branch `feat/plan-tier-foundation`（base `d97977e`・worktree `trc-tier-foundation`・未Build・main未統合）で実装した。** Pro+の商品・価格・機能・購入画面は含まない。内容と確認事項は下記「Tier基盤」。候補branch `fix/calendar-back-and-yen-total` にはこの変更を入れていない（入れると次のBuildに載るため）
+>
+> **Tier基盤（`feat/plan-tier-foundation`）**
+> - 契約プラン `free < pro < pro_plus` を判定する1か所を新設：`src/lib/plan-tier-core.ts`（純粋関数・import 0件）＋`src/lib/plan-tier.ts`（CustomerInfoとの薄い接続）。`isPro` は `tier >= pro` の導出（既存21ファイルの参照は不変）。Pro+はProを**クライアント側の判定で包含**する（Dashboardで両Entitlementへ紐付けることに依存しない）
+> - 「proのEntitlementが有効か」の判定が3か所（store・購入成否・復元結果）に重複していたのを、この1関数へ揃えた。現時点で到達できるCustomerInfo（`pro_plus` を含まない）では従来と**結果が同一**（`plan-tier-core.test.mjs` の真理値表で固定）
+> - Entitlement `pro_plus` の識別子は**暫定・Dashboard未登録**（`config/revenuecat.ts`）。Pro+の商品ID・価格・機能・購入画面・Offering解決は一切入れていない
+> - 触っていない：`limits.ts`（`FREE_LIMITS`・各gate）、`revenuecat-package-core.ts`（解決順）、`revenuecat-purchase-core.ts`、購入/プラン画面、`useProPlanDetails`、DB、OCR、カメラ、旅行切替
+> - 検証：tsc pass／`npm test` 853 pass（+14）／lint 20（16/4）baselineとメッセージも同一／独立レビュー（Opus xhigh）blockerなし。should-fix 2件（復元でCustomerInfoがnullの時にProを落とさない・null判定とキー列挙をコアへ移してテスト）は反映済み
+> - **【Human必須】購入・復元の判定関数を触ったため、このbranchをBuildに入れる前に Sandbox で `TEST_CHECKLIST.md` #30 purchase／#32 restore／#33 Pro失効／#36 purchase完了後 entitlement反映 を再確認する（未確認。自動テストは判定の等価性までで、StoreKit・RevenueCatの実通信は検証していない）**
+> - **【Human確認】RevenueCat Dashboardに識別子 `pro_plus` のEntitlementが存在しないこと（商品紐付けだけでなく、promotional／手動付与も含む）。** 「現時点で旧式と同じ結果」という結論の前提。存在する場合、`pro_plus` だけが有効な利用者にProの機能が開放される（権利が増える側。既存Pro購入者が権利を失うことはない）
+> - **【運用制約】Pro+のPackageを、アプリ側のPro+購入UIが入るまで `default` Offeringへ入れない。** 今回の変更により、そうした場合の結末が「entitlement_missing」から「success＋Pro開放」に変わる（解決順の問題そのものは今回の差分の原因ではない）
+> - Pro+の購入UI実装前に直す必要がある既知事項（今回は未着手）：①`revenuecat-package-core.ts` が `offering.monthly`・`packageType` を商品IDより先に見るため、Pro+のPackageを `default` Offeringへ足すと**配布済みBuild（Build 4等）がPro+をProの月額として表示し得る**（Offeringを分けるか、Product ID優先の解決を先に配布してから足す。H-2と一緒に決める）②Pro→Pro+の購入で「購入成功→例外」になった場合、`wasProBefore`（=isPro）が真のため `error` になる（救済の判定を `tier` の昇格で見る形へ）③`purchase-confirm.tsx` の月額/年額2択と3画面の「高性能OCRは含まれません」文言
 
 **フェーズ：App Store初回リリース直前。コード側のrelease-critical修正は完了し、次回Preview Build＋実機/Sandbox確認待ち。**
 
