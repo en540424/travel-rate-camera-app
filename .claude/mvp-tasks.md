@@ -4,9 +4,16 @@
 
 > 本節が現在地の正。以下の「現在の開発フェーズ」以降は2026-07-01〜08時点の履歴で、完了済み項目を未完へ戻さない。
 
-> [!important] 2026-11-04 開発方針の更新（Human決定・最新）
+> [!important] 2026-11-04 Pro+の中核3機能（Human決定・最新）
+> - **Pro+の中核はGPS買い物マップ・旅行スケジュール（カレンダー連携）・AI翻訳（テキスト・リアルタイム音声）。** 現行の端末内OCR・翻訳は維持する。高性能OCRは中核に必須としない
+> - **AI音声には月間累計の上限が必須で、再接続・再起動・複数端末で回避できない設計にする。有料処理の累計はサーバー側で管理する**
+> - 価格（月額980円・年額9,800円が第一候補）・利用枠・採用事業者・カレンダー同期方式・地図のプラン別範囲・3プラン同時初回公開の最終承認は**未確定**
+> - 本branchには3機能の実装は無い。設計案：Vault `旅レートカメラ_ProPlus中核3機能_技術設計・原価制御_2026-11-04`（工程§10・未確定事項§11）。正本：Vault `旅レートカメラ_ProPlus・高性能OCR・クラウド機能_構想設計書_v1` 冒頭
+> - 実装時の注意：既存の `translation-service.ts`・`text-translation-service.ts`・OCRに触れない。DBは `conversion_history` へ列を足さず新テーブルで足す案（Human承認とdb-guardianが前提）。サーバー・鍵・EAS Build・ASC・RevenueCatの操作はHuman-only
+>
+> [!important] 2026-11-04 開発方針の更新（Human決定）
 > - **Free・Pro・Pro+の3段階の商品構成を目指す。Humanは3プラン同時の初回リリースを希望している。** 最終的な機能・価格・公開時期の承認はHuman
-> - 既存の良好なOCRは維持する。高性能OCRの採否・Pro+の価格・Freeの制限値・買い物マップの詳細は**未確定**
+> - 既存の良好なOCRは維持する。高性能OCRの採否・Pro+の価格・Freeの制限値・買い物マップの詳細は**未確定**（機能の中核は上の続報で確定）
 > - 現行の提出線（本branch）はFree＋Pro前提。3プラン同時初回公開を実行する場合、`20bfe92` のBuildは初回提出物にならない。**最終Production BuildのGOは、3プラン同時初回公開のHuman承認の後に判断する**
 > - 正本：Vault `旅レートカメラ_ProPlus・高性能OCR・クラウド機能_構想設計書_v1` 冒頭。調査結果・工程・未確定事項：Vault `旅レートカメラ_Free-Pro-ProPlus_3プラン実現調査_2026-11-04`
 > - **【2026-11-04続報】Tier基盤を別branch `feat/plan-tier-foundation`（base `d97977e`・worktree `trc-tier-foundation`・未Build・main未統合）で実装した。** Pro+の商品・価格・機能・購入画面は含まない。内容と確認事項は下記「Tier基盤」。候補branch `fix/calendar-back-and-yen-total` にはこの変更を入れていない（入れると次のBuildに載るため）
