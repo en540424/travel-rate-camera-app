@@ -58,7 +58,7 @@ npm run store-assets -- validate --run <run>
 - 前提：Xcode、対象のシミュレーター（`xcrun simctl list devices` の名前を `capture.ios.devices` に書く）、**シミュレーター向けにbuildしたアプリが入っていること**。
   buildはMac上の `npx expo run:ios --configuration Release`（EAS Buildの枠を使わない）か、EASのsimulatorプロファイル（Human GOが必要）。
 - 手順のスクリプトは、アプリを止めて**シミュレーター内の**アプリDBを退避（`.bak-<時刻>`）してからテストデータへ置き換え、ディープリンクで各画面を開いて撮る。実機・利用者の端末には触れない。
-- Mac miniは常駐用途なので、撮影は他の重い処理と重ねない。Windowsから Mac への接続の経路は無い（2026-11-21：このPCの tailnet に Mac は無く、ssh の設定にも無い）ため、Macでの実行は人が行う。どの端末からでも依頼する方法は下の「遠隔撮影」。
+- Mac miniは常駐用途なので、撮影は他の重い処理と重ねない。Windowsから Mac への接続の経路は未構築のため、Macでの実行は人が行う。どの端末からでも依頼する方法は下の「遠隔撮影」。
 
 ## 遠隔撮影（どの開発端末からでも依頼する）
 
@@ -79,7 +79,7 @@ npm run store-assets -- job-list     --profile <p>            # 一覧と out/<a
 | 実行先（`--target`） | 状態 | 費用 | 開始 |
 |---|---|---|---|
 | `github-actions-macos` | **テンプレートだけ**（`remote/github-actions/store-assets-ios.yml`。未実行・未検証）。使うには Human が `.github/workflows/` へ写して main へ入れる | 公開repoの標準ランナーは無料（private なら $0.062／分） | `job-dispatch --execute`（Windowsから可） |
-| `mac-mini` | 経路は未構築（Windowsから Mac への接続なし）。手で job.json を持って行き、Mac で `job-run`（保守窓を人が確かめた時だけ `--confirm-maintenance-window`） | 0円 | 人（Trading Lab の LIVE VM と同居。空きディスク30GB・空きメモリ20%を確認し、不明か足りなければ止まる。上限時間 `maxRuntimeMinutes` で止め、終わったらシミュレーターを shutdown） |
+| `mac-mini` | 経路は未構築（Windowsから Mac への接続なし）。手で job.json を持って行き、Mac で `job-run`（保守窓を人が確かめた時だけ `--confirm-maintenance-window`） | 0円 | 人（常駐の他の用途と同居。空きディスク30GB・空きメモリ20%を確認し、不明か足りなければ止まる。上限時間 `maxRuntimeMinutes` で止め、終わったらシミュレーターを shutdown） |
 | `local-macos` | 手元のMacで `job-run` | 0円 | 人 |
 
 - ジョブは40桁の commit を持つ（`actions/checkout` は短縮SHAを解決しない）。実行側は `git rev-parse HEAD` の完全一致と clean を確かめ、実際の HEAD を結果に記録する

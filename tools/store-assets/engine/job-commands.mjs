@@ -151,7 +151,7 @@ export async function cmdJobRun(args) {
   if (gitProblem) throw new Error(gitProblem);
   const onMacMini = job.target === 'mac-mini' || isMacMiniHost({ markerExists: () => fs.existsSync(path.join(os.homedir(), '.enexus', 'runtime-node-mac-mini')) });
   if (onMacMini && !args['confirm-maintenance-window']) {
-    throw new Error('Mac mini は Trading Lab の LIVE VM と同居しています。保守窓であることを人が確かめてから --confirm-maintenance-window を付けて実行してください（ジョブの実行先に関係なく、この Mac では必要）');
+    throw new Error('この Mac は常駐の他の用途と同居する実行機です。保守窓であることを人が確かめてから --confirm-maintenance-window を付けて実行してください（ジョブの実行先に関係なく、この Mac では必要）');
   }
   const pre = parsePreflight({ dfK: sh('df', ['-k', '/']), loadavg: sh('sysctl', ['-n', 'vm.loadavg']), memPressure: sh('memory_pressure', ['-Q']) });
   const result = { schema: RESULT_SCHEMA, jobId: job.id, purpose: job.purpose, git: { commit: git.full, dirty: git.dirty }, source: 'ios-simulator', startedAt: new Date().toISOString(), env: collectEnv(job), preflight: pre, captures: [] };
@@ -213,7 +213,7 @@ export function cmdJobDispatch(args) {
   console.log(`  1. repo を commit ${job.git.commit} にする（git fetch && git checkout ${job.git.commit}）。シミュレーター向けのアプリを用意する（npx expo run:ios --configuration Release 等。EAS Build は使わない）`);
   console.log(`  2. job.json をMacへ持って行く（手で写す。私的な置き場の自動の経路は未構築）`);
   console.log('  3. node tools/store-assets/engine/cli.mjs job-run --job <job.json> --app <アプリ.app>');
-  if (job.target === 'mac-mini') console.log('     Mac mini では、Trading Lab の LIVE 窓でないこと（保守窓）を人が確かめた時だけ --confirm-maintenance-window を足す');
+  if (job.target === 'mac-mini') console.log('     Mac mini では、保守窓であることを人が確かめた時だけ --confirm-maintenance-window を足す');
   console.log('  4. 結果のフォルダ（result.json と captures/）をこのPCへ持ち帰り、job-ingest --from で取り込む');
   if (args.execute) {
     if (!p.status) throw new Error('status.json がありません');

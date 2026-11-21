@@ -5,7 +5,7 @@
 // - ジョブは「commitを固定した」撮影の依頼。作業ツリーに未commitの変更がある状態では作らない（再現できないため）
 // - 結果は jobId・commit・デバイス・画面・sha256・寸法がジョブと一致したものだけ取り込む。撮影元は常に ios-simulator
 // - 結果にホスト名・IPアドレス・利用者のホームのパスを入れない（devlog relay と同じ規則）
-// - 実行先 mac-mini は Trading Lab の LIVE VM と同居しているため、人が保守窓であることを確かめて開始する（自動では始めない）
+// - 実行先 mac-mini は常駐の他の用途と同居する実行機のため、人が保守窓であることを確かめて開始する（自動では始めない）
 import { checkImageAgainstTarget, getTarget } from './specs.mjs';
 
 export const JOB_SCHEMA = 'store-assets/job-v1';
@@ -13,7 +13,7 @@ export const RESULT_SCHEMA = 'store-assets/result-v1';
 
 export const TARGETS = {
   'github-actions-macos': { label: 'GitHub ActionsのmacOSホストランナー', humanStart: false, runnerLabel: 'macos-26' },
-  'mac-mini': { label: 'Mac mini（Trading Lab LIVE VMと同居）', humanStart: true },
+  'mac-mini': { label: 'Mac mini（常駐の実行機・他の用途と同居）', humanStart: true },
   'local-macos': { label: '手元のMac', humanStart: true },
 };
 
@@ -215,7 +215,7 @@ export function preflightProblems(job, pre, { onMacMini = job.target === 'mac-mi
   const guard = onMacMini ? MAC_MINI_GUARD : (job.constraints ?? {});
   const min = guard.minFreeDiskGB;
   if (min != null && !(pre.freeDiskGB >= min)) p.push(`空きディスクが ${pre.freeDiskGB ?? '不明'}GB（必要 ${min}GB）`);
-  if (onMacMini && !(pre.memoryFreePercent >= MAC_MINI_GUARD.minMemoryFreePercent)) p.push(`空きメモリが ${pre.memoryFreePercent ?? '不明'}%（${MAC_MINI_GUARD.minMemoryFreePercent}%未満か不明。常駐のVM・Hermesと重ねない）`);
+  if (onMacMini && !(pre.memoryFreePercent >= MAC_MINI_GUARD.minMemoryFreePercent)) p.push(`空きメモリが ${pre.memoryFreePercent ?? '不明'}%（${MAC_MINI_GUARD.minMemoryFreePercent}%未満か不明。常駐の処理と重ねない）`);
   return p;
 }
 
