@@ -4,6 +4,16 @@
 
 > 本節が現在地の正。以下の「現在の開発フェーズ」以降は2026-07-01〜08時点の履歴で、完了済み項目を未完へ戻さない。
 
+> [!important] 2026-11-21 Pro+中核の実装（フラグで非表示）とE-NEXUS共通素材生成（branch `feat/proplus-core-and-store-assets`・base `8d9807e`・**未Build・main未統合**）
+> - **素材生成**：`tools/store-assets/`（README参照）。実アプリのWeb版から撮影→App Store・広告・LP用の画像を生成・検証（draftは透かし付き）。iOSシミュレーター撮影は手順スクリプト＋テストデータDBを生成し、**Macでの実行はHuman**。Web版の画像はfinal（提出用）に使えない。未公開機能（Pro+）を文言に使うと設定で拒否
+> - **Pro+ 買い物マップ・旅行の予定**：`src/lib/proplus/`・`src/app/proplus/`。`SHOW_PRO_PLUS=false`（本番で出ない）、`DEV_PRO_PLUS_PREVIEW=__DEV__`（開発ビルドだけ表示）。**保存は既存DBとは別のJSONファイル**（既存のテーブル・migration・保存処理は不変）。DB v8は下書きのみ（`design/proplus-db-v8-draft.md`・H-P5待ち）
+> - **Pro+ AI翻訳（アプリ側）**：`src/lib/ai/`・`src/app/proplus/ai-translate.tsx`。`AI_GATEWAY_URL=null`のため本番は「準備中」、開発ビルドだけ通信しない模擬。鍵なし・有料API通信なし。利用量はサーバーが正（アプリは表示のみ）
+> - ネイティブ依存 react-native-maps・expo-location・expo-calendar を独立commit（`2bd8c20`）で追加。**このbranchのBuildは新しいdevelopment buildが必要**。用途文は「使用中の位置情報」と「カレンダーへの追加」だけ
+> - 境界テスト：`src/config/limits.test.mjs`（無料1旅行10件・記録中1件・再開不可、Pro+はProを包含）。数値・判定は不変
+> - このworktreeの `node_modules` は primaryへのJunctionから**専用の実体**へ切り替えた（他worktreeは不変）
+> - 検証：`npm test` 887 pass／`npm run test:store-assets` 17 pass／tsc pass／lint 20（baseline）。**独立検収（Fable 5.2 high）：本番Free/Proへのblockerなし、should-fix 7件は `2c91d51` で全反映**。実機確認は `TEST_CHECKLIST.md` #88〜#93（未実施）
+> - 残り（Human）：Pro+商品・価格・枠（H-P1・H-P3）、DB v8（H-P5）、中継の外部入口・鍵・本番環境（H-P2・H-P12）、Macでの撮影、development build、共通基盤への移管先
+>
 > [!important] 2026-11-04 Pro+の中核3機能（Human決定・最新）
 > - **Pro+の中核はGPS買い物マップ・旅行スケジュール（カレンダー連携）・AI翻訳（テキスト・リアルタイム音声）。** 現行の端末内OCR・翻訳は維持する。高性能OCRは中核に必須としない
 > - **AI音声には月間累計の上限が必須で、再接続・再起動・複数端末で回避できない設計にする。有料処理の累計はサーバー側で管理する**
