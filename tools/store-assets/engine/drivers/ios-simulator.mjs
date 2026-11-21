@@ -70,16 +70,24 @@ export function planToShellScript(steps, header = '') {
   return lines.join('\n');
 }
 
-/** macOSで手順を実行する。macOS以外では例外。deadline（ms の時刻）を過ぎたら次の手順へ進まない。 */
+/**
+ * 手順を1本のシェルで実行するスクリプトにする（手順の間で変数を引き継ぐ。例：DATA_DIR）。各手順の前に説明を表示する。
+ * 手順を別々のシェルで実行すると、前の手順で決めた変数が次の手順で空になる
+ */
+export function planToRunScript(steps) {
+  const lines = ['set -euo pipefail'];
+  for (const s of steps) lines.push(`echo ${shellQuote(`[ios] ${s.note}`)}`, s.cmd);
+  return lines.join('\n');
+}
+
+/** macOSで手順を実行する。macOS以外では例外。deadline（ms の時刻）を過ぎたら止める（シェルごと打ち切る）。 */
 export async function runIosPlan(steps, log = console.log, { deadline = Infinity } = {}) {
   if (process.platform !== 'darwin') {
     throw new Error('iOSシミュレーターの撮影はmacOSでのみ実行できます。`plan-ios` で手順を書き出してMacで実行してください');
   }
-  const { execSync } = await import('node:child_process');
-  for (const s of steps) {
-    const left = deadline - Date.now();
-    if (left <= 0) throw new Error('実行の時間の上限を超えた（maxRuntimeMinutes）');
-    log(`[ios] ${s.note}`);
-    execSync(s.cmd, { stdio: 'inherit', shell: '/bin/bash', timeout: Number.isFinite(left) ? left : undefined });
-  }
+  const { execFileSync } = await import('node:child_process');
+  const left = deadline - Date.now();
+  if (left <= 0) throw new Error('実行の時間の上限を超えた（maxRuntimeMinutes）');
+  log(`[ios] 手順 ${steps.length}件を1本のシェルで実行する`);
+  execFileSync('/bin/bash', ['-c', planToRunScript(steps)], { stdio: 'inherit', timeout: Number.isFinite(left) ? left : undefined });
 }

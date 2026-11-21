@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { planIosCapture } from './drivers/ios-simulator.mjs';
+import { planIosCapture, planToRunScript } from './drivers/ios-simulator.mjs';
 import { buildJobSteps, cmdJobIngest, cmdJobRun, cmdJobStatus, makeCiCommit, pickSimulators } from './job-commands.mjs';
 import {
   captureRel, CI_BRANCH_PREFIX, CI_JOB_FILE, ciBranchFor, createJob, forbiddenIdentifiers, githubDispatchArgs, githubDownloadArgs, isMacMiniHost, newStatus, parsePreflight,
@@ -382,4 +382,16 @@ test('CI：依頼のcommitは作業ツリー・HEAD・indexに触れず、ジョ
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
   }
+});
+
+test('iOSの手順は1本のシェルで実行する（前の手順で決めた変数を次の手順で使える。初回の実行で DATA_DIR が空になった不具合の回帰）', () => {
+  const steps = planIosCapture({ device: 'X', bundleId: 'b', outDir: '/o', screens: [], fixtureDb: '/f.db', dbRelPath: 'Documents/SQLite/a.db' });
+  const script = planToRunScript(steps);
+  assert.ok(script.startsWith('set -euo pipefail\n'));
+  assert.ok(script.indexOf('DATA_DIR="$(xcrun simctl get_app_container') < script.indexOf('test -n "$DATA_DIR"'));
+  const bash = spawnSync('bash', ['-c', planToRunScript([{ cmd: 'X=1', note: 'a' }, { cmd: 'test "$X" = 1', note: 'b' }])], { encoding: 'utf8' });
+  if (bash.error) return; // bash の無い環境では形の検査だけ
+  assert.equal(bash.status, 0, bash.stderr);
+  assert.ok(bash.stdout.includes('[ios] a') && bash.stdout.includes('[ios] b'));
+  assert.notEqual(spawnSync('bash', ['-c', planToRunScript([{ cmd: 'false', note: 'a' }, { cmd: 'true', note: 'b' }])]).status, 0, '途中の失敗で止まる');
 });
