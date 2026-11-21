@@ -20,6 +20,7 @@ export default function ProPlusHome() {
       <SectionCard padding={0}>
         <SettingRow label="買い物マップ" value={`${places}か所`} onPress={() => router.push('/proplus/map')} />
         <SettingRow label="旅行の予定" value={`${events}件`} onPress={() => router.push('/proplus/schedule')} />
+        <SettingRow label="AI翻訳" onPress={() => router.push('/proplus/ai-translate')} />
       </SectionCard>
     </ScrollView>
   );
