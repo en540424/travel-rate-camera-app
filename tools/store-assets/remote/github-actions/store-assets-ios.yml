@@ -39,7 +39,7 @@ jobs:
             const j = JSON.parse(require("fs").readFileSync(process.env.RUNNER_TEMP + "/job.json", "utf8"));
             if (j.schema !== "store-assets/job-v1") throw new Error("schema");
             if (j.target !== "github-actions-macos") throw new Error("target が github-actions-macos ではない");
-            if (!/^[0-9a-f]{7,40}$/.test(j.git.commit)) throw new Error("commit");
+            if (!/^[0-9a-f]{40}$/.test(j.git.commit)) throw new Error("commit は40桁");
             if (!/^[A-Za-z0-9._-]+$/.test(j.id)) throw new Error("id");
             console.log("commit=" + j.git.commit);
             console.log("id=" + j.id);
@@ -49,6 +49,7 @@ jobs:
         with:
           ref: ${{ steps.job.outputs.commit }}
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -71,7 +72,8 @@ jobs:
       - name: シミュレーター向けに build（署名なし・EAS Build は使わない）
         run: |
           WS=$(ls -d ios/*.xcworkspace | head -1)
-          SCHEME=$(xcodebuild -list -json -workspace "$WS" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).workspace.schemes.find(x=>!/^Pods/.test(x))))')
+          NAME=$(basename "$WS" .xcworkspace)
+          SCHEME=$(xcodebuild -list -json -workspace "$WS" | NAME="$NAME" node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const l=JSON.parse(s).workspace.schemes;const x=l.includes(process.env.NAME)?process.env.NAME:null;if(!x)throw new Error("workspace と同じ名前の scheme が無い");console.log(x)})')
           xcodebuild -workspace "$WS" -scheme "$SCHEME" -configuration Release -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/dd" CODE_SIGNING_ALLOWED=NO build
           echo "APP=$(ls -d "$RUNNER_TEMP"/dd/Build/Products/Release-iphonesimulator/*.app | head -1)" >> "$GITHUB_ENV"

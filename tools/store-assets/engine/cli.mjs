@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 
 import { captureWeb, exportWeb } from './drivers/web-preview.mjs';
 import { planIosCapture, planToShellScript } from './drivers/ios-simulator.mjs';
-import { completenessProblems, galleryHtml, planOutputs, renderPlan, sha256, validateOutputs, verifyCaptures } from './pipeline.mjs';
+import { completenessProblems, excludeDraftJobCaptures, galleryHtml, planOutputs, renderPlan, sha256, validateOutputs, verifyCaptures } from './pipeline.mjs';
 import { defaultRunDir, gitInfo, projectRootOf, readCaptures, writeCaptures } from './runs.mjs';
 import { cmdJobCreate, cmdJobDispatch, cmdJobFetch, cmdJobIngest, cmdJobList, cmdJobRun, cmdJobStatus, cmdJobValidate } from './job-commands.mjs';
 import { loadProfile } from './profile.mjs';
@@ -128,7 +128,7 @@ function cmdImport(profile, args, runDir) {
 
 async function cmdCompose(profile, args, runDir) {
   const mode = args.mode === 'final' ? 'final' : 'draft';
-  const verified = verifyCaptures(readCaptures(runDir).map((c) => ({ ...c, file: path.join(runDir, c.file) })));
+  const verified = excludeDraftJobCaptures(mode, verifyCaptures(readCaptures(runDir).map((c) => ({ ...c, file: path.join(runDir, c.file) }))));
   for (const r of verified.rejected) console.warn(`[compose] 使わない撮影：${r.screen} ${r.locale} ${r.source}（${r.reason}）`);
   const plan = planOutputs(profile, verified.ok, { mode, locales: args.locale ? [args.locale] : undefined });
   const root = projectRootOf(profile);

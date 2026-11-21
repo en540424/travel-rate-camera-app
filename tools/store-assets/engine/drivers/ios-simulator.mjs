@@ -66,14 +66,16 @@ export function planToShellScript(steps, header = '') {
   return lines.join('\n');
 }
 
-/** macOSで手順を実行する。macOS以外では例外。 */
-export async function runIosPlan(steps, log = console.log) {
+/** macOSで手順を実行する。macOS以外では例外。deadline（ms の時刻）を過ぎたら次の手順へ進まない。 */
+export async function runIosPlan(steps, log = console.log, { deadline = Infinity } = {}) {
   if (process.platform !== 'darwin') {
     throw new Error('iOSシミュレーターの撮影はmacOSでのみ実行できます。`plan-ios` で手順を書き出してMacで実行してください');
   }
   const { execSync } = await import('node:child_process');
   for (const s of steps) {
+    const left = deadline - Date.now();
+    if (left <= 0) throw new Error('実行の時間の上限を超えた（maxRuntimeMinutes）');
     log(`[ios] ${s.note}`);
-    execSync(s.cmd, { stdio: 'inherit', shell: '/bin/bash' });
+    execSync(s.cmd, { stdio: 'inherit', shell: '/bin/bash', timeout: Number.isFinite(left) ? left : undefined });
   }
 }

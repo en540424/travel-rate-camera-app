@@ -8,20 +8,21 @@ import { fileURLToPath } from 'node:url';
 import { planIosCapture } from './drivers/ios-simulator.mjs';
 import { buildJobSteps, cmdJobIngest, cmdJobRun, cmdJobStatus } from './job-commands.mjs';
 import {
-  captureRel, createJob, forbiddenIdentifiers, githubDispatchArgs, githubDownloadArgs, newStatus, parsePreflight,
-  preflightProblems, RESULT_SCHEMA, transition, validateJob, verifyResult,
+  captureRel, createJob, forbiddenIdentifiers, githubDispatchArgs, githubDownloadArgs, isMacMiniHost, newStatus, parsePreflight,
+  preflightProblems, redactIdentifiers, RESULT_SCHEMA, transition, validateJob, verifyResult,
 } from './jobs.mjs';
-import { sha256 } from './pipeline.mjs';
+import { excludeDraftJobCaptures, sha256 } from './pipeline.mjs';
 import { encodeRgbPng, readPngInfo } from './png.mjs';
 import { loadProfile } from './profile.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TABIRATE = path.join(HERE, '..', 'apps', 'tabirate', 'profile.json');
 const profile = loadProfile(TABIRATE);
-const GIT = { commit: 'abc1234', dirty: false };
+const FULL = 'abc1234'.padEnd(40, '0');
+const GIT = { commit: 'abc1234', full: FULL, dirty: false };
 const NOW = new Date('2026-11-21T01:02:03Z');
 
-function png(w, h, shade) {
+function png(w = 320, h = 640, shade = 0) {
   const pixels = Buffer.alloc(w * h * 4);
   for (let i = 0; i < w * h; i++) pixels.set([shade, 100, 200, 255], i * 4);
   return encodeRgbPng({ width: w, height: h, pixels });
@@ -37,13 +38,13 @@ function makeResult(j, { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-result-
   let shade = 10;
   for (const device of j.devices) for (const locale of j.locales) for (const screen of j.screens) {
     const rel = captureRel(device, locale, screen);
-    const buf = png(6, 13, shade += 20);
+    const buf = png(320, 640, shade += 20);
     fs.mkdirSync(path.join(dir, path.dirname(rel)), { recursive: true });
     fs.writeFileSync(path.join(dir, rel), buf);
-    captures.push({ device, locale, screen, file: rel, sha256: sha256(buf), width: 6, height: 13 });
+    captures.push({ device, locale, screen, file: rel, sha256: sha256(buf), width: 320, height: 640 });
   }
   const result = {
-    schema: RESULT_SCHEMA, jobId: j.id, git: { commit: j.git.commit }, source: 'ios-simulator', status: 'succeeded',
+    schema: RESULT_SCHEMA, jobId: j.id, purpose: j.purpose, git: { commit: j.git.commit, dirty: false }, source: 'ios-simulator', status: 'succeeded',
     env: env ?? { runner: 'github-actions', macos: '26.7.2', xcode: 'Xcode 26.6', devices: j.devices.map((name) => ({ name, runtime: 'iOS-26-5' })) },
     startedAt: NOW.toISOString(), finishedAt: NOW.toISOString(), captures,
   };
@@ -60,8 +61,10 @@ const verify = (j, dir) => {
 test('job：設定から作れて検証を通る。未commitの変更・無いデバイス・無い画面・Web版の撮影元は拒否', () => {
   const j = job();
   assert.equal(j.id, 'tabirate-20261121-010203-abc1234');
+  assert.equal(j.git.commit, FULL); // actions/checkout が解決できる40桁
   assert.deepEqual(validateJob(j, profile), []);
-  assert.ok(validateJob({ ...j, git: { commit: 'abc1234', dirty: true } }, profile).some((p) => p.includes('未commit')));
+  assert.ok(validateJob({ ...j, git: { commit: 'abc1234', dirty: false } }, profile).some((p) => p.includes('40桁')));
+  assert.ok(validateJob({ ...j, git: { commit: FULL, dirty: true } }, profile).some((p) => p.includes('未commit')));
   assert.ok(validateJob(job({ devices: ['iPhone 99'] }), profile).some((p) => p.includes('iPhone 99')));
   assert.ok(validateJob(job({ screens: ['nope'] }), profile).some((p) => p.includes('nope')));
   assert.ok(validateJob({ ...j, source: 'web-preview' }, profile).some((p) => p.includes('ios-simulator')));
@@ -95,9 +98,15 @@ test('結果の検証：正しい結果は通る', () => {
 
 test('結果の検証：撮影後の差し替え・別のcommit・別のジョブ・失敗した実行・撮影元の偽り・寸法の偽りを拒否', () => {
   const j = job();
-  const tampered = makeResult(j, { mutate: (r, dir) => fs.writeFileSync(path.join(dir, r.captures[0].file), png(6, 13, 250)) });
+  const tampered = makeResult(j, { mutate: (r, dir) => fs.writeFileSync(path.join(dir, r.captures[0].file), png(320, 640, 250)) });
   assert.ok(verify(j, tampered.dir).problems.some((p) => p.includes('sha256')));
-  assert.ok(verify(j, makeResult(j, { mutate: (r) => { r.git.commit = 'def5678'; } }).dir).problems.some((p) => p.includes('commit')));
+  assert.ok(verify(j, makeResult(j, { mutate: (r) => { r.git.commit = 'def5678'.padEnd(40, '0'); } }).dir).problems.some((p) => p.includes('commit')));
+  assert.ok(verify(j, makeResult(j, { mutate: (r) => { r.git.dirty = true; } }).dir).problems.some((p) => p.includes('clean')));
+  assert.ok(verify(j, makeResult(j, { mutate: (r) => { r.captures = []; } }).dir).problems.some((p) => p.includes('1枚も無い')));
+  assert.ok(verify(j, makeResult(j, { mutate: (r) => { r.captures.push(null, { device: ['x'] }); } }).dir).problems.some((p) => p.includes('形が不正')));
+  assert.ok(verify(j, makeResult(j, { mutate: (r) => { r.env.devices = [{ name: 'iPhone 17', runtime: 'x' }]; } }).dir).problems.some((p) => p.includes('env.devices にジョブのデバイス')));
+  const small = makeResult(j, { mutate: (r, dir) => { const b = png(6, 13); fs.writeFileSync(path.join(dir, r.captures[0].file), b); Object.assign(r.captures[0], { sha256: sha256(b), width: 6, height: 13 }); } });
+  assert.ok(verify(j, small.dir).problems.some((p) => p.includes('小さすぎる')));
   assert.ok(verify(j, makeResult(j, { mutate: (r) => { r.jobId = 'other'; } }).dir).problems.some((p) => p.includes('jobId')));
   assert.ok(verify(j, makeResult(j, { mutate: (r) => { r.status = 'failed'; r.error = 'x'; } }).dir).problems.some((p) => p.includes('成功していない')));
   assert.ok(verify(j, makeResult(j, { mutate: (r) => { r.source = 'web-preview'; } }).dir).problems.some((p) => p.includes('ios-simulator')));
@@ -111,7 +120,16 @@ test('結果の検証：撮影環境の記録が無い・ホスト名やIPやホ
   const leak = makeResult(j, { mutate: (r) => { r.env.host = 'mac-mini.local'; r.env.ip = '192.168.1.20'; r.env.path = '/Users/someone/app'; } });
   const p = verify(j, leak.dir).problems.join(' ');
   for (const k of ['IPアドレス', 'ホスト名', 'ホームのパス']) assert.ok(p.includes(k), k);
-  assert.deepEqual(forbiddenIdentifiers('{"xcode":"Xcode 26.6","macos":"26.7.2","runtime":"iOS-26-5"}'), []);
+  assert.deepEqual(forbiddenIdentifiers('{"xcode":"Xcode 26.6","macos":"26.7.2","runtime":"iOS-26-5","at":"2026-11-21T05:31:19.460Z","ImageVersion":"20261117.0516.1"}'), []);
+  for (const [text, label] of [
+    [JSON.stringify({ e: 'C:\\Users\\someone\\x' }), 'Windowsのホームのパス'],
+    ['addr 2001:db8::1 here', 'IPv6アドレス'],
+    ['/Volumes/External/x', 'ボリューム'],
+    ['mac.tail1234.ts.net', 'tailnet'],
+  ]) assert.ok(forbiddenIdentifiers(text).some((l) => l.includes(label)), label);
+  const red = redactIdentifiers("Command failed: cp '/Users/someone/out/x.png' to 10.0.0.2", [['/Users/someone/out', '<out>']]);
+  assert.ok(red.includes('<out>') && !red.includes('someone') && !red.includes('10.0.0.2'));
+  assert.deepEqual(forbiddenIdentifiers(red), []);
 });
 
 test('結果の検証：draft は撮れなかった画面を問題にしないが、final-candidate は問題にする', () => {
@@ -200,6 +218,63 @@ test('資源の確認：空きディスク・空きメモリを値だけ読み�
   const p = preflightProblems(job({ target: 'mac-mini' }), pre);
   assert.equal(p.length, 2);
   assert.deepEqual(preflightProblems(job(), pre), []);
+  // Mac mini の守りはジョブの記載に依存しない：constraints を消しても、ホストが Mac mini なら効く。不明な値では止まる
+  const stripped = { ...job({ target: 'local-macos' }), constraints: {} };
+  assert.equal(preflightProblems(stripped, { freeDiskGB: 100 }, { onMacMini: true }).length, 1);
+  assert.equal(preflightProblems(stripped, {}, { onMacMini: true }).length, 2);
+  assert.equal(isMacMiniHost({ env: { ENEXUS_RUNTIME_NODE: 'mac-mini' } }), true);
+  assert.equal(isMacMiniHost({ env: {}, markerExists: () => true }), true);
+  assert.equal(isMacMiniHost({ env: {} }), false);
+});
+
+test('取り込み：終わった状態・失敗の後のジョブには副作用の前に断る。失敗の結果は created からでも failed を記録する', () => {
+  const j = job();
+  for (const state of ['failed', 'cancelled', 'ingested']) {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `sa-state-${state}-`));
+    fs.writeFileSync(path.join(tmp, 'job.json'), JSON.stringify(j));
+    fs.writeFileSync(path.join(tmp, 'status.json'), JSON.stringify({ ...newStatus(j), state }));
+    const run = path.join(tmp, 'run');
+    assert.throws(() => cmdJobIngest({ job: tmp, profile: TABIRATE, from: makeResult(j).dir, run }), /取り込めない/);
+    assert.ok(!fs.existsSync(path.join(run, 'captures.json')));
+  }
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-created-fail-'));
+  fs.writeFileSync(path.join(tmp, 'job.json'), JSON.stringify(j));
+  fs.writeFileSync(path.join(tmp, 'status.json'), JSON.stringify(newStatus(j)));
+  assert.throws(() => cmdJobIngest({ job: tmp, profile: TABIRATE, from: makeResult(j, { mutate: (r) => { r.status = 'failed'; } }).dir, run: path.join(tmp, 'run') }));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(tmp, 'status.json'), 'utf8')).state, 'failed');
+});
+
+test('取り込み：別のデバイスの撮影がある run へは入れない（1台目の記録を消さない）', () => {
+  const j = job({ devices: ['iPhone 17 Pro Max', 'iPhone 17'] });
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-2dev-'));
+  fs.writeFileSync(path.join(tmp, 'job.json'), JSON.stringify(j));
+  const { dir } = makeResult(j);
+  const run = path.join(tmp, 'run');
+  cmdJobIngest({ job: tmp, profile: TABIRATE, from: dir, run, device: 'iPhone 17 Pro Max' });
+  fs.writeFileSync(path.join(tmp, 'status.json'), JSON.stringify(transition(newStatus(j), 'dispatched')));
+  assert.throws(() => cmdJobIngest({ job: tmp, profile: TABIRATE, from: dir, run, device: 'iPhone 17' }), /別のデバイス/);
+  const caps = JSON.parse(fs.readFileSync(path.join(run, 'captures.json'), 'utf8'));
+  assert.ok(caps.every((c) => c.device === 'iPhone 17 Pro Max'));
+});
+
+test('取り込み：新しい run へ入れる時も、同じアプリの他の run のWeb版の撮影と照らす', () => {
+  const j = job();
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-webscan-'));
+  fs.writeFileSync(path.join(tmp, 'job.json'), JSON.stringify(j));
+  const { dir, result } = makeResult(j);
+  const appOut = path.join(tmp, 'app');
+  fs.mkdirSync(path.join(appOut, 'older-run'), { recursive: true });
+  fs.writeFileSync(path.join(appOut, 'older-run', 'captures.json'), JSON.stringify([{ screen: 'history', locale: 'ja', source: 'web-preview', file: 'x.png', sha256: result.captures[1].sha256 }]));
+  assert.throws(() => cmdJobIngest({ job: tmp, profile: TABIRATE, from: dir, run: path.join(appOut, 'new-run') }), /Web版/);
+  assert.ok(!fs.existsSync(path.join(appOut, 'new-run')));
+});
+
+test('final：draft のジョブの撮影は使わず、理由を残す。draft の合成では使う', () => {
+  const caps = [{ screen: 'history', locale: 'ja', source: 'ios-simulator', job: { purpose: 'draft' } }, { screen: 'calendar', locale: 'ja', source: 'ios-simulator', job: { purpose: 'final-candidate' } }, { screen: 'help', locale: 'ja', source: 'device' }];
+  const f = excludeDraftJobCaptures('final', { ok: caps, rejected: [] });
+  assert.deepEqual(f.ok.map((c) => c.screen), ['calendar', 'help']);
+  assert.ok(f.rejected[0].reason.includes('draft'));
+  assert.equal(excludeDraftJobCaptures('draft', { ok: caps, rejected: [] }).ok.length, 3);
 });
 
 test('GitHub：依頼と取得のコマンドを作る（実行はしない）', () => {
@@ -217,5 +292,7 @@ test('workflow のテンプレート：既定のworkflowの場所に無く、手
   assert.ok(!/^\s*(push|pull_request|schedule):/m.test(t));
   assert.ok(!t.includes('secrets.'));
   assert.ok(/permissions:\s*\n\s*contents: read/.test(t));
+  assert.ok(t.includes('persist-credentials: false'));
+  assert.ok(t.includes('{40}'));
   assert.ok(!t.includes('${{ inputs.job_json }}"') && t.includes('JOB_JSON: ${{ inputs.job_json }}'));
 });

@@ -43,6 +43,18 @@ export function completenessProblems(mode, storeTargets, skipped, outputs) {
   return problems;
 }
 
+/** final では draft のジョブで撮った画像を使わない（全画面を揃える final-candidate のジョブで撮り直す）。 */
+export function excludeDraftJobCaptures(mode, verified) {
+  if (mode !== 'final') return verified;
+  const ok = [];
+  const rejected = [...verified.rejected];
+  for (const c of verified.ok) {
+    if (c.job?.purpose === 'draft') rejected.push({ screen: c.screen, locale: c.locale, source: c.source, reason: 'draft のジョブの撮影（final には final-candidate のジョブが要る）' });
+    else ok.push(c);
+  }
+  return { ok, rejected };
+}
+
 /** 画面・言語ごとに、最も優先度の高い撮影記録を選ぶ。 */
 export function pickCapture(captures, screen, locale) {
   const list = captures.filter((c) => c.screen === screen && c.locale === locale);

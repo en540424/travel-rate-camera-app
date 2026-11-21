@@ -28,6 +28,9 @@ export const TRANSITIONS = {
   cancelled: [],
 };
 
+/** Mac mini の守り（ジョブの記載ではなくコードの値を使う。ジョブから消しても弱まらない） */
+export const MAC_MINI_GUARD = Object.freeze({ maintenanceWindowRequired: true, minFreeDiskGB: 30, minMemoryFreePercent: 20 });
+
 export const slug = (s) => String(s).replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
 
 function stamp(d) {
@@ -46,10 +49,10 @@ export function createJob(profile, git, opts) {
   const screens = opts.screens?.length ? opts.screens : profile.capture.screens.filter((s) => s.deepLink).map((s) => s.id);
   const job = {
     schema: JOB_SCHEMA,
-    id: `${profile.app.id}-${stamp(now)}-${git.commit}`,
+    id: `${profile.app.id}-${stamp(now)}-${String(git.full ?? git.commit).slice(0, 7)}`,
     app: { id: profile.app.id, bundleId: profile.app.bundleId },
     profile: opts.profileRel ?? null,
-    git: { commit: git.commit, dirty: git.dirty },
+    git: { commit: git.full ?? git.commit, dirty: git.dirty }, // 40桁（actions/checkout は短縮SHAを解決しない）
     target: opts.target,
     source: 'ios-simulator',
     purpose: opts.purpose ?? 'draft',
@@ -58,7 +61,7 @@ export function createJob(profile, git, opts) {
       maxRuntimeMinutes: opts.maxRuntimeMinutes ?? 60,
       secrets: 'none',
       humanStart: TARGETS[opts.target]?.humanStart ?? true,
-      ...(opts.target === 'mac-mini' ? { maintenanceWindowRequired: true, minFreeDiskGB: 30 } : {}),
+      ...(opts.target === 'mac-mini' ? MAC_MINI_GUARD : {}),
     },
     createdAt: now.toISOString(),
   };
@@ -70,7 +73,8 @@ export function validateJob(job, profile) {
   const p = [];
   if (job?.schema !== JOB_SCHEMA) p.push(`schema は ${JOB_SCHEMA}`);
   if (!TARGETS[job?.target]) p.push(`target は ${Object.keys(TARGETS).join('/')} のどれか`);
-  if (!/^[0-9a-f]{7,40}$/.test(job?.git?.commit ?? '')) p.push('git.commit がcommitのハッシュではない');
+  if (!/^[0-9a-f]{40}$/.test(job?.git?.commit ?? '')) p.push('git.commit が40桁のcommitのハッシュではない');
+  if (!/^[A-Za-z0-9._-]+$/.test(job?.id ?? '')) p.push('id に使えない文字がある');
   if (job?.git?.dirty !== false) p.push('未commitの変更がある状態のジョブは撮影を再現できない（commitしてから作る）');
   if (job?.source !== 'ios-simulator') p.push('source は ios-simulator だけ（Web版や実機の画像をこの経路で扱わない）');
   if (!['draft', 'final-candidate'].includes(job?.purpose)) p.push('purpose は draft / final-candidate');
@@ -99,18 +103,29 @@ export function newStatus(job, at = new Date().toISOString()) {
 }
 
 // 結果に入れてはいけない識別子（ホスト名・IP・ホームのパス・メール）
+// 注：4区切りの版番号（例 1.2.3.4）はIPアドレスと区別できず、拒否される（今の Xcode・macOS・ランタイムの表記は3区切り以下）
 const FORBIDDEN = [
-  [/\b\d{1,3}(\.\d{1,3}){3}\b/, 'IPアドレス'],
-  [/\b[0-9a-f]{0,4}(:[0-9a-f]{0,4}){5,7}\b/i, 'IPv6／MACアドレス'],
-  [/[A-Za-z0-9-]+\.(local|lan|internal)\b/i, '.local等のホスト名'],
-  [/\/Users\/[^/\s"]+/, 'macOSのホームのパス'],
-  [/[A-Za-z]:\\Users\\[^\\\s"]+/, 'Windowsのホームのパス'],
-  [/\/home\/[^/\s"]+/, 'Linuxのホームのパス'],
-  [/[\w.+-]+@[\w-]+\.[\w.]+/, 'メールアドレス'],
+  [/\b\d{1,3}(\.\d{1,3}){3}\b/g, 'IPアドレス'],
+  [/\b[0-9a-f]{1,4}(:[0-9a-f]{0,4}){5,7}\b/gi, 'IPv6／MACアドレス'],
+  [/\b[0-9a-f]{1,4}(:[0-9a-f]{1,4})*::([0-9a-f]{1,4}(:[0-9a-f]{1,4})*)?\b/gi, 'IPv6アドレス'],
+  [/[A-Za-z0-9-]+\.(local|lan|internal|ts\.net)\b/gi, '.local・tailnet等のホスト名'],
+  [/\/Users\/[^/\s"']+/g, 'macOSのホームのパス'],
+  [/\/Volumes\/[^/\s"']+/g, 'macOSのボリュームのパス'],
+  [/[A-Za-z]:\\{1,2}Users\\{1,2}[^\\\s"']+/g, 'Windowsのホームのパス'],
+  [/\/home\/[^/\s"']+/g, 'Linuxのホームのパス'],
+  [/[\w.+-]+@[\w-]+\.[\w.]+/g, 'メールアドレス'],
 ];
 
 export function forbiddenIdentifiers(text) {
-  return FORBIDDEN.filter(([re]) => re.test(text)).map(([, label]) => label);
+  return FORBIDDEN.filter(([re]) => new RegExp(re.source, re.flags.replace('g', '')).test(text)).map(([, label]) => label);
+}
+
+/** 実行側で結果へ書く前に伏せる（エラーの文言にパスやホスト名が混ざるため）。 */
+export function redactIdentifiers(text, replacements = []) {
+  let t = String(text);
+  for (const [from, to] of replacements) if (from) t = t.split(from).join(to);
+  for (const [re] of FORBIDDEN) t = t.replace(re, '<伏せた>');
+  return t;
 }
 
 /** 結果のファイルの置き場所（resultDir からの相対）。 */
@@ -122,7 +137,7 @@ export function captureRel(device, locale, screen) {
  * 結果の検証。readFile(rel) は Buffer を返す（無ければ例外）。hash(buf)・pngInfo(buf) は呼び出し側から渡す。
  * 返す値：{ ok, problems, missing }。missing（撮れなかった画面）は draft では問題にせず、final-candidate では問題にする。
  */
-export function verifyResult(job, result, { readFile, hash, pngInfo, rawText = '' }) {
+export function verifyResult(job, result, { readFile, hash, pngInfo, rawText = '', minSide = 320 }) {
   const problems = [];
   if (result?.schema !== RESULT_SCHEMA) problems.push(`schema は ${RESULT_SCHEMA}`);
   if (result?.jobId !== job.id) problems.push(`jobId がジョブと違う（${result?.jobId}）`);
@@ -135,10 +150,17 @@ export function verifyResult(job, result, { readFile, hash, pngInfo, rawText = '
   const leaked = forbiddenIdentifiers(rawText || JSON.stringify(result ?? {}));
   if (leaked.length) problems.push(`結果に入れてはいけない識別子がある：${leaked.join('・')}`);
 
+  if (result?.git?.dirty !== false) problems.push('実行した作業ツリーが clean だった記録が無い');
+  if (!Array.isArray(result?.captures) || result.captures.length === 0) problems.push('撮影が1枚も無い');
+  const envNames = new Set((env.devices ?? []).map((d) => d?.name));
+  for (const d of job.devices ?? []) if (!envNames.has(d)) problems.push(`env.devices にジョブのデバイス ${d} が無い`);
   const want = new Set();
   for (const d of job.devices) for (const l of job.locales) for (const s of job.screens) want.add(`${d}|${l}|${s}`);
   const seen = new Set();
-  for (const c of result?.captures ?? []) {
+  for (const c of Array.isArray(result?.captures) ? result.captures : []) {
+    if (!c || typeof c !== 'object' || ![c.device, c.locale, c.screen, c.file, c.sha256].every((x) => typeof x === 'string') || !Number.isInteger(c.width) || !Number.isInteger(c.height)) {
+      problems.push('撮影の記録の形が不正'); continue;
+    }
     const key = `${c.device}|${c.locale}|${c.screen}`;
     if (!want.has(key)) { problems.push(`ジョブに無い撮影：${key}`); continue; }
     if (seen.has(key)) { problems.push(`同じ撮影が2回ある：${key}`); continue; }
@@ -150,6 +172,7 @@ export function verifyResult(job, result, { readFile, hash, pngInfo, rawText = '
     let info;
     try { info = pngInfo(buf); } catch { problems.push(`PNGではない：${c.file}`); continue; }
     if (info.width !== c.width || info.height !== c.height) problems.push(`寸法の記録が画像と違う：${c.file}`);
+    else if (Math.min(info.width, info.height) < minSide) problems.push(`画像が小さすぎる（${info.width}x${info.height}）：${c.file}`);
   }
   const missing = [...want].filter((k) => !seen.has(k));
   if (job.purpose === 'final-candidate') for (const m of missing) problems.push(`撮れていない：${m}`);
@@ -187,10 +210,16 @@ export function parsePreflight({ dfK, loadavg, memPressure }) {
   return out;
 }
 
-export function preflightProblems(job, pre) {
+export function preflightProblems(job, pre, { onMacMini = job.target === 'mac-mini' } = {}) {
   const p = [];
-  const min = job.constraints?.minFreeDiskGB;
+  const guard = onMacMini ? MAC_MINI_GUARD : (job.constraints ?? {});
+  const min = guard.minFreeDiskGB;
   if (min != null && !(pre.freeDiskGB >= min)) p.push(`空きディスクが ${pre.freeDiskGB ?? '不明'}GB（必要 ${min}GB）`);
-  if (job.target === 'mac-mini' && pre.memoryFreePercent != null && pre.memoryFreePercent < 20) p.push(`空きメモリが ${pre.memoryFreePercent}%（20%未満。常駐のVM・Hermesと重ねない）`);
+  if (onMacMini && !(pre.memoryFreePercent >= MAC_MINI_GUARD.minMemoryFreePercent)) p.push(`空きメモリが ${pre.memoryFreePercent ?? '不明'}%（${MAC_MINI_GUARD.minMemoryFreePercent}%未満か不明。常駐のVM・Hermesと重ねない）`);
   return p;
+}
+
+/** この Mac が Mac mini（常駐の実行基盤）か。ジョブの target ではなく、その Mac に置いた印で決める。 */
+export function isMacMiniHost({ env = process.env, markerExists = () => false } = {}) {
+  return env.ENEXUS_RUNTIME_NODE === 'mac-mini' || markerExists();
 }

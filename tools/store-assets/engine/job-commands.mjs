@@ -10,12 +10,13 @@
 //   job-list     --profile <p>                         （一覧の表示と jobs/index.html）
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { planIosCapture, runIosPlan } from './drivers/ios-simulator.mjs';
 import {
-  captureRel, createJob, githubDispatchArgs, githubDownloadArgs, newStatus, parsePreflight, preflightProblems,
-  RESULT_SCHEMA, sizeNotes, slug, TARGETS, transition, validateJob, verifyResult,
+  captureRel, createJob, forbiddenIdentifiers, githubDispatchArgs, githubDownloadArgs, isMacMiniHost, newStatus, parsePreflight,
+  preflightProblems, redactIdentifiers, RESULT_SCHEMA, sizeNotes, slug, TARGETS, transition, validateJob, verifyResult,
 } from './jobs.mjs';
 import { sha256 } from './pipeline.mjs';
 import { readPngInfo } from './png.mjs';
@@ -128,10 +129,10 @@ export async function cmdJobRun(args) {
   const root = projectRootOf(profile);
   const out = path.resolve(args.out ?? path.join(jobPaths(args.job).dir, 'result'));
   const git = gitInfo(root);
-  const gitProblem = git.commit !== job.git.commit.slice(0, git.commit.length) || git.dirty
-    ? `作業ツリー（${git.commit}${git.dirty ? '・未commitあり' : ''}）がジョブのcommit（${job.git.commit}）と違う` : null;
+  const gitProblem = git.full !== job.git.commit || git.dirty
+    ? `作業ツリー（${git.full ?? git.commit}${git.dirty ? '・未commitあり' : ''}）がジョブのcommit（${job.git.commit}）と違う` : null;
   const fixtureName = path.basename(profile.capture.ios?.dbRelPath ?? 'app.db');
-  const fixtureDb = profile.capture.ios?.fixtureBuild ? path.join(out, 'fixture', fixtureName) : null;
+  const fixtureDb = profile.capture.ios?.fixtureBuild ? path.join(out, 'fixture', fixtureName).replace(/\\/g, '/') : null;
   const groups = buildJobSteps(job, profile, { outDir: out, fixtureDb, appPath: args.app ? path.resolve(args.app) : undefined });
 
   if (args['dry-run']) {
@@ -148,20 +149,29 @@ export async function cmdJobRun(args) {
 
   if (process.platform !== 'darwin') throw new Error('job-run の実行はmacOSでだけできます（Windowsでは --dry-run で手順を確かめる）');
   if (gitProblem) throw new Error(gitProblem);
-  if (job.constraints?.maintenanceWindowRequired && !args['confirm-maintenance-window']) {
-    throw new Error('Mac mini は Trading Lab の LIVE VM と同居しています。保守窓であることを人が確かめてから --confirm-maintenance-window を付けて実行してください');
+  const onMacMini = job.target === 'mac-mini' || isMacMiniHost({ markerExists: () => fs.existsSync(path.join(os.homedir(), '.enexus', 'runtime-node-mac-mini')) });
+  if (onMacMini && !args['confirm-maintenance-window']) {
+    throw new Error('Mac mini は Trading Lab の LIVE VM と同居しています。保守窓であることを人が確かめてから --confirm-maintenance-window を付けて実行してください（ジョブの実行先に関係なく、この Mac では必要）');
   }
   const pre = parsePreflight({ dfK: sh('df', ['-k', '/']), loadavg: sh('sysctl', ['-n', 'vm.loadavg']), memPressure: sh('memory_pressure', ['-Q']) });
-  const result = { schema: RESULT_SCHEMA, jobId: job.id, git: { commit: job.git.commit }, source: 'ios-simulator', startedAt: new Date().toISOString(), env: collectEnv(job), preflight: pre, captures: [] };
-  const writeResult = () => { fs.mkdirSync(out, { recursive: true }); fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify(result, null, 2)); };
-  const preP = preflightProblems(job, pre);
+  const result = { schema: RESULT_SCHEMA, jobId: job.id, purpose: job.purpose, git: { commit: git.full, dirty: git.dirty }, source: 'ios-simulator', startedAt: new Date().toISOString(), env: collectEnv(job), preflight: pre, captures: [] };
+  // 書く前に、出力先・ホームのパス・ホスト名などを伏せる（公開repoの成果物になり得るため）
+  const writeResult = () => {
+    if (result.error) result.error = redactIdentifiers(result.error, [[out, '<out>'], [out.replace(/\\/g, '/'), '<out>'], [os.homedir(), '~']]);
+    const text = JSON.stringify(result, null, 2);
+    const leaked = forbiddenIdentifiers(text);
+    fs.mkdirSync(out, { recursive: true });
+    fs.writeFileSync(path.join(out, 'result.json'), leaked.length ? redactIdentifiers(text) : text);
+  };
+  const preP = preflightProblems(job, pre, { onMacMini });
   if (preP.length) { result.status = 'failed'; result.error = `資源の確認：${preP.join('・')}`; result.finishedAt = new Date().toISOString(); writeResult(); throw new Error(result.error); }
   try {
     if (fixtureDb) {
       fs.mkdirSync(path.dirname(fixtureDb), { recursive: true });
       execFileSync(process.execPath, [path.resolve(profile._dir, profile.capture.ios.fixtureBuild), fixtureDb], { stdio: ['ignore', 'inherit', 'inherit'] });
     }
-    for (const g of groups) await runIosPlan(g.steps);
+    const deadline = Date.now() + (job.constraints?.maxRuntimeMinutes ?? 60) * 60_000;
+    for (const g of groups) await runIosPlan(g.steps, console.log, { deadline });
     for (const device of job.devices) for (const locale of job.locales) for (const screen of job.screens) {
       const rel = captureRel(device, locale, screen);
       const f = path.join(out, rel);
@@ -174,6 +184,8 @@ export async function cmdJobRun(args) {
   } catch (e) {
     result.status = 'failed';
     result.error = String(e.message ?? e).split('\n')[0].slice(0, 300);
+  } finally {
+    for (const device of job.devices) sh('xcrun', ['simctl', 'shutdown', device]); // 起動したシミュレーターを止める（資源を返す）
   }
   result.finishedAt = new Date().toISOString();
   writeResult();
@@ -190,24 +202,32 @@ export function cmdJobDispatch(args) {
     console.log('[job-dispatch] GitHub Actions への依頼（workflow が既定branchに入っている時だけ使える。入れるのはHuman判断）：');
     console.log(`  gh ${a.slice(0, -2).join(' ')} -f job_json='<job.json の中身>'`);
     if (!args.execute) { console.log('[job-dispatch] 実行していない（--execute で実行）'); return; }
+    if (!p.status) throw new Error('status.json がありません（job-create で作ったジョブだけ依頼できる）');
+    const next = transition(p.status, 'dispatched', { note: 'gh workflow run' }); // 通らなければ依頼しない
     execFileSync('gh', a, { stdio: 'inherit' });
-    saveStatus(p, transition(p.status, 'dispatched', { note: 'gh workflow run' }));
+    saveStatus(p, next);
     console.log('[job-dispatch] 依頼した。`gh run list --workflow store-assets-ios.yml` で run id を確かめ、job-fetch で取得する');
     return;
   }
   console.log(`[job-dispatch] ${TARGETS[job.target].label}：人が開始する実行先。Macで次を行う（このPCからは開始しない）：`);
   console.log(`  1. repo を commit ${job.git.commit} にする（git fetch && git checkout ${job.git.commit}）。シミュレーター向けのアプリを用意する（npx expo run:ios --configuration Release 等。EAS Build は使わない）`);
   console.log(`  2. job.json をMacへ持って行く（手で写す。私的な置き場の自動の経路は未構築）`);
-  console.log(`  3. node tools/store-assets/engine/cli.mjs job-run --job <job.json> --app <アプリ.app>${job.constraints?.maintenanceWindowRequired ? ' --confirm-maintenance-window' : ''}`);
+  console.log('  3. node tools/store-assets/engine/cli.mjs job-run --job <job.json> --app <アプリ.app>');
+  if (job.target === 'mac-mini') console.log('     Mac mini では、Trading Lab の LIVE 窓でないこと（保守窓）を人が確かめた時だけ --confirm-maintenance-window を足す');
   console.log('  4. 結果のフォルダ（result.json と captures/）をこのPCへ持ち帰り、job-ingest --from で取り込む');
-  if (args.execute) { saveStatus(p, transition(p.status, 'dispatched', { note: '人へ引き渡した' })); console.log('[job-dispatch] 状態を dispatched にした'); }
+  if (args.execute) {
+    if (!p.status) throw new Error('status.json がありません');
+    saveStatus(p, transition(p.status, 'dispatched', { note: '人へ引き渡した' }));
+    console.log('[job-dispatch] 状態を dispatched にした');
+  }
 }
 
 export function cmdJobFetch(args) {
   const p = readJob(args.job);
   if (p.job.target !== 'github-actions-macos') throw new Error('job-fetch は GitHub Actions の実行先だけ');
   if (!args['run-id']) throw new Error('--run-id が必要です');
-  const dest = path.join(p.dir, 'result');
+  const dest = path.join(p.dir, `result-run${String(args['run-id']).replace(/[^0-9]/g, '')}`); // 再実行の結果を混ぜない
+  if (fs.existsSync(dest)) throw new Error(`${dest} は既にあります（同じ run の取り直しなら消してから）`);
   const a = githubDownloadArgs(p.job, args['run-id'], dest);
   console.log(`  gh ${a.join(' ')}`);
   if (!args.execute) { console.log('[job-fetch] 実行していない（--execute で実行）'); return; }
@@ -219,32 +239,48 @@ export function cmdJobIngest(args) {
   const p = readJob(args.job);
   const { job } = p;
   const profile = profileFor(args, job);
+  const jobProblems = validateJob(job, profile);
+  if (jobProblems.length) throw new Error(`ジョブが不正です：\n- ${jobProblems.join('\n- ')}`);
+  const st0 = p.status ?? newStatus(job);
+  if (!['created', 'dispatched', 'running', 'succeeded'].includes(st0.state)) {
+    throw new Error(`状態 ${st0.state} のジョブには取り込めない（失敗の後なら job-status --to dispatched で再実行にしてから）`);
+  }
   const from = path.resolve(args.from ?? path.join(p.dir, 'result'));
   const rawText = fs.readFileSync(path.join(from, 'result.json'), 'utf8');
   const result = JSON.parse(rawText);
   const v = verifyResult(job, result, { readFile: (rel) => fs.readFileSync(path.join(from, rel)), hash: sha256, pngInfo: readPngInfo, rawText });
   const record = { at: new Date().toISOString(), from, ok: v.ok, problems: v.problems, missing: v.missing };
   fs.writeFileSync(path.join(p.dir, 'ingest.json'), JSON.stringify(record, null, 2));
-  let status = p.status ?? newStatus(job);
+  let status = st0;
   if (!v.ok) {
     for (const x of v.problems) console.log(`NG ${x}`);
-    if ((status.state === 'dispatched' || status.state === 'running') && result?.status === 'failed') { status = transition(status, 'failed', { note: result.error ?? '実行の失敗' }); saveStatus(p, status); }
+    if (result?.status === 'failed' && st0.state !== 'succeeded') {
+      if (status.state === 'created') status = transition(status, 'dispatched', { note: '依頼の記録なしで結果が届いた（人がMacで実行）' });
+      status = transition(status, 'failed', { note: String(result.error ?? '実行の失敗').slice(0, 200) });
+      saveStatus(p, status);
+    }
     throw new Error(`取り込めません（問題 ${v.problems.length}件・${path.join(p.dir, 'ingest.json')}）`);
   }
   const device = args.device ?? job.devices[0];
   if (!job.devices.includes(device)) throw new Error(`--device ${device} はジョブに無い`);
   const runDir = path.resolve(args.run ?? defaultRunDir(profile));
+  const existing = readCaptures(runDir);
+  // 今の合成は画面×言語で1枚を選ぶので、別のデバイスの撮影がある run へは入れない（上書きを防ぐ）
+  const other = existing.find((c) => c.source === 'ios-simulator' && c.device && c.device !== device);
+  if (other) throw new Error(`この run には別のデバイス（${other.device}）の撮影がある。デバイスごとに別の run へ取り込む`);
+  // Web版の撮影と同じ画像をシミュレーターとして取り込まない（同じアプリの全ての run の Web版の撮影と照らす）
+  const webHashes = webPreviewHashes(path.dirname(runDir), existing);
+  const mine = result.captures.filter((x) => x.device === device);
+  const dup = mine.find((c) => webHashes.has(c.sha256));
+  if (dup) throw new Error(`${dup.file} はWeb版プレビューの撮影と同じ画像です`);
   fs.mkdirSync(runDir, { recursive: true });
-  // Web版の撮影と同じ画像をシミュレーターとして取り込まない（既存の import と同じ規則）
-  const webHashes = new Set(readCaptures(runDir).filter((c) => c.source === 'web-preview').map((c) => c.sha256));
   const added = [];
-  for (const c of result.captures.filter((x) => x.device === device)) {
-    if (webHashes.has(c.sha256)) throw new Error(`${c.file} はWeb版プレビューの撮影と同じ画像です`);
+  for (const c of mine) {
     const dest = path.join(runDir, 'captures', 'ios-simulator', slug(device), c.locale, `${c.screen}.png`);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.copyFileSync(path.join(from, c.file), dest);
     const rt = result.env.devices.find((d) => d.name === device)?.runtime ?? null;
-    added.push({ screen: c.screen, locale: c.locale, source: 'ios-simulator', file: dest, device, job: { id: job.id, commit: job.git.commit, runner: result.env.runner, macos: result.env.macos, xcode: result.env.xcode, runtime: rt, capturedAt: result.finishedAt } });
+    added.push({ screen: c.screen, locale: c.locale, source: 'ios-simulator', file: dest, device, job: { id: job.id, purpose: job.purpose, commit: result.git.commit, runner: result.env.runner, macos: result.env.macos, xcode: result.env.xcode, runtime: rt, capturedAt: result.finishedAt } });
   }
   writeCaptures(runDir, added);
   const notes = sizeNotes(result.captures.filter((x) => x.device === device), profile.outputs?.store ?? []);
@@ -257,6 +293,19 @@ export function cmdJobIngest(args) {
   for (const n of notes) if (!n.fitsTargets.length) console.log(`[job-ingest] 参考：${n.screen} ${n.width}x${n.height} はストアの寸法と違う（合成で整える）`);
   console.log(`[job-ingest] 次：compose --run ${runDir} --mode draft（finalはHumanの確認の後）`);
   return { runDir, added: added.length };
+}
+
+/** 同じアプリの run（親フォルダの下）と取り込み先の、Web版の撮影の sha256。 */
+function webPreviewHashes(appOutDir, existing) {
+  const set = new Set(existing.filter((c) => c.source === 'web-preview').map((c) => c.sha256));
+  if (fs.existsSync(appOutDir)) {
+    for (const name of fs.readdirSync(appOutDir)) {
+      const f = path.join(appOutDir, name, 'captures.json');
+      if (!fs.existsSync(f)) continue;
+      try { for (const c of JSON.parse(fs.readFileSync(f, 'utf8'))) if (c.source === 'web-preview') set.add(c.sha256); } catch { /* 壊れた記録は無視 */ }
+    }
+  }
+  return set;
 }
 
 export function cmdJobStatus(args) {

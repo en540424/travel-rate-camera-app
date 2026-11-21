@@ -8,11 +8,12 @@ import { readPngInfo } from './png.mjs';
 
 export function gitInfo(root) {
   try {
-    const commit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: root }).toString().trim();
+    const full = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root }).toString().trim();
+    const commit = full.slice(0, 7);
     const dirty = execFileSync('git', ['status', '--porcelain'], { cwd: root }).toString().trim().length > 0;
-    return { commit, dirty };
+    return { commit, full, dirty };
   } catch {
-    return { commit: 'unknown', dirty: null };
+    return { commit: 'unknown', full: null, dirty: null };
   }
 }
 

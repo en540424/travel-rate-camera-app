@@ -79,13 +79,17 @@ npm run store-assets -- job-list     --profile <p>            # 一覧と out/<a
 | 実行先（`--target`） | 状態 | 費用 | 開始 |
 |---|---|---|---|
 | `github-actions-macos` | **テンプレートだけ**（`remote/github-actions/store-assets-ios.yml`。未実行・未検証）。使うには Human が `.github/workflows/` へ写して main へ入れる | 公開repoの標準ランナーは無料（private なら $0.062／分） | `job-dispatch --execute`（Windowsから可） |
-| `mac-mini` | 経路は未構築（Windowsから Mac への接続なし）。手で job.json を持って行き、Mac で `job-run --confirm-maintenance-window` | 0円 | 人（Trading Lab の LIVE VM と同居のため、保守窓を確かめる。空きディスク30GB・空きメモリ20%を確認して足りなければ止まる） |
+| `mac-mini` | 経路は未構築（Windowsから Mac への接続なし）。手で job.json を持って行き、Mac で `job-run`（保守窓を人が確かめた時だけ `--confirm-maintenance-window`） | 0円 | 人（Trading Lab の LIVE VM と同居。空きディスク30GB・空きメモリ20%を確認し、不明か足りなければ止まる。上限時間 `maxRuntimeMinutes` で止め、終わったらシミュレーターを shutdown） |
 | `local-macos` | 手元のMacで `job-run` | 0円 | 人 |
 
-- 結果（`result.json`＋`captures/<デバイス>/<言語>/<画面>.png`）は jobId・commit・デバイス・画面・sha256・寸法がジョブと一致したものだけ取り込む。撮影元は常に `ios-simulator`
+- ジョブは40桁の commit を持つ（`actions/checkout` は短縮SHAを解決しない）。実行側は `git rev-parse HEAD` の完全一致と clean を確かめ、実際の HEAD を結果に記録する
+- Mac mini の守り（保守窓の確認・資源の確認）はジョブの記載ではなく**その Mac の印**でも効く：環境変数 `ENEXUS_RUNTIME_NODE=mac-mini` か `~/.enexus/runtime-node-mac-mini` があれば、実行先が `local-macos` のジョブでも必要（印を置くのは Mac の設定の変更なので Human）
+- 結果（`result.json`＋`captures/<デバイス>/<言語>/<画面>.png`）は jobId・commit・デバイス・画面・sha256・寸法（短辺320px以上）・撮影環境がジョブと一致したものだけ取り込む。撮影元は常に `ios-simulator`。取り込みは状態を先に確かめ、終わった・失敗したジョブには副作用の前に断る
+- 実行側は結果を書く前に、出力先・ホームのパス・IP・ホスト名を伏せる（公開repoの成果物になり得るため）。取り込み側も同じ検査で拒否する
 - 撮影環境（macOS・Xcode・シミュレーターのランタイム・ランナーの種類）を `captures.json` の各撮影に残す。**ホスト名・IP・ホームのパスは結果に入れない**（入っていたら取り込まない）
-- `draft` のジョブは撮れなかった画面があっても取り込む。`final-candidate` のジョブは全画面が揃わないと取り込まない。final の判断と提出は人が行う
-- 取り込みは1回に1デバイス（`--device`。既定はジョブの最初のデバイス）。今の合成は画面×言語で1枚を選ぶため
+- `draft` のジョブは撮れなかった画面があっても取り込むが、**`compose --mode final` は draft のジョブの撮影を使わない**。`final-candidate` のジョブは全画面が揃わないと取り込まない。final の判断と提出は人が行う
+- 取り込みは1回に1デバイス（`--device`。既定はジョブの最初のデバイス）で、別のデバイスの撮影がある run へは入れない（今の合成は画面×言語で1枚を選ぶため）。Web版の撮影との照合は同じアプリの全ての run と行う
+- `job-fetch` は run id ごとの `result-run<id>/` へ取得する（再実行の結果を混ぜない）。限界：結果の commit・撮影元は実行側の申告で、GitHub の成果物であることまでは検証していない
 - Mac での実行には、シミュレーター向けにbuildしたアプリ（`.app`）が要る（`--app`。`npx expo run:ios --configuration Release` 等。EAS Build は使わない）
 
 ## 他のアプリで使う
