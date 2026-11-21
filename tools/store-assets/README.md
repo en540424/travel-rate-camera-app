@@ -58,7 +58,35 @@ npm run store-assets -- validate --run <run>
 - 前提：Xcode、対象のシミュレーター（`xcrun simctl list devices` の名前を `capture.ios.devices` に書く）、**シミュレーター向けにbuildしたアプリが入っていること**。
   buildはMac上の `npx expo run:ios --configuration Release`（EAS Buildの枠を使わない）か、EASのsimulatorプロファイル（Human GOが必要）。
 - 手順のスクリプトは、アプリを止めて**シミュレーター内の**アプリDBを退避（`.bak-<時刻>`）してからテストデータへ置き換え、ディープリンクで各画面を開いて撮る。実機・利用者の端末には触れない。
-- Mac miniは常駐用途なので、撮影は他の重い処理と重ねない。現時点で安全な遠隔実行の経路は無い（2026-10-21時点で Remote Login Off・Tailscale未導入）ため、Macでの実行は人が行う。
+- Mac miniは常駐用途なので、撮影は他の重い処理と重ねない。Windowsから Mac への接続の経路は無い（2026-11-21：このPCの tailnet に Mac は無く、ssh の設定にも無い）ため、Macでの実行は人が行う。どの端末からでも依頼する方法は下の「遠隔撮影」。
+
+## 遠隔撮影（どの開発端末からでも依頼する）
+
+Windows・会社PC・Macのどれからでも、**commitを固定した撮影ジョブ**を作り、macOSの実行先で撮影し、結果を検証して取り込む。
+撮影そのものは上の iOS シミュレーター手順（`drivers/ios-simulator.mjs`）をそのまま使う（撮影エンジンを増やさない）。
+
+```bash
+# どの端末でも：ジョブを作る（未commitの変更があると作らない）→ 手順を確かめる（撮影しない）
+npm run store-assets -- job-create   --profile tools/store-assets/apps/tabirate/profile.json --target github-actions-macos
+npm run store-assets -- job-run      --job <out/tabirate/jobs/<id>> --dry-run
+npm run store-assets -- job-dispatch --job <dir>              # 依頼の内容を表示（--execute で GitHub へ依頼）
+npm run store-assets -- job-fetch    --job <dir> --run-id <id> # 成果物の取得の内容を表示（--execute で取得）
+npm run store-assets -- job-ingest   --job <dir> --from <dir>/result [--device "iPhone 17 Pro Max"]
+npm run store-assets -- job-status   --job <dir> [--to failed --note 理由]   # 状態と再実行（failed → dispatched で試行+1）
+npm run store-assets -- job-list     --profile <p>            # 一覧と out/<app>/jobs/index.html
+```
+
+| 実行先（`--target`） | 状態 | 費用 | 開始 |
+|---|---|---|---|
+| `github-actions-macos` | **テンプレートだけ**（`remote/github-actions/store-assets-ios.yml`。未実行・未検証）。使うには Human が `.github/workflows/` へ写して main へ入れる | 公開repoの標準ランナーは無料（private なら $0.062／分） | `job-dispatch --execute`（Windowsから可） |
+| `mac-mini` | 経路は未構築（Windowsから Mac への接続なし）。手で job.json を持って行き、Mac で `job-run --confirm-maintenance-window` | 0円 | 人（Trading Lab の LIVE VM と同居のため、保守窓を確かめる。空きディスク30GB・空きメモリ20%を確認して足りなければ止まる） |
+| `local-macos` | 手元のMacで `job-run` | 0円 | 人 |
+
+- 結果（`result.json`＋`captures/<デバイス>/<言語>/<画面>.png`）は jobId・commit・デバイス・画面・sha256・寸法がジョブと一致したものだけ取り込む。撮影元は常に `ios-simulator`
+- 撮影環境（macOS・Xcode・シミュレーターのランタイム・ランナーの種類）を `captures.json` の各撮影に残す。**ホスト名・IP・ホームのパスは結果に入れない**（入っていたら取り込まない）
+- `draft` のジョブは撮れなかった画面があっても取り込む。`final-candidate` のジョブは全画面が揃わないと取り込まない。final の判断と提出は人が行う
+- 取り込みは1回に1デバイス（`--device`。既定はジョブの最初のデバイス）。今の合成は画面×言語で1枚を選ぶため
+- Mac での実行には、シミュレーター向けにbuildしたアプリ（`.app`）が要る（`--app`。`npx expo run:ios --configuration Release` 等。EAS Build は使わない）
 
 ## 他のアプリで使う
 

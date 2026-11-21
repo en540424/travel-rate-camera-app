@@ -13,7 +13,7 @@ function shellQuote(s) {
 
 /**
  * 撮影手順（コマンド列）を作る。
- * opts: { device, bundleId, scheme, screens:[{id, deepLink, settleMs}], locale, outDir, statusBar, fixtureDb, dbRelPath, appearance }
+ * opts: { device, bundleId, scheme, screens:[{id, deepLink, settleMs}], locale, outDir, statusBar, fixtureDb, dbRelPath, appearance, appPath }
  */
 export function planIosCapture(opts) {
   const dev = shellQuote(opts.device);
@@ -21,6 +21,7 @@ export function planIosCapture(opts) {
   const add = (cmd, note) => steps.push({ cmd, note });
   add(`xcrun simctl boot ${dev} 2>/dev/null || true`, 'シミュレーターを起動（起動済みなら何もしない）');
   add(`xcrun simctl bootstatus ${dev} -b`, '起動完了を待つ');
+  if (opts.appPath) add(`xcrun simctl install ${dev} ${shellQuote(opts.appPath)}`, 'シミュレーター向けにbuildしたアプリを入れる（.app）');
   add(`xcrun simctl ui ${dev} appearance ${opts.appearance ?? 'light'}`, '外観を固定');
   const sb = opts.statusBar ?? {};
   add(

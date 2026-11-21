@@ -7,8 +7,10 @@
 //   node tools/store-assets/engine/cli.mjs import    --profile <p> --run <dir> --from <dir> --source device|ios-simulator [--locale ja]
 //   node tools/store-assets/engine/cli.mjs compose   --profile <p> --run <dir> [--mode draft|final]
 //   node tools/store-assets/engine/cli.mjs validate  --run <dir>
+//   node tools/store-assets/engine/cli.mjs job-create|job-validate|job-run|job-dispatch|job-fetch|job-ingest|job-status|job-list …（遠隔撮影。job-commands.mjs）
 //
-// 外部への送信・アップロードは一切しない（ストア・LPへの反映は人が行う）。
+// 外部への送信・アップロードはしない（ストア・LPへの反映は人が行う）。例外は job-dispatch／job-fetch に --execute を付けた時の
+// GitHub Actions への依頼と成果物の取得だけ（gh を使う。付けなければ内容を表示するだけ）。
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
@@ -18,7 +20,8 @@ import { fileURLToPath } from 'node:url';
 import { captureWeb, exportWeb } from './drivers/web-preview.mjs';
 import { planIosCapture, planToShellScript } from './drivers/ios-simulator.mjs';
 import { completenessProblems, galleryHtml, planOutputs, renderPlan, sha256, validateOutputs, verifyCaptures } from './pipeline.mjs';
-import { readPngInfo } from './png.mjs';
+import { defaultRunDir, gitInfo, projectRootOf, readCaptures, writeCaptures } from './runs.mjs';
+import { cmdJobCreate, cmdJobDispatch, cmdJobFetch, cmdJobIngest, cmdJobList, cmdJobRun, cmdJobStatus, cmdJobValidate } from './job-commands.mjs';
 import { loadProfile } from './profile.mjs';
 import { SOURCES } from './provenance.mjs';
 
@@ -43,52 +46,6 @@ function loadPlaywright(projectRoot) {
     try { return createRequire(base)('playwright'); } catch { /* 次の候補 */ }
   }
   throw new Error('playwright が見つかりません（アプリのdevDependenciesに入れるか、エンジンと同じ場所へ入れてください）');
-}
-
-function gitInfo(root) {
-  try {
-    const commit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: root }).toString().trim();
-    const dirty = execFileSync('git', ['status', '--porcelain'], { cwd: root }).toString().trim().length > 0;
-    return { commit, dirty };
-  } catch {
-    return { commit: 'unknown', dirty: null };
-  }
-}
-
-function stamp() {
-  return new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
-}
-
-function projectRootOf(profile) {
-  return path.resolve(profile._dir, profile.capture?.projectRoot ?? '.');
-}
-
-function defaultRunDir(profile) {
-  const outRoot = path.resolve(profile._dir, profile.outDir ?? '../../out');
-  return path.join(outRoot, profile.app.id, `${stamp()}-${gitInfo(projectRootOf(profile)).commit}`);
-}
-
-function readCaptures(runDir) {
-  const f = path.join(runDir, 'captures.json');
-  return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : [];
-}
-
-/** 撮影記録を保存する。同じ画面・言語・撮影元の記録は新しいもので置き換える。ファイル名はrunDirからの相対。 */
-function writeCaptures(runDir, added) {
-  const prev = readCaptures(runDir);
-  const keyOf = (c) => `${c.screen}|${c.locale}|${c.source}`;
-  const map = new Map(prev.map((c) => [keyOf(c), c]));
-  for (const c of added) {
-    const buf = fs.readFileSync(c.file);
-    const info = readPngInfo(buf);
-    map.set(keyOf(c), {
-      ...c, file: path.relative(runDir, c.file), width: info.width, height: info.height,
-      sha256: sha256(buf), capturedAt: new Date().toISOString(),
-    });
-  }
-  const list = [...map.values()];
-  fs.writeFileSync(path.join(runDir, 'captures.json'), JSON.stringify(list, null, 2));
-  return list;
 }
 
 async function cmdCaptureWeb(profile, args, runDir) {
@@ -210,6 +167,20 @@ async function main() {
     return;
   }
   if (args._ === 'validate') { process.exitCode = cmdValidate(path.resolve(args.run)) ? 0 : 1; return; }
+  // 遠隔撮影のジョブ（使い方は job-commands.mjs の冒頭）
+  const needJob = { 'job-validate': cmdJobValidate, 'job-run': cmdJobRun, 'job-dispatch': cmdJobDispatch, 'job-fetch': cmdJobFetch, 'job-ingest': cmdJobIngest, 'job-status': cmdJobStatus };
+  if (needJob[args._]) {
+    if (!args.job) throw new Error('--job が必要です');
+    const r = await needJob[args._](args);
+    if (args._ === 'job-validate' && r === false) process.exitCode = 1;
+    return;
+  }
+  if (args._ === 'job-create' || args._ === 'job-list') {
+    if (!args.profile) throw new Error('--profile が必要です');
+    const profile = loadProfile(args.profile);
+    if (args._ === 'job-create') { if (!args.target) throw new Error('--target が必要です'); cmdJobCreate(profile, args); } else cmdJobList(profile);
+    return;
+  }
   if (!args.profile) throw new Error('--profile が必要です');
   const profile = loadProfile(args.profile);
   const runDir = path.resolve(args.run ?? defaultRunDir(profile));
