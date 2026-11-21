@@ -10,7 +10,7 @@ import { planIosCapture, planToRunScript } from './drivers/ios-simulator.mjs';
 import { buildJobSteps, cmdJobIngest, cmdJobRun, cmdJobStatus, makeCiCommit, pickSimulators } from './job-commands.mjs';
 import {
   captureRel, CI_BRANCH_PREFIX, CI_JOB_FILE, ciBranchFor, createJob, forbiddenIdentifiers, githubDispatchArgs, githubDownloadArgs, isMacMiniHost, newStatus, parsePreflight,
-  preflightProblems, redactIdentifiers, resolveCiJob, RESULT_SCHEMA, transition, validateJob, verifyResult, verifyRunMeta,
+  githubRunProblems, preflightProblems, redactIdentifiers, resolveCiJob, RESULT_SCHEMA, sameImageProblems, transition, validateJob, verifyResult, verifyRunMeta,
 } from './jobs.mjs';
 import { excludeDraftJobCaptures, sha256 } from './pipeline.mjs';
 import { encodeRgbPng, readPngInfo } from './png.mjs';
@@ -22,6 +22,7 @@ const profile = loadProfile(TABIRATE);
 const FULL = 'abc1234'.padEnd(40, '0');
 const GIT = { commit: 'abc1234', full: FULL, dirty: false };
 const NOW = new Date('2026-11-21T01:02:03Z');
+const RUN42 = { databaseId: 42, workflowName: 'store-assets-ios', event: 'workflow_dispatch', headBranch: 'main', headSha: 'f'.repeat(40), status: 'completed', conclusion: 'success', url: 'https://example.invalid/run/42' };
 
 function png(w = 320, h = 640, shade = 0) {
   const pixels = Buffer.alloc(w * h * 4);
@@ -46,11 +47,13 @@ function makeResult(j, { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-result-
   }
   const result = {
     schema: RESULT_SCHEMA, jobId: j.id, purpose: j.purpose, git: { commit: j.git.commit, dirty: false }, source: 'ios-simulator', status: 'succeeded',
-    env: env ?? { runner: 'github-actions', macos: '26.7.2', xcode: 'Xcode 26.6', devices: j.devices.map((name) => ({ name, runtime: 'iOS-26-5' })) },
+    env: env ?? { runner: 'github-actions', githubRunId: '42', macos: '26.7.2', xcode: 'Xcode 26.6', devices: j.devices.map((name) => ({ name, runtime: 'iOS-26-5' })) },
     startedAt: NOW.toISOString(), finishedAt: NOW.toISOString(), captures,
   };
   mutate?.(result, dir);
   fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
+  // job-fetch が照合して残す run の記録（workflow_dispatch の経路）
+  fs.writeFileSync(path.join(dir, 'run.json'), JSON.stringify(RUN42));
   return { dir, result };
 }
 
@@ -394,4 +397,44 @@ test('iOSの手順は1本のシェルで実行する（前の手順で決めた�
   assert.equal(bash.status, 0, bash.stderr);
   assert.ok(bash.stdout.includes('[ios] a') && bash.stdout.includes('[ios] b'));
   assert.notEqual(spawnSync('bash', ['-c', planToRunScript([{ cmd: 'false', note: 'a' }, { cmd: 'true', note: 'b' }])]).status, 0, '途中の失敗で止まる');
+});
+
+
+test('取り込み：別の画面が同じ画像（確認の窓・ホーム画面が写った）は検証で拒否する（2026-11-21 の実行の回帰）', () => {
+  const j = job();
+  const { dir } = makeResult(j, { mutate: (r, d) => {
+    const same = fs.readFileSync(path.join(d, r.captures[0].file));
+    fs.writeFileSync(path.join(d, r.captures[1].file), same);
+    r.captures[1].sha256 = r.captures[0].sha256;
+  } });
+  const v = verify(j, dir);
+  assert.equal(v.ok, false);
+  assert.ok(v.problems.some((p) => p.includes('同じ画像')), v.problems.join('／'));
+  assert.deepEqual(sameImageProblems([{ device: 'd', locale: 'ja', screen: 'a', sha256: 'x' }, { device: 'd', locale: 'ja', screen: 'b', sha256: 'y' }]), []);
+});
+
+test('取り込み：GitHub の実行先は、job-fetch が照合した run.json と結果の run id が一致する時だけ', () => {
+  const j = job();
+  const st = transition(newStatus(j), 'dispatched');
+  const { result } = makeResult(j);
+  assert.deepEqual(githubRunProblems(j, st, RUN42, result), []);
+  assert.ok(githubRunProblems(j, st, null, result)[0].includes('run.json'));
+  assert.ok(githubRunProblems(j, st, { ...RUN42, databaseId: 7 }, result).some((p) => p.includes('run id')));
+  assert.ok(githubRunProblems(j, st, { ...RUN42, conclusion: 'failure' }, result).some((p) => p.includes('成功していない')));
+  assert.ok(githubRunProblems(j, st, RUN42, { ...result, env: { ...result.env, runner: 'local-macos' } }).some((p) => p.includes('github-actions')));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-norun-'));
+  fs.writeFileSync(path.join(tmp, 'job.json'), JSON.stringify(j));
+  fs.writeFileSync(path.join(tmp, 'status.json'), JSON.stringify(st));
+  const { dir } = makeResult(j);
+  fs.rmSync(path.join(dir, 'run.json'));
+  assert.throws(() => cmdJobIngest({ job: tmp, profile: TABIRATE, from: dir, run: path.join(tmp, 'run') }), /取り込めません/);
+  assert.ok(JSON.parse(fs.readFileSync(path.join(tmp, 'ingest.json'), 'utf8')).problems.some((p) => p.includes('run.json')));
+});
+
+test('撮影の手順：ディープリンクの確認の窓を出さない承認を、起動とURLを開く前に書く', () => {
+  const steps = planIosCapture({ device: 'D', bundleId: 'com.example.app', scheme: 'exampleapp', outDir: '/o', screens: [{ id: 's', deepLink: 'exampleapp:///s' }] });
+  const i = steps.findIndex((s) => s.cmd.includes('com.apple.launchservices.schemeapproval') && s.cmd.includes("'com.apple.CoreSimulator.CoreSimulatorBridge-->exampleapp'") && s.cmd.includes("-string 'com.example.app'"));
+  assert.ok(i >= 0);
+  assert.ok(i < steps.findIndex((s) => s.cmd.startsWith('xcrun simctl launch')));
+  assert.ok(i < steps.findIndex((s) => s.cmd.startsWith('xcrun simctl openurl')));
 });

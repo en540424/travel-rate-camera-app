@@ -87,7 +87,7 @@ function cmdPlanIos(profile, args, runDir) {
     for (const locale of args.locale ? [args.locale] : profile.locales) {
       const outDir = `./captures/ios-simulator/${device.replace(/[^a-z0-9]+/gi, '-')}/${locale}`;
       const steps = planIosCapture({
-        device, bundleId: profile.app.bundleId, locale: profile.localeTags?.[locale] ?? locale, outDir,
+        device, bundleId: profile.app.bundleId, scheme: profile.app.scheme, locale: profile.localeTags?.[locale] ?? locale, outDir,
         screens: profile.capture.screens.filter((s) => s.deepLink),
         statusBar: ios.statusBar, appearance: ios.appearance,
         fixtureDb: fixtureRel, dbRelPath: ios.dbRelPath,

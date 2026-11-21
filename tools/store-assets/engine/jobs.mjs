@@ -174,9 +174,24 @@ export function verifyResult(job, result, { readFile, hash, pngInfo, rawText = '
     if (info.width !== c.width || info.height !== c.height) problems.push(`寸法の記録が画像と違う：${c.file}`);
     else if (Math.min(info.width, info.height) < minSide) problems.push(`画像が小さすぎる（${info.width}x${info.height}）：${c.file}`);
   }
+  problems.push(...sameImageProblems(Array.isArray(result?.captures) ? result.captures : []));
   const missing = [...want].filter((k) => !seen.has(k));
   if (job.purpose === 'final-candidate') for (const m of missing) problems.push(`撮れていない：${m}`);
   return { ok: problems.length === 0, problems, missing };
+}
+
+/**
+ * 別の画面が同じ画像なら問題（画面が切り替わっていない：確認の窓・ホーム画面・起動の失敗が写った）。
+ * 2026-11-21 の実行で、ディープリンクの確認の窓が2画面に同じ画像として写り、sha256・寸法の検査は通っていた
+ */
+export function sameImageProblems(captures) {
+  const byHash = new Map();
+  for (const c of captures) {
+    if (!c || typeof c.sha256 !== 'string') continue;
+    const k = `${c.device}|${c.locale}|${c.sha256}`;
+    byHash.set(k, [...(byHash.get(k) ?? []), c.screen]);
+  }
+  return [...byHash.values()].filter((v) => new Set(v).size > 1).map((v) => `別の画面が同じ画像（画面が切り替わっていない）：${v.join('・')}`);
 }
 
 /** ストアの寸法に合うか（参考の検査。合わなくても取り込みは止めない：合成で縮小・余白を付けるため）。 */
@@ -231,6 +246,19 @@ export function verifyRunMeta(job, status, meta) {
     if (meta?.headSha !== ci.commit) p.push('run の commit が依頼した commit と違う');
   } else if (meta?.event !== 'workflow_dispatch') p.push('依頼の記録（ci.branch）が無く、workflow_dispatch の run でもない');
   if (meta?.status !== 'completed') p.push(`run が終わっていない（${meta?.status}）`);
+  return p;
+}
+
+/**
+ * 取り込む結果が、job-fetch で照合して取得した GitHub の run のものか（run.json と result.json の結び付き）。
+ * 手で置いた結果や、再依頼の前の試行の結果を GitHub の撮影として取り込まない
+ */
+export function githubRunProblems(job, status, run, result) {
+  if (!run) return ['run.json が無い（GitHub の実行先は job-fetch --execute で取得した結果だけ取り込む）'];
+  const p = verifyRunMeta(job, status, run);
+  if (run.conclusion !== 'success') p.push(`run が成功していない（${run.conclusion}）`);
+  if (String(run.databaseId) !== String(result?.env?.githubRunId)) p.push(`結果の run id（${result?.env?.githubRunId}）が取得した run（${run.databaseId}）と違う`);
+  if (result?.env?.runner !== 'github-actions') p.push('結果の実行環境が github-actions ではない');
   return p;
 }
 

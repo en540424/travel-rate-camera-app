@@ -72,7 +72,7 @@ npm run store-assets -- job-run      --job <out/tabirate/jobs/<id>> --dry-run
 npm run store-assets -- job-dispatch --job <dir>              # 依頼の内容を表示（--execute で専用branchへ push＝GitHubで撮影が始まる）
 npm run store-assets -- job-fetch    --job <dir>              # run を探して確かめる（--execute で成果物を取得。--run-id で指定も可）
 npm run store-assets -- job-cleanup  --job <dir>              # このジョブの専用branchを消す（--execute）
-npm run store-assets -- job-ingest   --job <dir> --from <dir>/result [--device "iPhone 17 Pro Max"]
+npm run store-assets -- job-ingest   --job <dir> --from <dir>/result-run<id> [--device "iPhone 17 Pro Max"]
 npm run store-assets -- job-status   --job <dir> [--to failed --note 理由]   # 状態と再実行（failed → dispatched で試行+1）
 npm run store-assets -- job-list     --profile <p>            # 一覧と out/<app>/jobs/index.html
 ```
@@ -92,6 +92,8 @@ npm run store-assets -- job-list     --profile <p>            # 一覧と out/<a
 - 取り込みは1回に1デバイス（`--device`。既定はジョブの最初のデバイス）で、別のデバイスの撮影がある run へは入れない（今の合成は画面×言語で1枚を選ぶため）。Web版の撮影との照合は同じアプリの全ての run と行う
 - `job-fetch` は run id ごとの `result-run<id>/` へ取得する（再実行の結果を混ぜない）。取得の前に、run の workflow・起動の種類・branch・commit が依頼の記録（`status.json` の `ci`）と一致することを `gh run view` で確かめ、`run.json` に残す。限界：結果の中身（commit・撮影元）は実行側の申告で、署名付きの証明（attestation）までは使っていない
 - 撮影の後は `job-cleanup --execute` で専用branchを消す（push が無ければ workflow は起動しない）。成果物の保存は3日で、テスト用のデータDBは成果物に入れない
+- 取り込みは、GitHub の実行先では job-fetch が照合して残した run.json があり、結果の run id と一致し、run が成功した時だけ。**別の画面が同じ画像なら拒否する**（2026-11-21 の2回目の実行で、ディープリンクの確認の窓「Open in …?」が2画面に写り、sha256・寸法の検査は通っていた）。撮影の前にシミュレーター内で独自スキームを承認して窓を出さない（Apple の文書に無い設定・Expo CLI も同じ値を書く）
+- 1画面だけのジョブでは「同じ画像」の検査が効かないので、取り込んだ画像を人が目で確かめる
 - 同じ名前のシミュレーターが複数のランタイムにある時は、版の新しい1台（UDID）を選んで撮り、そのランタイムを記録する。撮る前にシミュレーター内のアプリへ権限を与え、確認の窓が写らないようにする
 - Mac での実行には、シミュレーター向けにbuildしたアプリ（`.app`）が要る（`--app`。`npx expo run:ios --configuration Release` 等。EAS Build は使わない）
 

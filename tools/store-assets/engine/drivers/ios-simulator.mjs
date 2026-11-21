@@ -50,8 +50,20 @@ export function planIosCapture(opts) {
     add(`cp ${shellQuote(opts.fixtureDb)} ${db}`, 'テストデータのDBを入れる');
     add(`rm -f "$DATA_DIR/${rel}-wal" "$DATA_DIR/${rel}-shm"`, '古いWALを消す（新しいDBと混ざらないように）');
   }
+  if (opts.scheme) {
+    // simctl openurl は独自スキームで「"アプリ"で開きますか？」の確認を出し、撮影にそれが写る（2026-11-21 の GitHub Actions の実行で発生）。
+    // シミュレーター内の LaunchServices の承認（人が一度「開く」を押した時と同じ値）を先に書く。Apple の文書には無い設定（Expo CLI も同じ値を書く）
+    add(
+      `xcrun simctl spawn ${dev} defaults write com.apple.launchservices.schemeapproval ${shellQuote(`com.apple.CoreSimulator.CoreSimulatorBridge-->${opts.scheme}`)} -string ${shellQuote(opts.bundleId)}`,
+      `ディープリンク（${opts.scheme}://）の確認の窓を出さないよう、シミュレーター内で承認しておく`,
+    );
+  }
   add(`xcrun simctl launch ${dev} ${shellQuote(opts.bundleId)}`, 'アプリを起動');
   add('sleep 4', '起動を待つ');
+  add(
+    `xcrun simctl spawn ${dev} launchctl list | grep -q ${shellQuote(`UIKitApplication:${opts.bundleId}`)} || echo '[ios] 警告：アプリの動作を確かめられない（起動の後に終了した可能性。撮影の後の検証で同じ画像を拒否する）'`,
+    'アプリが動いていることを確かめる（確かめられなければ警告だけ出す）',
+  );
   add(`mkdir -p ${shellQuote(opts.outDir)}`, '保存先');
   for (const s of opts.screens) {
     if (!s.deepLink) continue;

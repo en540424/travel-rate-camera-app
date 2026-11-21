@@ -19,7 +19,7 @@ import path from 'node:path';
 import { planIosCapture, runIosPlan } from './drivers/ios-simulator.mjs';
 import {
   captureRel, CI_BRANCH_PREFIX, CI_JOB_FILE, CI_WORKFLOW, ciBranchFor, createJob, forbiddenIdentifiers, githubDispatchArgs, githubDownloadArgs, isMacMiniHost, newStatus, parsePreflight,
-  preflightProblems, redactIdentifiers, resolveCiJob, RESULT_SCHEMA, sizeNotes, slug, TARGETS, transition, validateJob, verifyResult, verifyRunMeta,
+  githubRunProblems, preflightProblems, redactIdentifiers, resolveCiJob, sameImageProblems, RESULT_SCHEMA, sizeNotes, slug, TARGETS, transition, validateJob, verifyResult, verifyRunMeta,
 } from './jobs.mjs';
 import { sha256 } from './pipeline.mjs';
 import { readPngInfo } from './png.mjs';
@@ -94,7 +94,7 @@ export function buildJobSteps(job, profile, { outDir, fixtureDb, appPath, picked
       groups.push({
         device, locale,
         steps: planIosCapture({
-          device: picked[device]?.udid ?? device, bundleId: job.app.bundleId, locale: profile.localeTags?.[locale] ?? locale,
+          device: picked[device]?.udid ?? device, bundleId: job.app.bundleId, scheme: profile.app.scheme, locale: profile.localeTags?.[locale] ?? locale,
           outDir: path.posix.join(outDir.replace(/\\/g, '/'), path.posix.dirname(captureRel(device, locale, 'x'))),
           screens, statusBar: ios.statusBar, appearance: ios.appearance,
           fixtureDb, dbRelPath: ios.dbRelPath, appPath: i === 0 ? appPath : undefined,
@@ -203,6 +203,8 @@ export async function cmdJobRun(args) {
       const info = readPngInfo(buf);
       result.captures.push({ device, locale, screen, file: rel, sha256: sha256(buf), width: info.width, height: info.height });
     }
+    const same = sameImageProblems(result.captures);
+    if (same.length) throw new Error(same.join('／'));
     result.status = 'succeeded';
   } catch (e) {
     result.status = 'failed';
@@ -367,6 +369,11 @@ export function cmdJobIngest(args) {
   const rawText = fs.readFileSync(path.join(from, 'result.json'), 'utf8');
   const result = JSON.parse(rawText);
   const v = verifyResult(job, result, { readFile: (rel) => fs.readFileSync(path.join(from, rel)), hash: sha256, pngInfo: readPngInfo, rawText });
+  // GitHub の実行先は、job-fetch が照合して残した run.json と結果を結び付ける（手で置いた結果・前の試行の結果を取り込まない）
+  const runFile = path.join(from, 'run.json');
+  const run = fs.existsSync(runFile) ? JSON.parse(fs.readFileSync(runFile, 'utf8')) : null;
+  if (job.target === 'github-actions-macos') v.problems.push(...githubRunProblems(job, st0, run, result));
+  v.ok = v.problems.length === 0;
   const record = { at: new Date().toISOString(), from, ok: v.ok, problems: v.problems, missing: v.missing };
   fs.writeFileSync(path.join(p.dir, 'ingest.json'), JSON.stringify(record, null, 2));
   let status = st0;
@@ -398,7 +405,7 @@ export function cmdJobIngest(args) {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.copyFileSync(path.join(from, c.file), dest);
     const rt = result.env.devices.find((d) => d.name === device)?.runtime ?? null;
-    added.push({ screen: c.screen, locale: c.locale, source: 'ios-simulator', file: dest, device, job: { id: job.id, purpose: job.purpose, commit: result.git.commit, runner: result.env.runner, macos: result.env.macos, xcode: result.env.xcode, runtime: rt, capturedAt: result.finishedAt } });
+    added.push({ screen: c.screen, locale: c.locale, source: 'ios-simulator', file: dest, device, job: { id: job.id, purpose: job.purpose, commit: result.git.commit, runner: result.env.runner, macos: result.env.macos, xcode: result.env.xcode, runtime: rt, capturedAt: result.finishedAt, githubRun: run ? { id: String(run.databaseId), url: run.url } : null } });
   }
   writeCaptures(runDir, added);
   const notes = sizeNotes(result.captures.filter((x) => x.device === device), profile.outputs?.store ?? []);

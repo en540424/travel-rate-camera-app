@@ -25,7 +25,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: store-assets-ios
+  # ジョブ（専用branch）ごとに分ける。共通の group だと待機中の古いジョブが GitHub の仕様で取り消される
+  group: store-assets-ios-${{ github.ref }}
   cancel-in-progress: false
 
 env:
