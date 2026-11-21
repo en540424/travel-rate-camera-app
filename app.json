@@ -62,7 +62,27 @@
           "speechRecognitionPermission": "話した内容を文字に変換して翻訳するために音声認識を使用します"
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "買い物マップで、今いる場所から保存した店までの距離を出したり、買った場所を記録したりするために位置情報を使用します",
+          "locationAlwaysAndWhenInUsePermission": false,
+          "locationAlwaysPermission": false,
+          "motionUsagePermission": false,
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "writeOnlyAccess": true,
+          "writeOnlyCalendarPermission": "旅行の予定を、あなたが選んだカレンダーへ追加するために使用します",
+          "calendarPermission": "旅行の予定を、あなたが選んだカレンダーへ追加するために使用します",
+          "remindersPermission": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
