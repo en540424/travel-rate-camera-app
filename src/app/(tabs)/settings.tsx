@@ -18,6 +18,7 @@ import { CurrentPlanCard } from '@/components/domain/CurrentPlanCard';
 import { TripLimitSheet } from '@/components/domain/TripLimitSheet';
 import { FALLBACK_BUDGET_JPY } from '@/constants/camera-screen';
 import { SHOW_PRO } from '@/config/feature-flags';
+import { useProPlusAccess } from '@/hooks/use-proplus';
 import type { TripRow } from '@/db/queries/trips';
 import { useHistory } from '@/hooks/use-history';
 import { useTrips } from '@/hooks/use-trips';
@@ -42,6 +43,7 @@ export default function SettingsScreen() {
   // 下タブでこのタブ（設定）を押した時（＝タブ切替で入ってきた時）だけ先頭へ戻す。
   // (tabs)/_layout.tsxのtabPressからtriggerTabScrollResetで呼ばれる。
   const scrollRef = useRef<ScrollView>(null);
+  const proPlusAccess = useProPlusAccess();
   useEffect(() => {
     return registerTabScrollReset('settings', () => {
       scrollRef.current?.scrollTo({ y: 0, animated: false });
@@ -256,6 +258,13 @@ export default function SettingsScreen() {
               onPress={() => router.push('/data-management')}
             />
           </SettingSection>
+
+          {/* Pro+（買い物マップ・旅行の予定・AI翻訳）。公開フラグが無効の間は出さない（本番の初期値）。 */}
+          {proPlusAccess !== 'hidden' && (
+            <SettingSection title="Pro+">
+              <SettingRow label="買い物マップ・旅行の予定" onPress={() => router.push('/proplus')} />
+            </SettingSection>
+          )}
 
           {/* サポート */}
           <SettingSection title="サポート">
