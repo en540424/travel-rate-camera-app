@@ -60,7 +60,9 @@
     "lint": "expo lint",
     "test": "node --test \"src/**/*.test.mjs\"",
     "test:store-assets": "node --test \"tools/store-assets/**/*.test.mjs\"",
-    "store-assets": "node tools/store-assets/engine/cli.mjs"
+    "store-assets": "node tools/store-assets/engine/cli.mjs",
+    "test:revenue-sim": "node --test \"tools/revenue-sim/**/*.test.mjs\"",
+    "revenue-sim": "node tools/revenue-sim/engine/cli.mjs"
   },
   "private": true
 }
