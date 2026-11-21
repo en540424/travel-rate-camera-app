@@ -1,0 +1,221 @@
+#!/usr/bin/env node
+// E-NEXUS共通 ストア・広告素材生成 CLI。使い方は tools/store-assets/README.md。
+//
+//   node tools/store-assets/engine/cli.mjs all       --profile <profile.json> [--build] [--mode draft|final]
+//   node tools/store-assets/engine/cli.mjs capture-web --profile <p> --run <dir> [--export <dir>] [--build]
+//   node tools/store-assets/engine/cli.mjs plan-ios  --profile <p> --run <dir> [--device <name>] [--locale ja]
+//   node tools/store-assets/engine/cli.mjs import    --profile <p> --run <dir> --from <dir> --source device|ios-simulator [--locale ja]
+//   node tools/store-assets/engine/cli.mjs compose   --profile <p> --run <dir> [--mode draft|final]
+//   node tools/store-assets/engine/cli.mjs validate  --run <dir>
+//
+// 外部への送信・アップロードは一切しない（ストア・LPへの反映は人が行う）。
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { captureWeb, exportWeb } from './drivers/web-preview.mjs';
+import { planIosCapture, planToShellScript } from './drivers/ios-simulator.mjs';
+import { galleryHtml, planOutputs, renderPlan, sha256, validateOutputs } from './pipeline.mjs';
+import { readPngInfo } from './png.mjs';
+import { loadProfile } from './profile.mjs';
+import { SOURCES } from './provenance.mjs';
+
+const ENGINE_DIR = path.dirname(fileURLToPath(import.meta.url));
+
+function parseArgs(argv) {
+  const [command, ...rest] = argv;
+  const args = { _: command };
+  for (let i = 0; i < rest.length; i++) {
+    const k = rest[i];
+    if (!k.startsWith('--')) continue;
+    const key = k.slice(2);
+    const next = rest[i + 1];
+    if (next === undefined || next.startsWith('--')) args[key] = true;
+    else { args[key] = next; i++; }
+  }
+  return args;
+}
+
+function loadPlaywright(projectRoot) {
+  for (const base of [path.join(projectRoot, 'package.json'), path.join(ENGINE_DIR, 'cli.mjs')]) {
+    try { return createRequire(base)('playwright'); } catch { /* 次の候補 */ }
+  }
+  throw new Error('playwright が見つかりません（アプリのdevDependenciesに入れるか、エンジンと同じ場所へ入れてください）');
+}
+
+function gitInfo(root) {
+  try {
+    const commit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: root }).toString().trim();
+    const dirty = execFileSync('git', ['status', '--porcelain'], { cwd: root }).toString().trim().length > 0;
+    return { commit, dirty };
+  } catch {
+    return { commit: 'unknown', dirty: null };
+  }
+}
+
+function stamp() {
+  return new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
+}
+
+function projectRootOf(profile) {
+  return path.resolve(profile._dir, profile.capture?.projectRoot ?? '.');
+}
+
+function defaultRunDir(profile) {
+  const outRoot = path.resolve(profile._dir, profile.outDir ?? '../../out');
+  return path.join(outRoot, profile.app.id, `${stamp()}-${gitInfo(projectRootOf(profile)).commit}`);
+}
+
+function readCaptures(runDir) {
+  const f = path.join(runDir, 'captures.json');
+  return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : [];
+}
+
+/** 撮影記録を保存する。同じ画面・言語・撮影元の記録は新しいもので置き換える。ファイル名はrunDirからの相対。 */
+function writeCaptures(runDir, added) {
+  const prev = readCaptures(runDir);
+  const keyOf = (c) => `${c.screen}|${c.locale}|${c.source}`;
+  const map = new Map(prev.map((c) => [keyOf(c), c]));
+  for (const c of added) {
+    const buf = fs.readFileSync(c.file);
+    const info = readPngInfo(buf);
+    map.set(keyOf(c), {
+      ...c, file: path.relative(runDir, c.file), width: info.width, height: info.height,
+      sha256: sha256(buf), capturedAt: new Date().toISOString(),
+    });
+  }
+  const list = [...map.values()];
+  fs.writeFileSync(path.join(runDir, 'captures.json'), JSON.stringify(list, null, 2));
+  return list;
+}
+
+async function cmdCaptureWeb(profile, args, runDir) {
+  const root = projectRootOf(profile);
+  const web = profile.capture.web ?? {};
+  let exportDir = args.export ? path.resolve(args.export) : path.join(runDir, '_web-export');
+  if (args.build || !fs.existsSync(path.join(exportDir, 'index.html'))) exportWeb(root, exportDir);
+  const records = await captureWeb({
+    playwright: loadPlaywright(root),
+    exportDir,
+    viewport: web.viewport ?? { width: 440, height: 956, scale: 3 },
+    clock: profile.capture.clock,
+    timezone: profile.capture.timezone ?? 'Asia/Tokyo',
+    locales: args.locale ? [args.locale] : profile.locales,
+    localeTags: profile.localeTags,
+    screens: profile.capture.screens.filter((s) => s.route && (s.web?.enabled ?? true)),
+    outDir: path.join(runDir, 'captures', 'web-preview'),
+  });
+  for (const r of records) if (r.pageErrors.length) console.warn(`[web-preview] ${r.screen}: ページのエラー ${r.pageErrors.join(' / ')}`);
+  writeCaptures(runDir, records);
+  console.log(`[capture-web] ${records.length}枚 → ${path.join(runDir, 'captures', 'web-preview')}`);
+}
+
+function cmdPlanIos(profile, args, runDir) {
+  const ios = profile.capture.ios ?? {};
+  const devices = args.device ? [args.device] : (ios.devices ?? []);
+  if (!devices.length) throw new Error('capture.ios.devices が空です');
+  // テストデータDBはrunディレクトリへ置き、手順からは相対パスで参照する（runディレクトリごとMacへ持って行けるように）
+  let fixtureRel = null;
+  if (ios.fixtureBuild) {
+    const dbName = path.basename(ios.dbRelPath ?? 'app.db');
+    const dest = path.join(runDir, 'fixture', dbName);
+    if (!fs.existsSync(dest)) {
+      execFileSync(process.execPath, [path.resolve(profile._dir, ios.fixtureBuild), dest], { stdio: ['ignore', 'inherit', 'ignore'] });
+    }
+    fixtureRel = `./fixture/${dbName}`;
+  }
+  for (const device of devices) {
+    for (const locale of args.locale ? [args.locale] : profile.locales) {
+      const outDir = `./captures/ios-simulator/${device.replace(/[^a-z0-9]+/gi, '-')}/${locale}`;
+      const steps = planIosCapture({
+        device, bundleId: profile.app.bundleId, locale: profile.localeTags?.[locale] ?? locale, outDir,
+        screens: profile.capture.screens.filter((s) => s.deepLink),
+        statusBar: ios.statusBar, appearance: ios.appearance,
+        fixtureDb: fixtureRel, dbRelPath: ios.dbRelPath,
+      });
+      const file = path.join(runDir, `ios-capture_${device.replace(/[^a-z0-9]+/gi, '-')}_${locale}.sh`);
+      const header = `# 実行：Macで run ディレクトリへ移動して bash ${path.basename(file)}\n# 撮影後：cli.mjs import --from ${outDir} --source ios-simulator --locale ${locale}`;
+      fs.writeFileSync(file, planToShellScript(steps, header));
+      console.log(`[plan-ios] ${file}`);
+    }
+  }
+}
+
+function cmdImport(profile, args, runDir) {
+  const source = args.source;
+  if (!SOURCES[source] || source === 'web-preview') throw new Error('--source は device / ios-simulator / android-emulator');
+  const from = path.resolve(args.from);
+  const locale = args.locale ?? profile.locales[0];
+  const screenIds = new Set(profile.capture.screens.map((s) => s.id));
+  const dest = path.join(runDir, 'captures', source, locale);
+  fs.mkdirSync(dest, { recursive: true });
+  const added = [];
+  for (const name of fs.readdirSync(from)) {
+    const id = path.basename(name, path.extname(name));
+    if (path.extname(name).toLowerCase() !== '.png' || !screenIds.has(id)) continue;
+    const file = path.join(dest, name);
+    fs.copyFileSync(path.join(from, name), file);
+    added.push({ screen: id, locale, source, file, importedFrom: path.join(from, name) });
+  }
+  if (!added.length) throw new Error(`取り込める画像がありません（ファイル名を画面ID.pngにする：${[...screenIds].join(', ')}）`);
+  writeCaptures(runDir, added);
+  console.log(`[import] ${added.length}枚（${source}・${locale}）`);
+}
+
+async function cmdCompose(profile, args, runDir) {
+  const mode = args.mode === 'final' ? 'final' : 'draft';
+  const captures = readCaptures(runDir).map((c) => ({ ...c, file: path.join(runDir, c.file) }));
+  const plan = planOutputs(profile, captures, { mode, locales: args.locale ? [args.locale] : undefined });
+  const root = projectRootOf(profile);
+  const outputs = await renderPlan(profile, plan, runDir, loadPlaywright(root));
+  const manifest = {
+    app: { id: profile.app.id, profile: path.relative(root, profile._file) },
+    generatedAt: new Date().toISOString(), mode, git: gitInfo(root),
+    captures: readCaptures(runDir), outputs, skipped: plan.skipped,
+  };
+  manifest.validation = validateOutputs(runDir, outputs);
+  fs.writeFileSync(path.join(runDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+  fs.writeFileSync(path.join(runDir, 'index.html'), galleryHtml(manifest));
+  console.log(`[compose] 出力 ${outputs.length}枚・作らなかったもの ${plan.skipped.length}件・検証 ${manifest.validation.ok ? 'OK' : `問題${manifest.validation.problems.length}件`}`);
+  console.log(`[compose] 一覧：${path.join(runDir, 'index.html')}`);
+  return manifest;
+}
+
+function cmdValidate(runDir) {
+  const manifest = JSON.parse(fs.readFileSync(path.join(runDir, 'manifest.json'), 'utf8'));
+  const v = validateOutputs(runDir, manifest.outputs);
+  for (const p of v.problems) console.log(`NG ${p}`);
+  console.log(v.ok ? 'OK' : `問題 ${v.problems.length}件`);
+  return v.ok;
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  if (!args._ || args._ === 'help' || args.help) {
+    console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 12).join('\n'));
+    return;
+  }
+  if (args._ === 'validate') { process.exitCode = cmdValidate(path.resolve(args.run)) ? 0 : 1; return; }
+  if (!args.profile) throw new Error('--profile が必要です');
+  const profile = loadProfile(args.profile);
+  const runDir = path.resolve(args.run ?? defaultRunDir(profile));
+  fs.mkdirSync(runDir, { recursive: true });
+  switch (args._) {
+    case 'capture-web': await cmdCaptureWeb(profile, args, runDir); break;
+    case 'plan-ios': cmdPlanIos(profile, args, runDir); break;
+    case 'import': cmdImport(profile, args, runDir); break;
+    case 'compose': await cmdCompose(profile, args, runDir); break;
+    case 'all': {
+      await cmdCaptureWeb(profile, args, runDir);
+      cmdPlanIos(profile, args, runDir);
+      const m = await cmdCompose(profile, args, runDir);
+      if (args.mode === 'final' && !m.validation.ok) process.exitCode = 1;
+      break;
+    }
+    default: throw new Error(`未知のコマンド: ${args._}`);
+  }
+}
+
+main().catch((e) => { console.error(e.message ?? e); process.exitCode = 1; });

@@ -55,7 +55,9 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "node --test \"src/**/*.test.mjs\""
+    "test": "node --test \"src/**/*.test.mjs\"",
+    "test:store-assets": "node --test \"tools/store-assets/**/*.test.mjs\"",
+    "store-assets": "node tools/store-assets/engine/cli.mjs"
   },
   "private": true
 }

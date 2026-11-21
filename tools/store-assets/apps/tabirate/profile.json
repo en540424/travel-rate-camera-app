@@ -1,0 +1,118 @@
+{
+  "$comment": "旅レートカメラの素材生成設定。エンジン（../../engine）はアプリ非依存で、アプリ固有の値はすべてここに置く。features.status が released 以外の機能は、どの文言にも使えない（エンジンが拒否する）。",
+  "app": {
+    "id": "tabirate",
+    "name": { "ja": "旅レートカメラ" },
+    "bundleId": "com.estep.travelratecamera",
+    "scheme": "travelratecameraapp"
+  },
+  "locales": ["ja"],
+  "localeTags": { "ja": "ja-JP" },
+  "brand": {
+    "primary": "#0E9488",
+    "primaryDark": "#0A766E",
+    "primarySoft": "#E7F5F2",
+    "background": "#E7F5F2",
+    "backgroundAlt": "#FFFFFF",
+    "text": "#16211F",
+    "body": "#5B6764"
+  },
+  "outDir": "../../out",
+  "draftWatermark": "DRAFT · Web版プレビュー · 提出不可",
+  "features": {
+    "camera-ocr": { "status": "released", "label": "カメラで値札の価格を読み取る（端末内OCR）" },
+    "jpy-conversion": { "status": "released", "label": "日本円への換算" },
+    "multi-currency": { "status": "released", "label": "複数通貨" },
+    "manual-convert": { "status": "released", "label": "手入力の換算" },
+    "records": { "status": "released", "label": "買い物候補・購入済みの記録" },
+    "trips": { "status": "released", "label": "旅行ごとの記録" },
+    "calendar": { "status": "released", "label": "買い物カレンダー（記録の表示）" },
+    "budget": { "status": "released", "label": "予算・支出の基本管理" },
+    "translation": { "status": "released", "label": "端末内翻訳（iOS 18以降）" },
+    "pro-unlimited": { "status": "released", "label": "Pro：保存無制限・複数旅行" },
+    "pro-analytics": { "status": "released", "label": "Pro：カテゴリー絞り込み・分析" },
+    "pro-csv": { "status": "released", "label": "Pro：CSV書き出し" },
+    "proplus-map": { "status": "planned", "label": "Pro+：買い物マップ（未公開）" },
+    "proplus-schedule": { "status": "planned", "label": "Pro+：旅行スケジュール（未公開）" },
+    "proplus-ai-translation": { "status": "planned", "label": "Pro+：AI翻訳・音声翻訳（未公開）" }
+  },
+  "capture": {
+    "projectRoot": "../../../..",
+    "clock": "2026-11-21T10:00:00+09:00",
+    "timezone": "Asia/Tokyo",
+    "web": { "viewport": { "width": 440, "height": 956, "scale": 3 } },
+    "ios": {
+      "devices": ["iPhone 17 Pro Max", "iPhone 17"],
+      "appearance": "light",
+      "statusBar": { "time": "9:41" },
+      "fixtureBuild": "build-fixture-db.mjs",
+      "dbRelPath": "Documents/SQLite/travelrate.db"
+    },
+    "screens": [
+      { "id": "camera", "route": "/", "deepLink": "travelratecameraapp:///", "waitForText": "旅レートカメラ", "web": { "enabled": false }, "$note": "Web版はカメラ・OCR非対応の表示になるため撮らない。iOSで撮る" },
+      { "id": "converter", "route": "/converter", "deepLink": "travelratecameraapp:///converter" },
+      { "id": "history", "route": "/history", "deepLink": "travelratecameraapp:///history", "waitForText": "履歴" },
+      { "id": "calendar", "route": "/calendar", "deepLink": "travelratecameraapp:///calendar", "waitForText": "買い物カレンダー" },
+      { "id": "analytics", "route": "/analytics", "deepLink": "travelratecameraapp:///analytics" },
+      { "id": "translation", "route": "/translation", "deepLink": "travelratecameraapp:///translation", "web": { "enabled": false }, "$note": "Web版は「翻訳を利用できません」になる" },
+      { "id": "pro-features", "route": "/pro-features", "deepLink": "travelratecameraapp:///pro-features", "waitForText": "無料版とProの違い" },
+      { "id": "help", "route": "/help", "deepLink": "travelratecameraapp:///help", "waitForText": "使い方" }
+    ]
+  },
+  "shots": [
+    {
+      "id": "01-camera", "screen": "camera", "features": ["camera-ocr", "jpy-conversion"],
+      "caption": { "ja": { "title": "値札を撮るだけで\n［日本円］がわかる", "sub": "カメラで価格を読み取り、その場で円に換算" } }
+    },
+    {
+      "id": "02-history", "screen": "history", "features": ["records", "trips"],
+      "caption": { "ja": { "title": "買い物候補と購入済みを\n［旅行ごと］に記録", "sub": "迷ったものも、買ったものも、あとから見返せる" } }
+    },
+    {
+      "id": "03-calendar", "screen": "calendar", "features": ["calendar", "records"],
+      "caption": { "ja": { "title": "いつ何を買ったか\n［カレンダー］で振り返る", "sub": "日ごとの候補・購入済みと月の合計" } }
+    },
+    {
+      "id": "04-converter", "screen": "converter", "features": ["manual-convert", "multi-currency"],
+      "caption": { "ja": { "title": "手入力でも\n［すぐ換算］", "sub": "旅行先の通貨と日本円を行き来できる" } }
+    },
+    {
+      "id": "05-translation", "screen": "translation", "features": ["translation"],
+      "caption": { "ja": { "title": "メニューや看板も\n［翻訳］", "sub": "iOS 18以降・端末内で翻訳" } }
+    },
+    {
+      "id": "06-pro", "screen": "pro-features", "features": ["pro-unlimited", "pro-analytics", "pro-csv"],
+      "caption": { "ja": { "title": "Proなら保存も旅行も\n［無制限］", "sub": "カテゴリー分析・CSV書き出しも使える" } }
+    }
+  ],
+  "outputs": {
+    "store": ["appstore-iphone-6.9", "appstore-iphone-6.1"]
+  },
+  "ads": [
+    {
+      "id": "hero", "shots": ["02-history", "03-calendar"], "features": ["records", "calendar", "jpy-conversion"],
+      "targets": ["lp-hero", "ad-horizontal"],
+      "headline": { "ja": "旅先の値段を、\n［日本円］で記録。" },
+      "sub": { "ja": "撮って、換算して、旅行ごとに残す買い物メモ" }
+    },
+    {
+      "id": "calendar-square", "shots": ["03-calendar"], "features": ["calendar"],
+      "targets": ["sns-square"],
+      "headline": { "ja": "買い物を［カレンダー］で振り返る" },
+      "sub": { "ja": "旅レートカメラ" }
+    },
+    {
+      "id": "story", "shots": ["02-history", "03-calendar"], "features": ["records", "trips", "calendar"],
+      "targets": ["ad-vertical"],
+      "headline": { "ja": "迷った買い物も\n［旅行ごと］に残せる" },
+      "sub": { "ja": "候補と購入済みを分けて記録" }
+    },
+    {
+      "id": "plan-pro", "shots": ["06-pro"], "features": ["pro-unlimited", "pro-analytics", "pro-csv"],
+      "targets": ["sns-square", "ad-vertical"],
+      "headline": { "ja": "Proで保存も旅行も［無制限］" },
+      "sub": { "ja": "カテゴリー分析・CSV書き出し" },
+      "badge": { "ja": "Pro" }
+    }
+  ]
+}
