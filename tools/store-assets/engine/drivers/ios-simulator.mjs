@@ -60,9 +60,14 @@ export function planIosCapture(opts) {
   }
   add(`xcrun simctl launch ${dev} ${shellQuote(opts.bundleId)}`, 'アプリを起動');
   add('sleep 4', '起動を待つ');
+  // 落ちていれば、直近のクラッシュの記録の要点（例外・終了の理由・関数名）だけを表示する。全文は出さない（公開repoのログになるため）
+  const crashSummary = [
+    `f=$(ls -t "$HOME"/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | head -1)`,
+    `if [ -n "$f" ]; then echo '[ios] 直近のクラッシュの記録（要点）：'; grep -E '"(procName|bundleID|exception|type|signal|codes|termination|reason|indicator|asi|symbol)"' "$f" | head -80; else echo '[ios] クラッシュの記録が無い'; fi`,
+  ].join('; ');
   add(
-    `xcrun simctl spawn ${dev} launchctl list | grep -q ${shellQuote(`UIKitApplication:${opts.bundleId}`)} || echo '[ios] 警告：アプリの動作を確かめられない（起動の後に終了した可能性。撮影の後の検証で同じ画像を拒否する）'`,
-    'アプリが動いていることを確かめる（確かめられなければ警告だけ出す）',
+    `xcrun simctl spawn ${dev} launchctl list | grep -q ${shellQuote(`UIKitApplication:${opts.bundleId}`)} || { echo '[ios] 警告：アプリの動作を確かめられない（起動の後に終了した可能性。撮影の後の検証で同じ画像を拒否する）'; ${crashSummary}; }`,
+    'アプリが動いていることを確かめる（確かめられなければ警告とクラッシュの要点を出す）',
   );
   add(`mkdir -p ${shellQuote(opts.outDir)}`, '保存先');
   for (const s of opts.screens) {
