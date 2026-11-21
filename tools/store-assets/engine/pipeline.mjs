@@ -15,6 +15,34 @@ export function sha256(buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
 
+/**
+ * 撮影記録のうち、ファイルが記録時のsha256と一致するものだけを使う（撮影後に差し替えられた画像を使わない）。
+ */
+export function verifyCaptures(captures, readFile = fs.readFileSync) {
+  const ok = [];
+  const rejected = [];
+  for (const c of captures) {
+    let actual = null;
+    try { actual = sha256(readFile(c.file)); } catch { /* 無い */ }
+    if (actual && actual === c.sha256) ok.push(c);
+    else rejected.push({ screen: c.screen, locale: c.locale, source: c.source, reason: actual ? '撮影後に画像が変更された（sha256不一致）' : '画像ファイルが無い' });
+  }
+  return { ok, rejected };
+}
+
+/**
+ * finalの完全性：作れなかったストア用の画像（撮影が無い・Web版のみ等）と、出力が1枚も無いストアの出力先を問題にする。
+ * draftでは問題にしない（作業途中の確認用のため）。
+ */
+export function completenessProblems(mode, storeTargets, skipped, outputs) {
+  if (mode !== 'final') return [];
+  const problems = skipped.filter((s) => s.shot).map((s) => `final: ${s.target} ${s.locale} ${s.shot} を作れない（${s.reason}）`);
+  for (const t of storeTargets) {
+    if (!outputs.some((o) => o.kind === 'store' && o.target === t)) problems.push(`final: ${t} の出力が1枚も無い`);
+  }
+  return problems;
+}
+
 /** 画面・言語ごとに、最も優先度の高い撮影記録を選ぶ。 */
 export function pickCapture(captures, screen, locale) {
   const list = captures.filter((c) => c.screen === screen && c.locale === locale);

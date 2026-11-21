@@ -37,6 +37,10 @@ test('場所の追加・更新・論理削除。削除すると記録の紐付�
   const u = S.updatePlace(s, placeId, { name: 'パン屋（本店）', lat: 48.85, lng: 2.35 }, c);
   assert.equal(u.value.name, 'パン屋（本店）');
   assert.equal(u.value.tripId, 1, '旅行は変えない');
+  const withApple = S.addPlace(s, { name: 'A', applePlaceId: 'I123' }, c);
+  const keep = S.updatePlace(withApple.state, withApple.value.id, { name: 'A2', tripId: 9 }, c);
+  assert.equal(keep.value.applePlaceId, 'I123', 'Place IDは入力で明示されない限り保つ');
+  assert.equal(keep.value.tripId, null, '更新で旅行を付け替えない');
   assert.notEqual(u.value.updatedAt, a.value.updatedAt);
   s = u.state;
   s = S.deletePlace(s, placeId, c).state;

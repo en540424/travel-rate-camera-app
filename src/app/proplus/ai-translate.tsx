@@ -49,9 +49,13 @@ export default function AiTranslateScreen() {
 
   useEffect(() => {
     void hasAiConsent().then(setConsent);
-    void gateway.getQuota().then((r) => { if (r.ok) setQuota((q) => mergeQuota(q, r.quota)); });
     return () => { conn.current?.close(); void stopSpeaking(); };
-  }, [gateway]);
+  }, []);
+
+  // 残量の照会も利用者のIDを中継へ送るため、同意の後だけ行う
+  useEffect(() => {
+    if (consent) void gateway.getQuota().then((r) => { if (r.ok) setQuota((q) => mergeQuota(q, r.quota)); });
+  }, [consent, gateway]);
 
   async function agree() {
     if (await saveAiConsent()) setConsent(true);
@@ -85,6 +89,9 @@ export default function AiTranslateScreen() {
   }
 
   function openVoice(resumeToken: string | null) {
+    // 再開の前に古い接続を閉じる（二重に開かない）
+    conn.current?.close();
+    conn.current = null;
     const c = gateway.openVoice({ direction, partnerLang: partner, resumeToken }, {
       onMessage: (m) => {
         dispatch({ type: 'server', msg: m });

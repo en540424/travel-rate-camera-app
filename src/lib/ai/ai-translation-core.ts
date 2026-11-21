@@ -180,7 +180,9 @@ export function voiceReducer(s: VoiceState, e: VoiceEvent): VoiceState {
     case 'reset':
       return VOICE_IDLE;
     case 'stop':
-      return s.phase === 'active' || s.phase === 'connecting' || s.phase === 'reconnecting' ? { ...s, phase: 'draining' } : s;
+      // 再接続中はつながっていないので、排出を待たずに終える
+      if (s.phase === 'reconnecting') return { ...s, phase: 'closed', closedReason: 'stopped', resumeToken: null };
+      return s.phase === 'active' || s.phase === 'connecting' ? { ...s, phase: 'draining' } : s;
     case 'socket_lost': {
       if (s.phase === 'draining') return { ...s, phase: 'closed', closedReason: s.closedReason ?? 'stopped' };
       if (s.phase !== 'active' && s.phase !== 'reconnecting' && s.phase !== 'connecting') return s;

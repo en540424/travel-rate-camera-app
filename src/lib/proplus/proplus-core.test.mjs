@@ -166,6 +166,12 @@ test('予定：端末カレンダーへ渡す内容（既定1時間・終日は�
   assert.equal(p.endDate.toISOString(), '2026-11-21T10:00:00.000Z');
   assert.equal(p.location, 'ルーブル美術館');
   assert.ok(p.notes.startsWith('予約あり'));
+  const allDay = toCalendarPayload(ev({ startsLocal: '2026-11-21', endsLocal: '2026-11-22', allDay: true, tz: 'Asia/Tokyo' }), null);
+  assert.equal(allDay.timeZone, null, '終日はタイムゾーンを付けない（端末の日付）');
+  assert.deepEqual([allDay.startDate.getFullYear(), allDay.startDate.getMonth(), allDay.startDate.getDate(), allDay.startDate.getHours()], [2026, 10, 21, 0]);
+  assert.deepEqual([allDay.endDate.getMonth(), allDay.endDate.getDate(), allDay.endDate.getHours()], [10, 22, 0], '終了は最終日（end-inclusive）');
+  const one = toCalendarPayload(ev({ startsLocal: '2026-11-21', allDay: true }), null);
+  assert.equal(one.endDate.getTime(), one.startDate.getTime(), '1日だけの終日は開始と同じ日');
   const r = eventRange(ev({ startsLocal: '2026-11-21', endsLocal: '2026-11-22', allDay: true }));
   assert.equal(r.end.toISOString(), '2026-11-22T23:00:00.000Z', '最終日の翌日0時（パリ）');
 });

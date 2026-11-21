@@ -35,14 +35,15 @@ export function planIosCapture(opts) {
   }
   add(`xcrun simctl terminate ${dev} ${shellQuote(opts.bundleId)} 2>/dev/null || true`, 'アプリを止める');
   if (opts.fixtureDb) {
+    // 1行ずつ分ける（`&&` でつなぐと set -e が途中の失敗で止まらず、古いデータのまま撮ってしまうため）
     const rel = opts.dbRelPath ?? 'Documents/SQLite/app.db';
-    add(
-      `DATA_DIR="$(xcrun simctl get_app_container ${dev} ${shellQuote(opts.bundleId)} data)" && ` +
-        `if [ -f "$DATA_DIR/${rel}" ]; then cp "$DATA_DIR/${rel}" "$DATA_DIR/${rel}.bak-$(date +%Y%m%d%H%M%S)"; fi && ` +
-        `mkdir -p "$(dirname "$DATA_DIR/${rel}")" && cp ${shellQuote(opts.fixtureDb)} "$DATA_DIR/${rel}" && ` +
-        `rm -f "$DATA_DIR/${rel}-wal" "$DATA_DIR/${rel}-shm"`,
-      'テストデータのDBを入れる（シミュレーター内のみ。既存DBは退避）',
-    );
+    const db = `"$DATA_DIR/${rel}"`;
+    add(`DATA_DIR="$(xcrun simctl get_app_container ${dev} ${shellQuote(opts.bundleId)} data)"`, 'シミュレーター内のアプリのデータの場所（アプリが入っていなければここで止まる）');
+    add('test -n "$DATA_DIR"', '場所が取れたことを確かめる');
+    add(`if [ -f ${db} ]; then cp ${db} "$DATA_DIR/${rel}.bak-$(date +%Y%m%d%H%M%S)"; fi`, '既存のDBを退避（シミュレーター内のみ）');
+    add(`mkdir -p "$(dirname ${db})"`, 'DBの置き場所');
+    add(`cp ${shellQuote(opts.fixtureDb)} ${db}`, 'テストデータのDBを入れる');
+    add(`rm -f "$DATA_DIR/${rel}-wal" "$DATA_DIR/${rel}-shm"`, '古いWALを消す（新しいDBと混ざらないように）');
   }
   add(`xcrun simctl launch ${dev} ${shellQuote(opts.bundleId)}`, 'アプリを起動');
   add('sleep 4', '起動を待つ');

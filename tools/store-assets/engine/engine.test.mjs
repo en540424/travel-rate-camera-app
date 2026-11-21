@@ -6,7 +6,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { planIosCapture, planToShellScript } from './drivers/ios-simulator.mjs';
-import { pickCapture, planOutputs, validateOutputs, sha256 } from './pipeline.mjs';
+import { completenessProblems, pickCapture, planOutputs, validateOutputs, sha256, verifyCaptures } from './pipeline.mjs';
 import { decodePng, encodeRgbPng, flattenPng, readPngInfo } from './png.mjs';
 import { loadProfile, validateProfile } from './profile.mjs';
 import { canUseSource, checkClaims } from './provenance.mjs';
@@ -158,11 +158,33 @@ test('ios: 撮影手順は画面ごとに開いて撮り、テストデータは
   const launchIdx = steps.findIndex((s) => s.cmd.includes('simctl launch'));
   const terminateIdx = steps.findIndex((s) => s.cmd.includes('simctl terminate'));
   assert.ok(terminateIdx < seedIdx && seedIdx < launchIdx, 'アプリを止めてからDBを入れ、その後に起動');
-  assert.ok(steps[seedIdx].cmd.includes('.bak-'), '既存DBの退避');
+  assert.ok(steps.some((s) => s.cmd.includes('.bak-')), '既存DBの退避');
+  assert.ok(steps.every((s) => !s.cmd.includes(' && ')), '失敗を set -e で止められるよう1行ずつ');
   assert.ok(planToShellScript(steps).startsWith('#!/bin/bash'));
 });
 
 test('templates: 文言はエスケープされ、［］だけが強調になる', () => {
   assert.equal(escapeHtml('<b>&"'), '&lt;b&gt;&amp;&quot;');
   assert.equal(renderEmphasis('円が［わかる］<x>\n次'), '円が<em>わかる</em>&lt;x&gt;<br>次');
+});
+
+test('pipeline: finalは作れなかったストア用の画像と、出力0枚の出力先を問題にする（draftでは問わない）', () => {
+  const skipped = [{ target: 'appstore-iphone-6.1', locale: 'ja', shot: '01-camera', reason: '撮影が無い' }];
+  assert.deepEqual(completenessProblems('draft', ['appstore-iphone-6.1'], skipped, []), []);
+  const p = completenessProblems('final', ['appstore-iphone-6.1', 'appstore-iphone-6.9'], skipped, [{ kind: 'store', target: 'appstore-iphone-6.1' }]);
+  assert.equal(p.length, 2);
+  assert.ok(p.some((x) => x.includes('01-camera')));
+  assert.ok(p.some((x) => x.includes('appstore-iphone-6.9 の出力が1枚も無い')));
+});
+
+test('pipeline: 撮影後に差し替えられた画像・無い画像は使わない', () => {
+  const files = { a: Buffer.from('A'), b: Buffer.from('B') };
+  const read = (f) => { if (!files[f]) throw new Error('none'); return files[f]; };
+  const r = verifyCaptures([
+    { screen: 's1', locale: 'ja', source: 'device', file: 'a', sha256: sha256(Buffer.from('A')) },
+    { screen: 's2', locale: 'ja', source: 'device', file: 'b', sha256: sha256(Buffer.from('original')) },
+    { screen: 's3', locale: 'ja', source: 'device', file: 'zzz', sha256: 'x' },
+  ], read);
+  assert.deepEqual(r.ok.map((c) => c.screen), ['s1']);
+  assert.deepEqual(r.rejected.map((c) => c.screen), ['s2', 's3']);
 });

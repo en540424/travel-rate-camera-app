@@ -12,8 +12,8 @@ import { FormInput } from '@/components/ui/FormInput';
 import { GhostButton } from '@/components/ui/GhostButton';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { SecondaryButton } from '@/components/ui/SecondaryButton';
-import { useAllHistory } from '@/hooks/use-all-history';
 import { useProPlusAccess, useProPlusData } from '@/hooks/use-proplus';
+import { useTripRecords } from '@/hooks/use-trip-records';
 import { canEditProPlusData } from '@/lib/proplus/proplus-access-core';
 import { getCurrentLocation } from '@/lib/proplus/device-services';
 import type { CoordSource } from '@/lib/proplus/places-core';
@@ -21,12 +21,18 @@ import { proPlusOps } from '@/stores/proplus-store';
 import { useTripStore } from '@/stores/trip-store';
 import { formatJpy } from '@/utils/format';
 
+/** データの読み込みが終わってからフォームを作る（読み込み前の空の値で初期化して、保存で上書きしないため） */
 export default function PlaceEditScreen() {
+  const { status } = useProPlusData();
+  if (status === 'idle' || status === 'loading') return <View style={pp.content}><ThemedText style={pp.muted}>読み込み中…</ThemedText></View>;
+  return <PlaceEditForm />;
+}
+
+function PlaceEditForm() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const access = useProPlusAccess();
   const { data, apply, blockedReason } = useProPlusData();
   const activeTrip = useTripStore((s) => s.activeTrip);
-  const { history } = useAllHistory();
   const current = id ? data.places.find((p) => p.id === id && p.deletedAt === null) ?? null : null;
   const editable = canEditProPlusData(access) && !blockedReason;
 
@@ -39,8 +45,9 @@ export default function PlaceEditScreen() {
   const [saving, setSaving] = useState(false);
 
   // 紐付けの候補：この場所の旅行（新規なら使用中の旅行）の記録
-  const tripId = current?.tripId ?? activeTrip?.id ?? null;
-  const records = history.filter((h) => tripId != null && h.trip_id === tripId);
+  // 既存の場所は登録時の旅行のまま（旅行の無い場所を、編集で使用中の旅行へ付け替えない）
+  const tripId = current ? current.tripId : activeTrip?.id ?? null;
+  const records = useTripRecords(tripId != null ? [tripId] : []);
   const linked = new Set(data.links.filter((l) => l.placeId === current?.id).map((l) => l.historyId));
 
   async function fillHere() {

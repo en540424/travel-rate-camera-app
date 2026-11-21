@@ -48,7 +48,7 @@ export async function addToDeviceCalendar(p: CalendarPayload): Promise<CalendarA
       startDate: p.startDate,
       endDate: p.endDate,
       allDay: p.allDay,
-      timeZone: p.timeZone,
+      timeZone: p.timeZone ?? undefined,
       location: p.location ?? undefined,
       notes: p.notes,
     });

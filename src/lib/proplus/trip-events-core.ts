@@ -243,21 +243,38 @@ export type CalendarPayload = {
   startDate: Date;
   endDate: Date;
   allDay: boolean;
-  timeZone: string;
+  /** 時刻ありの予定のタイムゾーン。終日はnull（端末の日付として扱う） */
+  timeZone: string | null;
   location: string | null;
   notes: string;
 };
 
-/** 端末カレンダーへ追加する内容（OSの追加画面へ渡す）。追加後の変更はアプリへ戻らない（片方向）。 */
+/**
+ * 端末カレンダーへ追加する内容（OSの追加画面へ渡す）。追加後の変更はアプリへ戻らない（片方向）。
+ *
+ * 終日の予定は、EventKitでは端末のタイムゾーンに属さない「日付」として扱われ、終了日を含む（end-inclusive）。
+ * そのため絶対時刻へ変換せず、端末の現地時刻で「開始日の0時」〜「最終日の0時」を渡し、タイムゾーンは付けない
+ * （予定のタイムゾーンの0時を渡すと、端末が西側にあると前日にずれ、翌日0時を終了にすると2日間になる）。
+ * 実機での確認はTEST_CHECKLIST #92。
+ */
 export function toCalendarPayload(e: TripEvent, placeName: string | null): CalendarPayload | null {
   const r = eventRange(e);
   if (!r) return null;
+  let startDate = r.start;
+  let endDate = r.end;
+  if (e.allDay) {
+    const s = parseLocal(e.startsLocal, true);
+    const l = parseLocal(e.endsLocal ?? e.startsLocal, true);
+    if (!s || !l) return null;
+    startDate = new Date(s.y, s.mo - 1, s.d);
+    endDate = new Date(l.y, l.mo - 1, l.d);
+  }
   return {
     title: e.title,
-    startDate: r.start,
-    endDate: r.end,
+    startDate,
+    endDate,
     allDay: e.allDay,
-    timeZone: e.tz,
+    timeZone: e.allDay ? null : e.tz,
     location: placeName,
     notes: [e.memo, `旅レートカメラの旅行の予定（${EVENT_KIND_LABELS[e.kind]}）`].filter(Boolean).join('\n'),
   };

@@ -53,7 +53,13 @@ export function MapCanvas(props: MapCanvasProps) {
   const region = regionForPoints(points) ?? { latitude: 35.6812, longitude: 139.7671, latitudeDelta: 0.2, longitudeDelta: 0.2 };
   return (
     <MapErrorBoundary fallback={<FallbackCanvas {...props} />}>
-    <MapView style={[styles.map, { height }]} initialRegion={region} showsUserLocation={here != null}>
+    <MapView
+      // 「現在地」を取り直したら表示範囲を作り直す（initialRegionは初回しか効かないため）
+      key={here ? `${here.lat.toFixed(4)},${here.lng.toFixed(4)}` : 'no-here'}
+      style={[styles.map, { height }]}
+      initialRegion={region}
+      showsUserLocation={here != null}
+    >
       {pins.map((p) => (
         <Marker
           key={p.id}

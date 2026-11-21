@@ -61,7 +61,8 @@ export function addPlace(s: ProPlusState, input: PlaceInput, clock: Clock): OpRe
 export function updatePlace(s: ProPlusState, id: string, input: PlaceInput, clock: Clock): OpResult<Place> {
   const cur = s.places.find((p) => p.id === id && p.deletedAt === null);
   if (!cur) return { ok: false, errors: ['場所が見つかりません'] };
-  const v = validatePlaceInput({ tripId: cur.tripId, ...input });
+  // 旅行とApple Place IDは、入力で明示されない限り元の値を保つ（旅行は変えない）
+  const v = validatePlaceInput({ applePlaceId: cur.applePlaceId, ...input, tripId: cur.tripId });
   if (!v.ok) return v;
   const next: Place = { ...cur, ...v.value, updatedAt: clock.now() };
   return { ok: true, state: { ...s, places: s.places.map((p) => (p.id === id ? next : p)) }, value: next };

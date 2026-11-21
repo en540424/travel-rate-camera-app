@@ -26,7 +26,14 @@ function todayLocal(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** データの読み込みが終わってからフォームを作る（読み込み前の空の値で初期化して、保存で上書きしないため） */
 export default function EventEditScreen() {
+  const { status } = useProPlusData();
+  if (status === 'idle' || status === 'loading') return <View style={pp.content}><ThemedText style={pp.muted}>読み込み中…</ThemedText></View>;
+  return <EventEditForm />;
+}
+
+function EventEditForm() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const access = useProPlusAccess();
   const { data, apply, blockedReason } = useProPlusData();
@@ -49,7 +56,8 @@ export default function EventEditScreen() {
   const [saving, setSaving] = useState(false);
   const places = data.places.filter((p) => p.deletedAt === null && (p.tripId === tripId || p.id === placeId));
 
-  const tripRange = activeTrip ? { startDate: activeTrip.started_at?.slice(0, 10) ?? null, endDate: activeTrip.ended_at?.slice(0, 10) ?? null } : undefined;
+  // 旅行の期間の警告は、予定の旅行が使用中の旅行と同じ時だけ出す（別の旅行の期間で判定しない）
+  const tripRange = activeTrip && activeTrip.id === tripId ? { startDate: activeTrip.started_at?.slice(0, 10) ?? null, endDate: activeTrip.ended_at?.slice(0, 10) ?? null } : undefined;
 
   function buildInput() {
     const startsLocal = allDay ? date.trim() : `${date.trim()}T${time.trim()}`;

@@ -14,8 +14,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { GhostButton } from '@/components/ui/GhostButton';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { SecondaryButton } from '@/components/ui/SecondaryButton';
-import { useAllHistory } from '@/hooks/use-all-history';
 import { useProPlusAccess, useProPlusData } from '@/hooks/use-proplus';
+import { useTripRecords } from '@/hooks/use-trip-records';
 import { canEditProPlusData } from '@/lib/proplus/proplus-access-core';
 import { getCurrentLocation, openExternalUrl } from '@/lib/proplus/device-services';
 import { externalNavigationUrl, formatDistance, hasCoordinate, sortPlaces, type Place } from '@/lib/proplus/places-core';
@@ -25,7 +25,6 @@ export default function ShoppingMapScreen() {
   const access = useProPlusAccess();
   const { data, blockedReason } = useProPlusData();
   const activeTrip = useTripStore((s) => s.activeTrip);
-  const { history } = useAllHistory();
   const [here, setHere] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [onlyThisTrip, setOnlyThisTrip] = useState(true);
@@ -34,6 +33,8 @@ export default function ShoppingMapScreen() {
 
   const tripFilter = onlyThisTrip && activeTrip ? activeTrip.id : null;
   const places = useMemo(() => sortPlaces(data.places, here, tripFilter), [data.places, here, tripFilter]);
+  // ピンの色のため、表示中の場所が属する旅行の記録を読む
+  const history = useTripRecords(places.map((p) => p.tripId).filter((id): id is number => id != null));
 
   // ピンの色：購入済みの記録がある場所／候補だけの場所／記録の無い場所
   const pins: MapPin[] = useMemo(() => {

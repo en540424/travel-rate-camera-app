@@ -32,7 +32,9 @@ export function serveStatic(root) {
 /** Web版をbundleする。projectRootはアプリのrepo。 */
 export function exportWeb(projectRoot, outDir, log = console.log) {
   log(`[web-preview] expo export --platform web → ${outDir}`);
-  const r = spawnSync('npx', ['expo', 'export', '--platform', 'web', '--output-dir', outDir], {
+  // Windowsはshell経由で実行するため、空白を含むパスを引用符で囲む
+  const dir = process.platform === 'win32' ? `"${outDir}"` : outDir;
+  const r = spawnSync('npx', ['expo', 'export', '--platform', 'web', '--output-dir', dir], {
     cwd: projectRoot, stdio: 'inherit', shell: process.platform === 'win32',
   });
   if (r.status !== 0) throw new Error(`expo export が失敗しました（exit ${r.status}）`);

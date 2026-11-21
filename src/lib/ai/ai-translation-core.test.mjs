@@ -73,6 +73,8 @@ test('音声：切断は再開トークンがあれば上限まで再開、無�
   }
   s = C.voiceReducer(s, { type: 'socket_lost' });
   assert.equal(s.phase, 'error', '上限を超えたら再開しない');
+  const lost = C.voiceReducer(C.voiceReducer(C.voiceReducer(C.VOICE_IDLE, { type: 'start' }), { type: 'server', msg: { type: 'session', session_id: 'a', resume_token: 't' } }), { type: 'socket_lost' });
+  assert.equal(C.voiceReducer(lost, { type: 'stop' }).phase, 'closed', '再接続中の終了は排出を待たない');
   const noToken = C.voiceReducer(C.voiceReducer(C.VOICE_IDLE, { type: 'start' }), { type: 'socket_lost' });
   assert.equal(noToken.phase, 'error');
   let q = C.voiceReducer(C.voiceReducer(C.VOICE_IDLE, { type: 'start' }), { type: 'server', msg: { type: 'session', session_id: 'a', resume_token: 't' } });

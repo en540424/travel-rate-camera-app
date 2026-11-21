@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 import { captureWeb, exportWeb } from './drivers/web-preview.mjs';
 import { planIosCapture, planToShellScript } from './drivers/ios-simulator.mjs';
-import { galleryHtml, planOutputs, renderPlan, sha256, validateOutputs } from './pipeline.mjs';
+import { completenessProblems, galleryHtml, planOutputs, renderPlan, sha256, validateOutputs, verifyCaptures } from './pipeline.mjs';
 import { readPngInfo } from './png.mjs';
 import { loadProfile } from './profile.mjs';
 import { SOURCES } from './provenance.mjs';
@@ -122,7 +122,7 @@ function cmdPlanIos(profile, args, runDir) {
     const dbName = path.basename(ios.dbRelPath ?? 'app.db');
     const dest = path.join(runDir, 'fixture', dbName);
     if (!fs.existsSync(dest)) {
-      execFileSync(process.execPath, [path.resolve(profile._dir, ios.fixtureBuild), dest], { stdio: ['ignore', 'inherit', 'ignore'] });
+      execFileSync(process.execPath, [path.resolve(profile._dir, ios.fixtureBuild), dest], { stdio: ['ignore', 'inherit', 'inherit'] });
     }
     fixtureRel = `./fixture/${dbName}`;
   }
@@ -151,10 +151,15 @@ function cmdImport(profile, args, runDir) {
   const screenIds = new Set(profile.capture.screens.map((s) => s.id));
   const dest = path.join(runDir, 'captures', source, locale);
   fs.mkdirSync(dest, { recursive: true });
+  // Web版プレビューの画像を実機・シミュレーターとして取り込み直すことを防ぐ（同じ内容のものを拒否）
+  const webHashes = new Set(readCaptures(runDir).filter((c) => c.source === 'web-preview').map((c) => c.sha256));
   const added = [];
   for (const name of fs.readdirSync(from)) {
     const id = path.basename(name, path.extname(name));
     if (path.extname(name).toLowerCase() !== '.png' || !screenIds.has(id)) continue;
+    if (webHashes.has(sha256(fs.readFileSync(path.join(from, name))))) {
+      throw new Error(`${name} はWeb版プレビューの撮影と同じ画像です。${source}として取り込めません`);
+    }
     const file = path.join(dest, name);
     fs.copyFileSync(path.join(from, name), file);
     added.push({ screen: id, locale, source, file, importedFrom: path.join(from, name) });
@@ -166,26 +171,33 @@ function cmdImport(profile, args, runDir) {
 
 async function cmdCompose(profile, args, runDir) {
   const mode = args.mode === 'final' ? 'final' : 'draft';
-  const captures = readCaptures(runDir).map((c) => ({ ...c, file: path.join(runDir, c.file) }));
-  const plan = planOutputs(profile, captures, { mode, locales: args.locale ? [args.locale] : undefined });
+  const verified = verifyCaptures(readCaptures(runDir).map((c) => ({ ...c, file: path.join(runDir, c.file) })));
+  for (const r of verified.rejected) console.warn(`[compose] 使わない撮影：${r.screen} ${r.locale} ${r.source}（${r.reason}）`);
+  const plan = planOutputs(profile, verified.ok, { mode, locales: args.locale ? [args.locale] : undefined });
   const root = projectRootOf(profile);
   const outputs = await renderPlan(profile, plan, runDir, loadPlaywright(root));
   const manifest = {
     app: { id: profile.app.id, profile: path.relative(root, profile._file) },
-    generatedAt: new Date().toISOString(), mode, git: gitInfo(root),
+    generatedAt: new Date().toISOString(), mode, git: gitInfo(root), storeTargets: profile.outputs?.store ?? [],
     captures: readCaptures(runDir), outputs, skipped: plan.skipped,
   };
+  manifest.rejectedCaptures = verified.rejected;
   manifest.validation = validateOutputs(runDir, outputs);
+  const incomplete = completenessProblems(mode, manifest.storeTargets, plan.skipped, outputs);
+  if (incomplete.length) manifest.validation = { ok: false, problems: [...manifest.validation.problems, ...incomplete] };
   fs.writeFileSync(path.join(runDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
   fs.writeFileSync(path.join(runDir, 'index.html'), galleryHtml(manifest));
   console.log(`[compose] 出力 ${outputs.length}枚・作らなかったもの ${plan.skipped.length}件・検証 ${manifest.validation.ok ? 'OK' : `問題${manifest.validation.problems.length}件`}`);
   console.log(`[compose] 一覧：${path.join(runDir, 'index.html')}`);
+  if (mode === 'final' && !manifest.validation.ok) process.exitCode = 1;
   return manifest;
 }
 
 function cmdValidate(runDir) {
   const manifest = JSON.parse(fs.readFileSync(path.join(runDir, 'manifest.json'), 'utf8'));
-  const v = validateOutputs(runDir, manifest.outputs);
+  const base = validateOutputs(runDir, manifest.outputs);
+  const incomplete = completenessProblems(manifest.mode, manifest.storeTargets ?? [], manifest.skipped ?? [], manifest.outputs);
+  const v = { ok: base.ok && incomplete.length === 0, problems: [...base.problems, ...incomplete] };
   for (const p of v.problems) console.log(`NG ${p}`);
   console.log(v.ok ? 'OK' : `問題 ${v.problems.length}件`);
   return v.ok;
