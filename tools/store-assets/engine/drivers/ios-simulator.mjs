@@ -35,6 +35,10 @@ export function planIosCapture(opts) {
     );
   }
   add(`xcrun simctl terminate ${dev} ${shellQuote(opts.bundleId)} 2>/dev/null || true`, 'アプリを止める');
+  add(
+    `xcrun simctl privacy ${dev} grant all ${shellQuote(opts.bundleId)} 2>/dev/null || true`,
+    '権限の確認の窓が撮影に写らないように、シミュレーター内のこのアプリへ許可を与える（非対応の版では何もしない）',
+  );
   if (opts.fixtureDb) {
     // 1行ずつ分ける（`&&` でつなぐと set -e が途中の失敗で止まらず、古いデータのまま撮ってしまうため）
     const rel = opts.dbRelPath ?? 'Documents/SQLite/app.db';

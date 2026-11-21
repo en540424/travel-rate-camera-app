@@ -1,0 +1,103 @@
+# E-NEXUS共通 素材生成：iOSシミュレーターで実アプリを撮影するジョブ（tools/store-assets の job-*）。
+#
+# 【起動】次の2つだけ。PR・schedule・他のbranchへの push では動かない。
+#   1. ci/store-assets-ios/<ジョブID> への push（job-dispatch --execute が「ジョブのcommit＋.github/store-assets/job.json」だけのcommitを作って push する）
+#      届いたcommitがその形でなければ、job-ci-resolve が撮影の前に止める。
+#   2. workflow_dispatch（このファイルが既定branchに入った後だけ使える。入れるのはHuman判断）
+# 【費用】公開repoの標準ランナー（macos-26）は無料（GitHub Docs「GitHub Actions billing」・「GitHub-hosted runners」）。
+#   larger runner は公開repoでも課金なので使わない。privateへ移すと有料（その時は止めて見直す）。
+# 【公開】公開repoのログ・成果物は誰でも見られる前提。secrets を一切使わない。撮影はテスト用のデータだけ。
+#   成果物は撮影結果（result.json と PNG）だけで、保存は3日。
+name: store-assets-ios
+
+on:
+  push:
+    branches:
+      - 'ci/store-assets-ios/**'
+  workflow_dispatch:
+    inputs:
+      job_json:
+        description: tools/store-assets の job.json の中身（job-create で作ったもの）
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: store-assets-ios
+  cancel-in-progress: false
+
+env:
+  EXPO_NO_TELEMETRY: '1'
+  CI: 'true'
+
+jobs:
+  capture:
+    if: ${{ !github.event.repository.fork }}
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: ジョブを確かめる（入力は環境変数で受け、シェルへ直接埋め込まない）
+        id: job
+        env:
+          JOB_JSON: ${{ inputs.job_json }}
+        run: node tools/store-assets/engine/cli.mjs job-ci-resolve --out "$RUNNER_TEMP/job.json"
+
+      - name: ジョブのcommitへ移る（/ios は prebuild が作る未追跡のフォルダなので、このランナーの中だけで無視する）
+        env:
+          COMMIT: ${{ steps.job.outputs.commit }}
+        run: |
+          git checkout --quiet --detach "$COMMIT"
+          test "$(git rev-parse HEAD)" = "$COMMIT"
+          printf '/ios/\n' >> .git/info/exclude
+          test -z "$(git status --porcelain)"
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: ネイティブのプロジェクトを作る
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: prebuild が書き換えた追跡ファイルを戻す（撮影の commit と作業ツリーを一致させる）
+        run: |
+          git checkout -- .
+          git status --porcelain
+          test -z "$(git status --porcelain)"
+
+      - run: pod install
+        working-directory: ios
+
+      - name: シミュレーター向けに build（署名なし・EAS Build は使わない）
+        run: |
+          set -o pipefail
+          WS=$(ls -d ios/*.xcworkspace | head -1)
+          NAME=$(basename "$WS" .xcworkspace)
+          xcodebuild -workspace "$WS" -scheme "$NAME" -configuration Release -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO build > "$RUNNER_TEMP/xcodebuild.log" 2>&1 || { tail -n 120 "$RUNNER_TEMP/xcodebuild.log"; exit 1; }
+          tail -n 5 "$RUNNER_TEMP/xcodebuild.log"
+          APP=$(ls -d "$RUNNER_TEMP"/dd/Build/Products/Release-iphonesimulator/*.app | head -1)
+          test -d "$APP"
+          echo "APP=$APP" >> "$GITHUB_ENV"
+
+      - name: 撮影（既存の iOS 撮影手順を job-run で実行。commit の一致・sha256・撮影環境の記録）
+        run: node tools/store-assets/engine/cli.mjs job-run --job "$RUNNER_TEMP/job.json" --out "$RUNNER_TEMP/result" --app "$APP"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && steps.job.outputs.id != ''
+        with:
+          name: store-assets-${{ steps.job.outputs.id }}
+          path: |
+            ${{ runner.temp }}/result/result.json
+            ${{ runner.temp }}/result/captures
+          retention-days: 3
+          if-no-files-found: warn

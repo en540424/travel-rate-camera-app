@@ -69,8 +69,9 @@ Windows・会社PC・Macのどれからでも、**commitを固定した撮影ジ
 # どの端末でも：ジョブを作る（未commitの変更があると作らない）→ 手順を確かめる（撮影しない）
 npm run store-assets -- job-create   --profile tools/store-assets/apps/tabirate/profile.json --target github-actions-macos
 npm run store-assets -- job-run      --job <out/tabirate/jobs/<id>> --dry-run
-npm run store-assets -- job-dispatch --job <dir>              # 依頼の内容を表示（--execute で GitHub へ依頼）
-npm run store-assets -- job-fetch    --job <dir> --run-id <id> # 成果物の取得の内容を表示（--execute で取得）
+npm run store-assets -- job-dispatch --job <dir>              # 依頼の内容を表示（--execute で専用branchへ push＝GitHubで撮影が始まる）
+npm run store-assets -- job-fetch    --job <dir>              # run を探して確かめる（--execute で成果物を取得。--run-id で指定も可）
+npm run store-assets -- job-cleanup  --job <dir>              # このジョブの専用branchを消す（--execute）
 npm run store-assets -- job-ingest   --job <dir> --from <dir>/result [--device "iPhone 17 Pro Max"]
 npm run store-assets -- job-status   --job <dir> [--to failed --note 理由]   # 状態と再実行（failed → dispatched で試行+1）
 npm run store-assets -- job-list     --profile <p>            # 一覧と out/<app>/jobs/index.html
@@ -78,7 +79,7 @@ npm run store-assets -- job-list     --profile <p>            # 一覧と out/<a
 
 | 実行先（`--target`） | 状態 | 費用 | 開始 |
 |---|---|---|---|
-| `github-actions-macos` | **テンプレートだけ**（`remote/github-actions/store-assets-ios.yml`。未実行・未検証）。使うには Human が `.github/workflows/` へ写して main へ入れる | 公開repoの標準ランナーは無料（private なら $0.062／分） | `job-dispatch --execute`（Windowsから可） |
+| `github-actions-macos` | `.github/workflows/store-assets-ios.yml`。**main を変えずに動く**：`job-dispatch --execute` がジョブのcommitの上に `.github/store-assets/job.json` だけを足したcommitを `ci/store-assets-ios/<ジョブID>` へ push し、その push でだけ起動する（形が違えば撮影の前に止める）。workflow が main に入った後は `--via dispatch`（workflow_dispatch）も使える | 公開repoの標準ランナー（macos-26）は無料。larger runner は使わない。private なら有料 | `job-dispatch --execute`（Windowsから可） |
 | `mac-mini` | 経路は未構築（Windowsから Mac への接続なし）。手で job.json を持って行き、Mac で `job-run`（保守窓を人が確かめた時だけ `--confirm-maintenance-window`） | 0円 | 人（常駐の他の用途と同居。空きディスク30GB・空きメモリ20%を確認し、不明か足りなければ止まる。上限時間 `maxRuntimeMinutes` で止め、終わったらシミュレーターを shutdown） |
 | `local-macos` | 手元のMacで `job-run` | 0円 | 人 |
 
@@ -89,7 +90,9 @@ npm run store-assets -- job-list     --profile <p>            # 一覧と out/<a
 - 撮影環境（macOS・Xcode・シミュレーターのランタイム・ランナーの種類）を `captures.json` の各撮影に残す。**ホスト名・IP・ホームのパスは結果に入れない**（入っていたら取り込まない）
 - `draft` のジョブは撮れなかった画面があっても取り込むが、**`compose --mode final` は draft のジョブの撮影を使わない**。`final-candidate` のジョブは全画面が揃わないと取り込まない。final の判断と提出は人が行う
 - 取り込みは1回に1デバイス（`--device`。既定はジョブの最初のデバイス）で、別のデバイスの撮影がある run へは入れない（今の合成は画面×言語で1枚を選ぶため）。Web版の撮影との照合は同じアプリの全ての run と行う
-- `job-fetch` は run id ごとの `result-run<id>/` へ取得する（再実行の結果を混ぜない）。限界：結果の commit・撮影元は実行側の申告で、GitHub の成果物であることまでは検証していない
+- `job-fetch` は run id ごとの `result-run<id>/` へ取得する（再実行の結果を混ぜない）。取得の前に、run の workflow・起動の種類・branch・commit が依頼の記録（`status.json` の `ci`）と一致することを `gh run view` で確かめ、`run.json` に残す。限界：結果の中身（commit・撮影元）は実行側の申告で、署名付きの証明（attestation）までは使っていない
+- 撮影の後は `job-cleanup --execute` で専用branchを消す（push が無ければ workflow は起動しない）。成果物の保存は3日で、テスト用のデータDBは成果物に入れない
+- 同じ名前のシミュレーターが複数のランタイムにある時は、版の新しい1台（UDID）を選んで撮り、そのランタイムを記録する。撮る前にシミュレーター内のアプリへ権限を与え、確認の窓が写らないようにする
 - Mac での実行には、シミュレーター向けにbuildしたアプリ（`.app`）が要る（`--app`。`npx expo run:ios --configuration Release` 等。EAS Build は使わない）
 
 ## 他のアプリで使う

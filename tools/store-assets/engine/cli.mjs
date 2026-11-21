@@ -7,7 +7,7 @@
 //   node tools/store-assets/engine/cli.mjs import    --profile <p> --run <dir> --from <dir> --source device|ios-simulator [--locale ja]
 //   node tools/store-assets/engine/cli.mjs compose   --profile <p> --run <dir> [--mode draft|final]
 //   node tools/store-assets/engine/cli.mjs validate  --run <dir>
-//   node tools/store-assets/engine/cli.mjs job-create|job-validate|job-run|job-dispatch|job-fetch|job-ingest|job-status|job-list …（遠隔撮影。job-commands.mjs）
+//   node tools/store-assets/engine/cli.mjs job-create|job-validate|job-run|job-dispatch|job-fetch|job-ingest|job-status|job-list|job-cleanup|job-ci-resolve …（遠隔撮影。job-commands.mjs）
 //
 // 外部への送信・アップロードはしない（ストア・LPへの反映は人が行う）。例外は job-dispatch／job-fetch に --execute を付けた時の
 // GitHub Actions への依頼と成果物の取得だけ（gh を使う。付けなければ内容を表示するだけ）。
@@ -21,7 +21,7 @@ import { captureWeb, exportWeb } from './drivers/web-preview.mjs';
 import { planIosCapture, planToShellScript } from './drivers/ios-simulator.mjs';
 import { completenessProblems, excludeDraftJobCaptures, galleryHtml, planOutputs, renderPlan, sha256, validateOutputs, verifyCaptures } from './pipeline.mjs';
 import { defaultRunDir, gitInfo, projectRootOf, readCaptures, writeCaptures } from './runs.mjs';
-import { cmdJobCreate, cmdJobDispatch, cmdJobFetch, cmdJobIngest, cmdJobList, cmdJobRun, cmdJobStatus, cmdJobValidate } from './job-commands.mjs';
+import { cmdJobCiResolve, cmdJobCleanup, cmdJobCreate, cmdJobDispatch, cmdJobFetch, cmdJobIngest, cmdJobList, cmdJobRun, cmdJobStatus, cmdJobValidate } from './job-commands.mjs';
 import { loadProfile } from './profile.mjs';
 import { SOURCES } from './provenance.mjs';
 
@@ -168,7 +168,8 @@ async function main() {
   }
   if (args._ === 'validate') { process.exitCode = cmdValidate(path.resolve(args.run)) ? 0 : 1; return; }
   // 遠隔撮影のジョブ（使い方は job-commands.mjs の冒頭）
-  const needJob = { 'job-validate': cmdJobValidate, 'job-run': cmdJobRun, 'job-dispatch': cmdJobDispatch, 'job-fetch': cmdJobFetch, 'job-ingest': cmdJobIngest, 'job-status': cmdJobStatus };
+  const needJob = { 'job-validate': cmdJobValidate, 'job-run': cmdJobRun, 'job-dispatch': cmdJobDispatch, 'job-fetch': cmdJobFetch, 'job-ingest': cmdJobIngest, 'job-status': cmdJobStatus, 'job-cleanup': cmdJobCleanup };
+  if (args._ === 'job-ci-resolve') { cmdJobCiResolve(args); return; }
   if (needJob[args._]) {
     if (!args.job) throw new Error('--job が必要です');
     const r = await needJob[args._](args);

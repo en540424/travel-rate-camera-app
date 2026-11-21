@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,10 +7,10 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { planIosCapture } from './drivers/ios-simulator.mjs';
-import { buildJobSteps, cmdJobIngest, cmdJobRun, cmdJobStatus } from './job-commands.mjs';
+import { buildJobSteps, cmdJobIngest, cmdJobRun, cmdJobStatus, makeCiCommit, pickSimulators } from './job-commands.mjs';
 import {
-  captureRel, createJob, forbiddenIdentifiers, githubDispatchArgs, githubDownloadArgs, isMacMiniHost, newStatus, parsePreflight,
-  preflightProblems, redactIdentifiers, RESULT_SCHEMA, transition, validateJob, verifyResult,
+  captureRel, CI_BRANCH_PREFIX, CI_JOB_FILE, ciBranchFor, createJob, forbiddenIdentifiers, githubDispatchArgs, githubDownloadArgs, isMacMiniHost, newStatus, parsePreflight,
+  preflightProblems, redactIdentifiers, resolveCiJob, RESULT_SCHEMA, transition, validateJob, verifyResult, verifyRunMeta,
 } from './jobs.mjs';
 import { excludeDraftJobCaptures, sha256 } from './pipeline.mjs';
 import { encodeRgbPng, readPngInfo } from './png.mjs';
@@ -285,14 +286,100 @@ test('GitHub：依頼と取得のコマンドを作る（実行はしない）',
   assert.deepEqual(githubDownloadArgs(j, 42, 'd'), ['run', 'download', '42', '-n', `store-assets-${j.id}`, '-D', 'd']);
 });
 
-test('workflow のテンプレート：既定のworkflowの場所に無く、手動の起動だけで、秘密情報を使わず、読み取りの権限だけ', () => {
-  const t = fs.readFileSync(path.join(HERE, '..', 'remote', 'github-actions', 'store-assets-ios.yml'), 'utf8');
-  assert.ok(!fs.existsSync(path.join(HERE, '..', '..', '..', '.github', 'workflows', 'store-assets-ios.yml')));
-  assert.ok(/on:\s*\n\s*workflow_dispatch:/.test(t));
-  assert.ok(!/^\s*(push|pull_request|schedule):/m.test(t));
+test('workflow：専用branchの push と手動だけで起動し、秘密情報を使わず、読み取りの権限だけ・外部Actionは40桁で固定', () => {
+  const t = fs.readFileSync(path.join(HERE, '..', '..', '..', '.github', 'workflows', 'store-assets-ios.yml'), 'utf8');
+  const on = t.slice(t.indexOf('\non:'), t.indexOf('\npermissions:'));
+  assert.deepEqual([...on.matchAll(/^ {2}([a-z_]+):/gm)].map((m) => m[1]), ['push', 'workflow_dispatch']);
+  assert.ok(/push:\s*\n\s*branches:\s*\n\s*- 'ci\/store-assets-ios\/\*\*'\n\s*workflow_dispatch:/.test(on), 'push は専用branchだけ');
+  assert.ok(!/pull_request|schedule|workflow_run|repository_dispatch/.test(t.replace(/^#.*$/gm, '')));
   assert.ok(!t.includes('secrets.'));
-  assert.ok(/permissions:\s*\n\s*contents: read/.test(t));
+  assert.ok(/^permissions:\s*\n\s*contents: read\s*\n\s*\n/m.test(t), 'contents: read だけ');
   assert.ok(t.includes('persist-credentials: false'));
-  assert.ok(t.includes('{40}'));
-  assert.ok(!t.includes('${{ inputs.job_json }}"') && t.includes('JOB_JSON: ${{ inputs.job_json }}'));
+  assert.ok(/runs-on: macos-26\n/.test(t), '標準ランナー（larger runner ではない）');
+  assert.ok(/timeout-minutes: \d+/.test(t) && /concurrency:/.test(t));
+  for (const m of t.matchAll(/uses: ([^\s]+)/g)) assert.ok(/@[0-9a-f]{40}$/.test(m[1]), `${m[1]} は40桁で固定`);
+  // 入力はシェルへ直接埋め込まない（環境変数で受ける）
+  assert.ok(!/run:.*\$\{\{\s*(inputs|github\.event)/.test(t));
+  assert.ok(t.includes('JOB_JSON: ${{ inputs.job_json }}'));
+  assert.ok(/retention-days: [1-7]\n/.test(t));
+  assert.ok(!t.includes('result/fixture') && t.includes('result/result.json'), '成果物は結果とPNGだけ');
+  assert.ok(!fs.existsSync(path.join(HERE, '..', 'remote', 'github-actions', 'store-assets-ios.yml')), 'テンプレートと二重に持たない');
+});
+
+test('CI：push で届いたジョブは「ジョブのcommit＋job.json だけ」の時だけ受け付ける', () => {
+  const j = job({ target: 'github-actions-macos' });
+  const text = JSON.stringify(j);
+  const ok = { event: 'push', ref: `refs/heads/${ciBranchFor(j)}`, fileJson: text, parents: [FULL], changed: [CI_JOB_FILE] };
+  assert.deepEqual(resolveCiJob(ok).problems, []);
+  assert.equal(resolveCiJob(ok).job.id, j.id);
+  const bad = (over, word) => {
+    const r = resolveCiJob({ ...ok, ...over });
+    assert.equal(r.job, null);
+    assert.ok(r.problems.some((x) => x.includes(word)), `${word}：${r.problems.join('／')}`);
+  };
+  bad({ ref: 'refs/heads/main' }, 'branch');
+  bad({ ref: `refs/heads/${CI_BRANCH_PREFIX}other` }, 'branch');
+  bad({ parents: ['f'.repeat(40)] }, '親がジョブのcommitではない');
+  bad({ parents: [FULL, 'f'.repeat(40)] }, '親が1つではない');
+  bad({ changed: [CI_JOB_FILE, 'src/app/index.tsx'] }, '以外も変えている');
+  bad({ changed: ['package.json'] }, '以外も変えている');
+  bad({ fileJson: '{' }, 'JSONではない');
+  bad({ fileJson: JSON.stringify({ ...j, target: 'mac-mini' }) }, 'github-actions-macos');
+  bad({ fileJson: JSON.stringify({ ...j, git: { commit: 'abc', dirty: false } }) }, '40桁');
+  bad({ event: 'pull_request' }, '扱わない');
+  bad({ event: 'pull_request_target' }, '扱わない');
+  assert.equal(resolveCiJob({ event: 'workflow_dispatch', inputJson: text }).job.id, j.id);
+});
+
+test('CI：取得する run がそのジョブの branch・commit・workflow のものか確かめる', () => {
+  const j = job({ target: 'github-actions-macos' });
+  const status = { ...newStatus(j), ci: { branch: ciBranchFor(j), commit: 'c'.repeat(40) } };
+  const meta = { workflowName: 'store-assets-ios', event: 'push', headBranch: ciBranchFor(j), headSha: 'c'.repeat(40), status: 'completed' };
+  assert.deepEqual(verifyRunMeta(j, status, meta), []);
+  assert.ok(verifyRunMeta(j, status, { ...meta, headSha: 'd'.repeat(40) }).length);
+  assert.ok(verifyRunMeta(j, status, { ...meta, headBranch: 'main' }).length);
+  assert.ok(verifyRunMeta(j, status, { ...meta, workflowName: 'other' }).length);
+  assert.ok(verifyRunMeta(j, status, { ...meta, status: 'in_progress' }).length);
+  assert.ok(verifyRunMeta(j, newStatus(j), meta).length, '依頼の記録が無い push の run は受けない');
+});
+
+test('シミュレーター：同じ名前が複数のランタイムにある時は新しい版を選び、iOS以外と使えないものを除く', () => {
+  const u = (n) => `${String(n).repeat(8)}-0000-0000-0000-000000000000`.slice(0, 36);
+  const list = { devices: {
+    'com.apple.CoreSimulator.SimRuntime.iOS-26-2': [{ name: 'iPhone 17 Pro Max', udid: u(1) }],
+    'com.apple.CoreSimulator.SimRuntime.iOS-26-5': [{ name: 'iPhone 17 Pro Max', udid: u(2) }, { name: 'iPhone 17', udid: u(3), isAvailable: false }],
+    'com.apple.CoreSimulator.SimRuntime.iOS-26-4': [{ name: 'iPhone 17 Pro Max', udid: u(4) }, { name: 'iPhone 17', udid: u(5) }],
+    'com.apple.CoreSimulator.SimRuntime.watchOS-26-5': [{ name: 'iPhone 17', udid: u(6) }],
+  } };
+  assert.deepEqual(pickSimulators(list, ['iPhone 17 Pro Max', 'iPhone 17']), {
+    'iPhone 17 Pro Max': { udid: u(2), runtime: 'iOS-26-5' },
+    'iPhone 17': { udid: u(5), runtime: 'iOS-26-4' },
+  });
+  // 手順は名前ではなく選んだ1台で撮る（保存先の名前はデバイス名のまま）
+  const g = buildJobSteps(job(), profile, { outDir: '/o', picked: { 'iPhone 17 Pro Max': { udid: u(2), runtime: 'iOS-26-5' } } });
+  assert.ok(g[0].steps.some((s) => s.cmd.includes(`screenshot --type=png`) && s.cmd.includes(u(2)) && s.cmd.includes('iPhone-17-Pro-Max')));
+  assert.ok(g[0].steps.some((s) => s.cmd.startsWith(`xcrun simctl privacy '${u(2)}' grant all`)), '権限の窓を出さない');
+});
+
+test('CI：依頼のcommitは作業ツリー・HEAD・indexに触れず、ジョブのcommit＋job.json だけになる', () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-ci-'));
+  const g = (...a) => execFileSync('git', a, { cwd: repo }).toString().trim();
+  try {
+    g('init', '-q'); g('config', 'user.email', 'test@example.invalid'); g('config', 'user.name', 't');
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'a');
+    g('add', 'a.txt'); g('commit', '-q', '-m', 'base');
+    const base = g('rev-parse', 'HEAD');
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'dirty');
+    const j = { ...job({ target: 'github-actions-macos' }), git: { commit: base, dirty: false } };
+    const c = makeCiCommit(repo, j);
+    assert.equal(g('rev-parse', 'HEAD'), base, 'HEAD は動かない');
+    assert.equal(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8'), 'dirty', '作業ツリーは変わらない');
+    assert.equal(g('diff', '--cached', '--name-only'), '', 'index は変わらない');
+    assert.equal(g('rev-list', '--parents', '-n', '1', c).split(' ')[1], base);
+    assert.equal(g('diff', '--name-only', base, c), CI_JOB_FILE);
+    assert.equal(JSON.parse(g('show', `${c}:${CI_JOB_FILE}`)).id, j.id);
+    assert.deepEqual(resolveCiJob({ event: 'push', ref: `refs/heads/${ciBranchFor(j)}`, fileJson: g('show', `${c}:${CI_JOB_FILE}`), parents: [base], changed: [CI_JOB_FILE] }).problems, []);
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
 });

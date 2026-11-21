@@ -189,6 +189,51 @@ export function sizeNotes(captures, targetIds) {
   return notes;
 }
 
+// GitHub Actions を既定branch（main）を変えずに動かす経路：ジョブのcommitの上に job.json だけを足したcommitを
+// 専用のbranch（ci/store-assets-ios/<ジョブID>）へ push する。workflow はこのbranchの push でだけ起動する。
+export const CI_BRANCH_PREFIX = 'ci/store-assets-ios/';
+export const CI_JOB_FILE = '.github/store-assets/job.json';
+export const CI_WORKFLOW = 'store-assets-ios';
+
+export function ciBranchFor(job) {
+  return `${CI_BRANCH_PREFIX}${job.id}`;
+}
+
+/**
+ * CIで、届いたジョブを確かめる（純関数）。push の時は、届いたcommitが「ジョブのcommit＋job.json だけ」であることを確かめる。
+ * in: { event, ref, inputJson, fileJson, parents:[sha], changed:[path] }
+ */
+export function resolveCiJob({ event, ref, inputJson, fileJson, parents = [], changed = [] }) {
+  const problems = [];
+  let job = null;
+  const text = event === 'push' ? fileJson : event === 'workflow_dispatch' ? inputJson : null;
+  if (text == null) return { job, problems: [`起動の種類 ${event} は扱わない（push か workflow_dispatch だけ）`] };
+  try { job = JSON.parse(text); } catch { return { job: null, problems: ['job.json がJSONではない'] }; }
+  problems.push(...validateJob(job, null));
+  if (job?.target !== 'github-actions-macos') problems.push('target が github-actions-macos ではない');
+  if (event === 'push') {
+    if (ref !== `refs/heads/${ciBranchFor(job ?? {})}`) problems.push(`branch がジョブと対応しない（${ref}）`);
+    if (parents.length !== 1) problems.push('届いたcommitの親が1つではない');
+    else if (parents[0] !== job?.git?.commit) problems.push('届いたcommitの親がジョブのcommitではない');
+    if (changed.length !== 1 || changed[0] !== CI_JOB_FILE) problems.push(`届いたcommitが ${CI_JOB_FILE} 以外も変えている`);
+  }
+  return { job: problems.length ? null : job, problems };
+}
+
+/** 取得した run がそのジョブのものか（gh run view の値と照らす）。 */
+export function verifyRunMeta(job, status, meta) {
+  const p = [];
+  if (meta?.workflowName !== CI_WORKFLOW) p.push(`workflow が ${CI_WORKFLOW} ではない（${meta?.workflowName}）`);
+  const ci = status?.ci;
+  if (ci?.branch) {
+    if (meta?.event !== 'push') p.push(`起動の種類が push ではない（${meta?.event}）`);
+    if (meta?.headBranch !== ci.branch) p.push(`run の branch がジョブの branch と違う（${meta?.headBranch}）`);
+    if (meta?.headSha !== ci.commit) p.push('run の commit が依頼した commit と違う');
+  } else if (meta?.event !== 'workflow_dispatch') p.push('依頼の記録（ci.branch）が無く、workflow_dispatch の run でもない');
+  if (meta?.status !== 'completed') p.push(`run が終わっていない（${meta?.status}）`);
+  return p;
+}
+
 /** GitHub Actionsへの依頼のコマンド（workflowが既定branchに入っている時だけ使える）。 */
 export function githubDispatchArgs(job, { workflow = 'store-assets-ios.yml', ref = 'main' } = {}) {
   return ['workflow', 'run', workflow, '--ref', ref, '-f', `job_json=${JSON.stringify(job)}`];
