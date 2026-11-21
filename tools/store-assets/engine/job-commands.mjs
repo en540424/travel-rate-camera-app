@@ -188,7 +188,7 @@ export function cmdJobDispatch(args) {
   if (job.target === 'github-actions-macos') {
     const a = githubDispatchArgs(job);
     console.log('[job-dispatch] GitHub Actions への依頼（workflow が既定branchに入っている時だけ使える。入れるのはHuman判断）：');
-    console.log(`  gh ${a.slice(0, -1).join(' ')} -f job_json='<job.json の中身>'`);
+    console.log(`  gh ${a.slice(0, -2).join(' ')} -f job_json='<job.json の中身>'`);
     if (!args.execute) { console.log('[job-dispatch] 実行していない（--execute で実行）'); return; }
     execFileSync('gh', a, { stdio: 'inherit' });
     saveStatus(p, transition(p.status, 'dispatched', { note: 'gh workflow run' }));

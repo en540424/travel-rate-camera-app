@@ -4,6 +4,11 @@
 
 > 本節が現在地の正。以下の「現在の開発フェーズ」以降は2026-07-01〜08時点の履歴で、完了済み項目を未完へ戻さない。
 
+> [!important] 2026-11-21（2件目）Pro+の収益性の検証と、どの開発端末からでも依頼できるiOS撮影のジョブ（同じbranch・コードはtools/のみ・アプリ本体は不変）
+> - **収益シミュレーション**：`tools/revenue-sim/`（式・テスト・中立な例だけ。公開repoのため）。旅レートの価格候補・報酬条件・利益率のシナリオとレポートは Vault `07_project-kits/tabirate-camera/revenue-sim/`、結論は Vault `旅レートカメラ_ProPlus収益性・AI利用枠の検証_2026-11-21.md`。**価格・枠の決定はHuman**
+> - **遠隔撮影のジョブ**：`tools/store-assets/` の `job-*` コマンド（README「遠隔撮影」）。Windowsで作成・検証・dry-run・取り込み・一覧まで動く。**実際の撮影はmacOSで未実行**。GitHub Actions の workflow は無効のテンプレート（`tools/store-assets/remote/`。有効化はHuman）。Windows→Mac mini の経路は無い
+> - 中継（tabirate-ai-gateway）の原価上限は今「利用者1分 $0.06」で報告するため約22.2分で効き、事業者の値上げ・無音の課金から守らない（設計の見直しはHuman判断・H-P2）
+
 > [!important] 2026-11-21 Pro+中核の実装（フラグで非表示）とE-NEXUS共通素材生成（branch `feat/proplus-core-and-store-assets`・base `8d9807e`・**未Build・main未統合**）
 > - **素材生成**：`tools/store-assets/`（README参照）。実アプリのWeb版から撮影→App Store・広告・LP用の画像を生成・検証（draftは透かし付き）。iOSシミュレーター撮影は手順スクリプト＋テストデータDBを生成し、**Macでの実行はHuman**。Web版の画像はfinal（提出用）に使えない。未公開機能（Pro+）を文言に使うと設定で拒否
 > - **Pro+ 買い物マップ・旅行の予定**：`src/lib/proplus/`・`src/app/proplus/`。`SHOW_PRO_PLUS=false`（本番で出ない）、`DEV_PRO_PLUS_PREVIEW=__DEV__`（開発ビルドだけ表示）。**保存は既存DBとは別のJSONファイル**（既存のテーブル・migration・保存処理は不変）。DB v8は下書きのみ（`design/proplus-db-v8-draft.md`・H-P5待ち）
