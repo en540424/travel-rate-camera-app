@@ -6,7 +6,7 @@
 
 > [!important] 2026-11-21（2件目）Pro+の収益性の検証と、どの開発端末からでも依頼できるiOS撮影のジョブ（同じbranch・コードはtools/のみ・アプリ本体は不変）
 > - **収益シミュレーション**：`tools/revenue-sim/`（式・テスト・中立な例だけ。公開repoのため）。旅レートの価格候補・報酬条件・利益率のシナリオとレポートは Vault `07_project-kits/tabirate-camera/revenue-sim/`、結論は Vault `旅レートカメラ_ProPlus収益性・AI利用枠の検証_2026-11-21.md`。**価格・枠の決定はHuman**
-> - **遠隔撮影のジョブ**：`tools/store-assets/` の `job-*` コマンド（README「遠隔撮影」）。Windowsで作成・検証・dry-run・取り込み・一覧まで動く。**実際の撮影はmacOSで未実行**。GitHub Actions の workflow は無効のテンプレート（`tools/store-assets/remote/`。有効化はHuman）。Windows→Mac mini の経路は無い
+> - **遠隔撮影のジョブ**：`tools/store-assets/` の `job-*` コマンド（README「遠隔撮影」）。Windowsで作成・検証・dry-run・取り込み・一覧まで動く。GitHub Actions の `.github/workflows/store-assets-ios.yml`（`ci/store-assets-ios/**` への push と workflow_dispatch だけで起動）で2026-11-21に3回実行したが、**アプリの画面は未撮影**（2・3回目はアプリが前面に無くホーム画面。原因未特定）。2026-11-23 `e70ecce` で撮影前後の生死確認・ホーム画面との比較・診断（終了コード20〜27・README「遠隔撮影」）を追加。**4回目の実行はHuman承認待ち**（`e70ecce` 以降のcommitで新しいジョブを作る。古いジョブの再依頼はしない）
 > - 中継の原価上限の作りに見直しの論点がある（詳細は Vault の上の検証資料 §4・Human判断・H-P2）
 
 > [!important] 2026-11-21 Pro+中核の実装（フラグで非表示）とE-NEXUS共通素材生成（branch `feat/proplus-core-and-store-assets`・base `8d9807e`・**未Build・main未統合**）
