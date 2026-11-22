@@ -435,6 +435,7 @@ test('撮影の手順：ディープリンクの確認の窓を出さない承�
   const steps = planIosCapture({ device: 'D', bundleId: 'com.example.app', scheme: 'exampleapp', outDir: '/o', screens: [{ id: 's', deepLink: 'exampleapp:///s' }] });
   const i = steps.findIndex((s) => s.cmd.includes('com.apple.launchservices.schemeapproval') && s.cmd.includes("'com.apple.CoreSimulator.CoreSimulatorBridge-->exampleapp'") && s.cmd.includes("-string 'com.example.app'"));
   assert.ok(i >= 0);
-  assert.ok(i < steps.findIndex((s) => s.cmd.startsWith('xcrun simctl launch')));
+  assert.ok(i < steps.findIndex((s) => s.cmd.startsWith('ios_probe')), '試しの起動より前');
+  assert.ok(i < steps.findIndex((s) => s.cmd.startsWith('ios_launch')));
   assert.ok(i < steps.findIndex((s) => s.cmd.startsWith('xcrun simctl openurl')));
 });

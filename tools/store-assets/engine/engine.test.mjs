@@ -155,8 +155,8 @@ test('ios: 撮影手順は画面ごとに開いて撮り、テストデータは
   assert.ok(cmds.includes("screenshot --type=png './captures/x/history.png'"));
   assert.ok(!cmds.includes('nolink'));
   const seedIdx = steps.findIndex((s) => s.cmd.includes('get_app_container'));
-  const launchIdx = steps.findIndex((s) => s.cmd.includes('simctl launch'));
-  const terminateIdx = steps.findIndex((s) => s.cmd.includes('simctl terminate'));
+  const launchIdx = steps.findIndex((s) => s.cmd.startsWith('ios_launch'));
+  const terminateIdx = steps.findIndex((s) => s.cmd.startsWith('xcrun simctl terminate'));
   assert.ok(terminateIdx < seedIdx && seedIdx < launchIdx, 'アプリを止めてからDBを入れ、その後に起動');
   assert.ok(steps.some((s) => s.cmd.includes('.bak-')), '既存DBの退避');
   assert.ok(steps.every((s) => !s.cmd.includes(' && ')), '失敗を set -e で止められるよう1行ずつ');

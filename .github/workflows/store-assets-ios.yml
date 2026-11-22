@@ -86,11 +86,16 @@ jobs:
             -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/dd" \
             CODE_SIGNING_ALLOWED=NO build > "$RUNNER_TEMP/xcodebuild.log" 2>&1 || { tail -n 120 "$RUNNER_TEMP/xcodebuild.log"; exit 1; }
           tail -n 5 "$RUNNER_TEMP/xcodebuild.log"
+          # JS の本体を同梱する手順（Bundle React Native code and images）が動いたかを残す（2026-11-21 の3回目は末尾5行しか残らず、確かめられなかった）
+          grep -nE 'Bundle React Native code|react-native-xcode|export:embed|main\.jsbundle|hermesc|SKIP_BUNDLING|error:' "$RUNNER_TEMP/xcodebuild.log" | cut -c1-300 | tail -n 40 || true
           APP=$(ls -d "$RUNNER_TEMP"/dd/Build/Products/Release-iphonesimulator/*.app | head -1)
           test -d "$APP"
           echo "APP=$APP" >> "$GITHUB_ENV"
 
       - name: 撮影（既存の iOS 撮影手順を job-run で実行。commit の一致・sha256・撮影環境の記録）
+        env:
+          # アプリが落ちた時、クラッシュの記録（.ips）が書かれるのを待つ秒数（高負荷では書き込みが遅れる）
+          IOS_IPS_WAIT: '60'
         run: node tools/store-assets/engine/cli.mjs job-run --job "$RUNNER_TEMP/job.json" --out "$RUNNER_TEMP/result" --app "$APP"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
