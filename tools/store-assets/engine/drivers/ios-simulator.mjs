@@ -149,15 +149,18 @@ function helperScript({ dev, bundleId, exe, aliveSeconds, screenCount, shotDir }
     'ios_interact() {',
     '  local id="${1}" flow="${2}" limit="${3}" rc=0 log="${IOS_TMP}/maestro-${1}.log"',
     '  ios_maestro "${flow}" "${limit}" "${log}" || rc=$?',
+    // アプリが落ちていたら診断を出す（致命にはしないが、道具の失敗と取り違えないよう、クラッシュの記録・ログを残す）
+    '  if ! ios_alive "${IOS_PID}"; then IOS_WHY="操作の途中・後にアプリ（pid ${IOS_PID:-?}）が動いていない（クラッシュの可能性。診断を出した）"; ios_diag; return 1; fi',
     '  if [ "${rc}" -ne 0 ]; then tail -n 40 "${log}" | LC_ALL=C cut -c1-300 || true; IOS_WHY="操作・表示の確認が通らない（maestro の終了コード ${rc}）"; return 1; fi',
-    '  if ! ios_alive "${IOS_PID}"; then IOS_WHY="操作の後にアプリ（pid ${IOS_PID:-?}）が動いていない"; return 1; fi',
     '}',
-    // 撮った後の確認（致命にしない版）。だめなら .rejected.png へ移して 1 を返す
+    // 撮った後の確認（致命にしない版）。だめなら画像を消して 1 を返す（残った画像を撮影として数えない）
     'ios_verify_shot_soft() {',
     '  local f="${1}"',
-    '  if ! ios_alive "${IOS_PID}"; then mv -f "${f}" "${f%.png}.rejected.png" 2>/dev/null || true; IOS_WHY="撮影の後にアプリが動いていない"; return 1; fi',
-    '  if [ -s "${IOS_BASE}" ]; then if cmp -s "${IOS_BASE}" "${f}"; then mv -f "${f}" "${f%.png}.rejected.png" 2>/dev/null || true; IOS_WHY="ホーム画面と同じ画像"; return 1; fi; fi',
+    '  if ! ios_alive "${IOS_PID}"; then mv -f "${f}" "${f%.png}.rejected.png" 2>/dev/null || rm -f "${f}"; IOS_WHY="撮影の後にアプリが動いていない（診断を出した）"; ios_diag; return 1; fi',
+    '  if [ -s "${IOS_BASE}" ]; then if cmp -s "${IOS_BASE}" "${f}"; then mv -f "${f}" "${f%.png}.rejected.png" 2>/dev/null || rm -f "${f}"; IOS_WHY="ホーム画面と同じ画像"; return 1; fi; fi',
     '}',
+    // 操作と表示の確認が通り、撮れた画面の印（job-run はこの印のある画面だけを「操作の後の撮影」として記録する）
+    'ios_mark_interacted() { if [ -n "${IOS_DONE_FILE:-}" ]; then printf \'%s\\n\' "${1}" >> "${IOS_DONE_FILE}"; fi; }',
     // 撮った後：アプリが同じプロセスで動いているか・ホーム画面と同じ画像でないか。だめなら .rejected.png へ移して止める（結果の撮影には数えない）。
     // ホーム画面と同じ時は15秒後にもう1枚撮る（後から前面に出た＝待機・描画の遅れ、のままホーム画面＝背面・終了、を絵で分ける）
     'ios_verify_shot() {',
@@ -188,7 +191,9 @@ export function planIosCapture(opts) {
   const exe = exeName && /^[A-Za-z0-9._-]+$/.test(exeName) ? exeName : null;
   const steps = [];
   const add = (cmd, note) => steps.push({ cmd, note });
-  const screenCount = opts.screens.filter((s) => s.deepLink).length;
+  // ホーム画面の基準が静止しない時に続けてよいか（別の画面との比較で守れるか）は、必ず撮る画面の数で決める。
+  // 操作が要る画面は飛ばされ得るので数えない（独立検収 S2：[履歴, 換算] で換算が飛ぶと、履歴1枚が守られないまま残る）
+  const screenCount = opts.screens.filter((s) => s.deepLink && !s.interact).length;
   add(helperScript({ dev, bundleId: opts.bundleId, exe, aliveSeconds: opts.aliveSeconds ?? 10, screenCount, shotDir: opts.outDir }), '確認・診断の関数を用意する');
   add(`xcrun simctl boot ${dev} 2>/dev/null || true`, 'シミュレーターを起動（起動済みなら何もしない）');
   add(`xcrun simctl bootstatus ${dev} -b`, '起動完了を待つ');
@@ -259,16 +264,18 @@ export function planIosCapture(opts) {
     if (s.interact) {
       if (!warmed) add(heredoc('${IOS_TMP}/flow-warmup.yaml', maestroWarmupFlow(opts.bundleId)), '操作の道具を動かし始めるフロー');
       warmed = true;
-      add(heredoc(`\${IOS_TMP}/flow-${s.id}.yaml`, maestroFlow({ bundleId: opts.bundleId, interact: s.interact })), `画面 ${s.id} の操作と、結果の表示の確認のフロー`);
+      add(heredoc(`\${IOS_TMP}/flow-${s.id}.yaml`, maestroFlow({ bundleId: opts.bundleId, interact: s.interact, deepLink: s.deepLink })), `画面 ${s.id} の操作と、結果の表示の確認のフロー`);
       const id = shellQuote(s.id);
       add([
+        // 前の試行の画像が残っていると、今回の操作が失敗しても撮れたものとして数えてしまう（独立検収 S1）
+        `rm -f ${file}`,
         `if ! ios_maestro_ready; then ios_skip ${id} "\${IOS_WHY}"`,
         `elif ! xcrun simctl openurl ${dev} ${shellQuote(s.deepLink)}; then ios_skip ${id} '画面を開く命令が失敗した'`,
-        `elif ! { sleep ${settle}; ios_alive "\${IOS_PID}"; }; then ios_skip ${id} '画面を開いた後にアプリが動いていない'`,
-        `elif ! ios_interact ${id} "\${IOS_TMP}/flow-${s.id}.yaml" ${s.interact.timeoutSeconds ?? 300}; then ios_skip ${id} "\${IOS_WHY}"`,
-        `elif ! xcrun simctl io ${dev} screenshot --type=png ${file}; then ios_skip ${id} '撮る命令が失敗した'`,
+        `elif ! { sleep ${settle}; ios_alive "\${IOS_PID}"; }; then ios_diag; ios_skip ${id} '画面を開いた後にアプリが動いていない（診断を出した）'`,
+        `elif ! ios_interact ${id} "\${IOS_TMP}/flow-${s.id}.yaml" ${s.interact.timeoutSeconds ?? 300}; then rm -f ${file}; ios_skip ${id} "\${IOS_WHY}"`,
+        `elif ! xcrun simctl io ${dev} screenshot --type=png ${file}; then rm -f ${file}; ios_skip ${id} '撮る命令が失敗した'`,
         `elif ! ios_verify_shot_soft ${file}; then ios_skip ${id} "\${IOS_WHY}"`,
-        `else echo '[ios] 画面 ${s.id}：操作と表示の確認が通り、撮った'; fi`,
+        `else ios_mark_interacted ${id}; echo '[ios] 画面 ${s.id}：操作と表示の確認が通り、撮った'; fi`,
       ].join('\n'), `画面 ${s.id} を開き、操作して、表示を確かめてから撮る（失敗はこの画面だけ撮らずに続ける）`);
       continue;
     }
@@ -325,15 +332,15 @@ export async function runIosPlan(steps, log = console.log, { deadline = Infinity
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-ios-reason-'));
   const reasonFile = path.join(tmp, 'reason.txt');
   const skipFile = path.join(tmp, 'skipped.tsv');
+  const doneFile = path.join(tmp, 'interacted.txt');
   try {
     execFileSync('/bin/bash', ['-c', planToRunScript(steps)], {
       stdio: 'inherit',
       timeout: Number.isFinite(left) ? left : undefined,
-      env: { ...process.env, IOS_IPS_TOOL: IPS_TOOL, IOS_REASON_FILE: reasonFile, IOS_SKIP_FILE: skipFile },
+      env: { ...process.env, IOS_IPS_TOOL: IPS_TOOL, IOS_REASON_FILE: reasonFile, IOS_SKIP_FILE: skipFile, IOS_DONE_FILE: doneFile },
     });
-    let text = '';
-    try { text = fs.readFileSync(skipFile, 'utf8'); } catch { /* 撮らなかった画面は無い */ }
-    return { skipped: parseSkipped(text) };
+    const read = (f) => { try { return fs.readFileSync(f, 'utf8'); } catch { return ''; } };
+    return { skipped: parseSkipped(read(skipFile)), interacted: parseInteracted(read(doneFile)) };
   } catch (e) {
     let reason = null;
     try { reason = fs.readFileSync(reasonFile, 'utf8'); } catch { /* 理由を書く前に止まった */ }
@@ -341,6 +348,11 @@ export async function runIosPlan(steps, log = console.log, { deadline = Infinity
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+}
+
+/** 操作と表示の確認が通って撮れた画面の印（1行に画面ID）を読む。画面IDの形でない行は捨てる。 */
+export function parseInteracted(text) {
+  return [...new Set(String(text ?? '').split('\n').map((l) => l.trim()).filter((l) => /^[A-Za-z0-9._-]+$/.test(l)))];
 }
 
 /** 撮らなかった画面の記録（1行に「画面ID<TAB>理由」）を読む。 */

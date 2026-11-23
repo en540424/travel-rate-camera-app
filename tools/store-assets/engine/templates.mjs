@@ -37,30 +37,41 @@ function langAttr(lang) {
 // 2026-11-23 の初の実画面の下書きで「…購入済み／を／…」「あとから見／返せる」のように折れていた
 const TEXT_WRAP = 'word-break:auto-phrase;line-break:strict;text-wrap:balance';
 
-/** 色調ごとの色。ブランドの値（profile.brand）から作る。未指定の色はブランドの主色から決める。 */
+/**
+ * 色調ごとの色。ブランドの値（profile.brand）から作る。未指定の色は主色か中立の灰色・白・黒にする
+ * （エンジンにアプリの色を持たない。独立検収 N1）。
+ */
 export function tonePalette(brand, tone = 'light') {
   const primary = brand.primary;
   const dark = brand.primaryDark ?? primary;
   if (tone === 'deep') {
     return {
-      bg: `linear-gradient(165deg, ${brand.deep ?? dark} 0%, ${brand.deepAlt ?? dark} 100%)`,
+      bg: `linear-gradient(165deg, ${brand.deep ?? dark} 0%, ${brand.deepAlt ?? brand.deep ?? dark} 100%)`,
       text: '#FFFFFF', em: brand.onDeepAccent ?? '#FFFFFF', sub: 'rgba(255,255,255,.86)',
-      deco: 'rgba(255,255,255,.07)',
+      deco: 'rgba(255,255,255,.07)', checkText: brand.deepAlt ?? brand.deep ?? dark,
       chipBg: 'rgba(255,255,255,.16)', chipText: '#FFFFFF', brandText: '#FFFFFF',
       shadow: 'rgba(0,0,0,.38)',
     };
   }
-  const warm = tone === 'warm';
+  const warm = tone === 'warm' && brand.warm;
+  const soft = brand.primarySoft ?? 'rgba(0,0,0,.05)';
   return {
-    bg: warm
-      ? `linear-gradient(170deg, ${brand.warm ?? '#FBF1DE'} 0%, ${brand.backgroundAlt ?? '#FFFFFF'} 78%)`
-      : `linear-gradient(170deg, ${brand.background ?? '#F0FAF7'} 0%, ${brand.backgroundAlt ?? '#FFFFFF'} 82%)`,
-    text: brand.text ?? '#16211F', em: primary, sub: brand.body ?? '#5B6764',
-    deco: warm ? 'rgba(224,165,59,.13)' : `${brand.primarySoft ?? '#E7F5F2'}`,
-    chipBg: warm ? (brand.accentSoft ?? '#FBF1DE') : (brand.primarySoft ?? '#E7F5F2'),
-    chipText: warm ? (brand.accentText ?? '#9A6516') : dark, brandText: dark,
-    shadow: 'rgba(17,32,30,.26)',
+    bg: `linear-gradient(170deg, ${warm ? brand.warm : (brand.background ?? '#F5F6F6')} 0%, ${brand.backgroundAlt ?? '#FFFFFF'} ${warm ? 78 : 82}%)`,
+    text: brand.text ?? '#111111', em: primary, sub: brand.body ?? 'rgba(0,0,0,.62)',
+    deco: warm ? (brand.accentSoft ?? 'rgba(0,0,0,.05)') : soft, checkText: '#FFFFFF',
+    chipBg: warm ? (brand.accentSoft ?? soft) : soft,
+    chipText: warm ? (brand.accentText ?? dark) : dark, brandText: dark,
+    shadow: 'rgba(0,0,0,.24)',
   };
+}
+
+/**
+ * 端末の幅を、画面が撮影の等倍を超えない幅に止める（独立検収 S5：呼び手の比率だけでは、小さい撮影・大きい出力先で拡大していた）。
+ * imageWidth が無い時（寸法が分からない時）はそのまま。
+ */
+export function fitPhoneW(phoneW, imageWidth, unit, frameScale = 1) {
+  if (!imageWidth) return phoneW;
+  return Math.min(phoneW, imageWidth + unit * 1.5 * frameScale * 2);
 }
 
 function watermarkHtml(text) {
@@ -99,7 +110,7 @@ function baseCss(w, h, pal) {
   .callout{position:absolute;background-repeat:no-repeat;box-shadow:0 ${unit * 1.6}px ${unit * 5}px ${pal.shadow};border:${unit * 0.4}px solid #FFFFFF}
   .points{list-style:none}
   .points li{display:flex;align-items:flex-start;font-weight:600;color:${pal.text}}
-  .points li b{flex:none;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:${pal.em};color:${pal.text === '#FFFFFF' ? '#0A3F3B' : '#FFFFFF'};font-weight:800}
+  .points li b{flex:none;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:${pal.em};color:${pal.checkText};font-weight:800}
   .wm{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:9}
   .wm span{transform:rotate(-24deg);font-size:${unit * 6}px;font-weight:800;color:rgba(200,30,30,.55);
     border:${unit * .6}px solid rgba(200,30,30,.55);padding:${unit}px ${unit * 3}px;border-radius:${unit * 2}px;
@@ -120,7 +131,8 @@ function brandHtml(appName, iconDataUrl, size) {
  * 端末の枠と実画面。幅 phoneW（px）。画面の縮尺 = 画面の幅 / 撮影の幅（1を超えない値を呼び手が選ぶ）。
  * callout：{ rect:[x,y,w,h]（撮影に対する0〜1の比）, width（px。等倍を超えない幅に切り詰める） }
  */
-function phoneHtml({ src, phoneW, imageWidth, imageAspect, unit, style = '', callout = null, frameScale = 1 }) {
+function phoneHtml({ src, phoneW: wanted, imageWidth, imageAspect, unit, style = '', callout = null, frameScale = 1 }) {
+  const phoneW = fitPhoneW(wanted, imageWidth, unit, frameScale); // 等倍を超えて拡大しない
   const bezel = unit * 1.5 * frameScale;
   const screenW = phoneW - bezel * 2;
   const screenH = screenW * imageAspect;
@@ -157,7 +169,7 @@ export function storeShotHtml({ width, height, brand, title, sub, imageDataUrl, 
   if (!STORE_LAYOUTS.includes(layout)) throw new Error(`未知のストアの配置: ${layout}`);
   const unit = Math.min(width, height) / 100;
   const pal = tonePalette(brand, tone);
-  const phoneW = width * 0.84;
+  const phoneW = fitPhoneW(width * 0.84, imageWidth, unit);
   const subHtml = sub ? `<p class="sub">${renderEmphasis(sub)}</p>` : '';
   return `<!doctype html><html${langAttr(lang)}><head><meta charset="utf-8"><style>${baseCss(width, height, pal)}
   .wrap{display:flex;flex-direction:column;align-items:center;padding-top:${height * 0.048}px}
@@ -225,7 +237,7 @@ export function adHtml({ width, height, brand, headline, sub, images, imageWidth
       <div class="stage">${phone(0, phoneW, '')}</div>`;
   } else if (use === 'square') {
     // SNS正方形：アプリ名は1回だけ。見出しを大きく、端末1台を中央に大きく（下は切る）
-    const phoneW = width * 0.6;
+    const phoneW = fitPhoneW(width * 0.6, imageWidth, unit);
     css = `
     .wrap{display:flex;flex-direction:column;align-items:center;padding-top:${height * 0.055}px;text-align:center}
     .chip.badge{font-size:${unit * 3}px;padding:${unit * .5}px ${unit * 2.2}px;margin-top:${unit * 2}px}
@@ -238,7 +250,7 @@ export function adHtml({ width, height, brand, headline, sub, images, imageWidth
   } else {
     // 縦長（ストーリーズ等）：見出し→端末（大きく）→下帯のアプリ名、の順に上から下へ視線を流す。余白を作らない
     const band = height * 0.095;
-    const phoneW = width * (images.length > 1 ? 0.6 : 0.7);
+    const phoneW = fitPhoneW(width * (images.length > 1 ? 0.6 : 0.7), imageWidth, unit);
     css = `
     .wrap{display:flex;flex-direction:column;align-items:center;padding-top:${height * 0.05}px;text-align:center}
     .chip.badge{font-size:${unit * 3.4}px;padding:${unit * .6}px ${unit * 2.6}px;margin-bottom:${unit * 2.4}px}

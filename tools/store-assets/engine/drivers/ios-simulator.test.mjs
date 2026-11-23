@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { IOS_EXIT, iosFailureReason, IPS_TOOL, planIosCapture, planToRunScript, planToShellScript } from './ios-simulator.mjs';
+import { IOS_EXIT, iosFailureReason, IPS_TOOL, parseInteracted, parseSkipped, planIosCapture, planToRunScript, planToShellScript } from './ios-simulator.mjs';
 import { findReports, isForBundle, main as ipsMain, parseIps, summarizeIps } from './ips-summary.mjs';
 
 const BID = 'com.example.app';
@@ -272,4 +272,78 @@ test('クラッシュの記録：このアプリの・印より新しい .ips �
   assert.ok(dyld.some((l) => l.includes('Expected in') && l.includes('ExpoModulesCore')), '後ろの理由も落とさない');
   assert.deepEqual(findReports(path.join(dir, 'missing'), 0, BID), { mine: [], others: [] });
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---- 操作が要る画面（interact）を偽の maestro で実際に走らせる（独立検収のテストの不足：文字列の検査だけだった）。
+// MAESTRO_STUB：ok（通る）・fail（確認が通らない＝終了コード1）・kill（操作の途中でアプリを落とす）
+const MAESTRO = String.raw`#!/bin/bash
+echo "maestro $*" >> "$STUB_DIR/calls"
+if [ "$1" = --version ]; then echo 2.12.1; exit 0; fi
+case "$*" in *flow-warmup*) exit 0;; esac
+if [ "$MAESTRO_STUB" = kill ]; then for p in $(cat "$STUB_DIR/pids" 2>/dev/null); do kill "$p" 2>/dev/null; done; exit 1; fi
+if [ "$MAESTRO_STUB" = fail ]; then exit 1; fi
+exit 0
+`;
+const iScreens = [
+  { id: 'converter', deepLink: 'exampleapp:///converter', settleMs: 1000, interact: { driver: 'maestro', steps: [{ inputText: '89' }], expectVisible: ['¥14,685'] } },
+  { id: 'history', deepLink: 'exampleapp:///history', settleMs: 1000 },
+];
+function runInteract(mode, { stale = false } = {}) {
+  const ctx = setup();
+  fs.writeFileSync(path.join(ctx.bin, 'maestro'), MAESTRO, { mode: 0o755 });
+  fs.mkdirSync(ctx.out, { recursive: true });
+  if (stale) fs.writeFileSync(path.join(ctx.out, 'converter.png'), 'STALE-from-earlier-attempt');
+  const skip = path.join(ctx.dir, 'skipped.tsv');
+  const done = path.join(ctx.dir, 'interacted.txt');
+  const steps = planIosCapture({ device: 'D', bundleId: BID, scheme: 'exampleapp', outDir: ctx.out, screens: iScreens, aliveSeconds: 1 });
+  const r = run(ctx, steps, 'alive', { MAESTRO_STUB: mode, IOS_SKIP_FILE: toPosix(skip), IOS_DONE_FILE: toPosix(done) });
+  const read = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '');
+  return { ...r, ctx, skipped: parseSkipped(read(skip)), done: parseInteracted(read(done)) };
+}
+
+test('操作が要る画面：操作と表示の確認が通れば撮り、印を残す。操作の無い画面を先に撮る', { skip: !HAS_BASH }, () => {
+  const r = runInteract('ok');
+  assert.equal(r.status, 0, r.text);
+  assert.deepEqual(r.done, ['converter']);
+  assert.deepEqual(r.skipped, []);
+  assert.equal(fs.readFileSync(path.join(r.ctx.out, 'converter.png'), 'utf8'), 'SCREEN-converter.png');
+  const calls = fs.readFileSync(path.join(r.ctx.dir, 'calls'), 'utf8');
+  assert.ok(calls.indexOf('screenshot ' + r.ctx.out + '/history.png') < calls.indexOf('screenshot ' + r.ctx.out + '/converter.png'), '操作の無い画面が先');
+  assert.ok(/maestro --device D test .*flow-converter\.yaml/.test(calls), '端末を指定して流す');
+});
+
+test('操作が要る画面：確認が通らなければその画面だけ撮らず、理由を残して他の画面は撮り終える（前の試行の画像も残さない）', { skip: !HAS_BASH }, () => {
+  const r = runInteract('fail', { stale: true });
+  assert.equal(r.status, 0, r.text);
+  assert.deepEqual(r.done, [], '印は書かない');
+  assert.equal(r.skipped.length, 1);
+  assert.equal(r.skipped[0].screen, 'converter');
+  assert.match(r.skipped[0].reason, /操作・表示の確認が通らない/);
+  assert.ok(!fs.existsSync(path.join(r.ctx.out, 'converter.png')), '前の試行の画像を撮影として残さない（独立検収 S1）');
+  assert.ok(fs.existsSync(path.join(r.ctx.out, 'history.png')), '他の画面は撮れている');
+});
+
+test('操作が要る画面：操作の途中でアプリが落ちたら、撮らずに診断を出し、落ちたことを理由に残す（致命にはしない）', { skip: !HAS_BASH }, () => {
+  const r = runInteract('kill');
+  assert.equal(r.status, 0, r.text);
+  assert.deepEqual(r.done, []);
+  assert.match(r.skipped[0]?.reason ?? '', /アプリ.*動いていない/);
+  assert.ok(r.text.includes('診断（ここから）'), '道具の失敗と取り違えないよう診断を出す（独立検収 S3）');
+  assert.ok(!fs.existsSync(path.join(r.ctx.out, 'converter.png')));
+});
+
+const HAS_MAESTRO = HAS_BASH && spawnSync('bash', ['-c', 'command -v maestro']).status === 0;
+test('操作が要る画面：maestro が無ければ準備で飛ばす', { skip: !HAS_BASH || HAS_MAESTRO }, () => {
+  const ctx = setup();
+  const skip = path.join(ctx.dir, 'skipped.tsv');
+  const steps = planIosCapture({ device: 'D', bundleId: BID, outDir: ctx.out, screens: iScreens, aliveSeconds: 1 });
+  const r = run(ctx, steps, 'alive', { IOS_SKIP_FILE: toPosix(skip) });
+  assert.equal(r.status, 0, r.text);
+  assert.match(fs.readFileSync(skip, 'utf8'), /converter	操作の道具（maestro）が入っていない/);
+  assert.ok(fs.existsSync(path.join(ctx.out, 'history.png')));
+});
+
+test('ホーム画面の基準が静止しない時の判断は、操作の要る画面を数えない（独立検収 S2）', () => {
+  const steps = planIosCapture({ device: 'D', bundleId: BID, outDir: './o', screens: iScreens });
+  assert.ok(steps[0].cmd.includes('IOS_SCREEN_COUNT=1'), '履歴だけ＝1画面として扱い、静止しなければ止める');
 });

@@ -6,13 +6,13 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { parseSkipped, planIosCapture, planToRunScript, planToShellScript } from './drivers/ios-simulator.mjs';
-import { completenessProblems, jobHtml, pickCapture, planOutputs, validateOutputs, sha256, verifyCaptures } from './pipeline.mjs';
+import { compareHtml, completenessProblems, jobHtml, pickCapture, planOutputs, validateOutputs, sha256, verifyCaptures } from './pipeline.mjs';
 import { decodePng, encodeRgbPng, flattenPng, readPngInfo } from './png.mjs';
 import { loadProfile, validateProfile } from './profile.mjs';
 import { canUseSource, checkClaims } from './provenance.mjs';
 import { checkCount, checkImageAgainstTarget, getTarget, TARGETS } from './specs.mjs';
-import { adHtml, AD_LAYOUTS, defaultAdLayout, escapeHtml, renderEmphasis, storeShotHtml, TONES } from './templates.mjs';
-import { maestroFlow, regexLiteral } from './drivers/interact.mjs';
+import { adHtml, AD_LAYOUTS, defaultAdLayout, escapeHtml, fitPhoneW, renderEmphasis, storeShotHtml, TONES } from './templates.mjs';
+import { interactHash, maestroFlow, regexLiteral } from './drivers/interact.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TABIRATE = path.join(HERE, '..', 'apps', 'tabirate', 'profile.json');
@@ -253,8 +253,8 @@ test('pipeline: 広告の画面は優先順の候補から、撮影のあるも�
   assert.equal(hero.layout, 'split');
   assert.equal(plan.jobs.find((j) => j.ad === 'banner').captures.length, 1, '横長は1台');
   assert.ok(plan.skipped.some((s) => s.ad === 'plan-pro' && s.reason.includes('pro-features')), 'Pro の撮影が無ければ作らない');
-  const withConv = planOutputs(p, [...caps, { screen: 'converter', locale: 'ja', source: 'ios-simulator', file: 'v.png', interacted: true }], { mode: 'draft' });
-  assert.deepEqual(withConv.jobs.find((j) => j.ad === 'lp-hero').captures.map((c) => c.screen), ['converter', 'history']);
+  const withConv = planOutputs(p, [...caps, { screen: 'converter', locale: 'ja', source: 'ios-simulator', file: 'v.png', interacted: true, interactHash: interactHash(p.capture.screens.find((x) => x.id === 'converter').interact) }], { mode: 'draft' });
+  assert.deepEqual(withConv.jobs.find((j) => j.ad === 'lp-hero').captures.map((c) => c.screen), ['converter', 'history'], 'カメラの撮影が無いので換算から');
 });
 
 test('pipeline: 操作が要る画面（換算）は、操作と表示の確認が通った撮影だけを使う（金額 0 のままの撮影を使わない）', () => {
@@ -264,7 +264,7 @@ test('pipeline: 操作が要る画面（換算）は、操作と表示の確認�
   assert.ok(!plan.jobs.some((j) => j.captures.some((c) => c.screen === 'converter')), '操作の前の撮影は店頭用にも広告にも使わない');
   assert.ok(plan.skipped.some((s) => s.shot === '02-converter' && s.reason.includes('操作の後の撮影が無い')));
   assert.deepEqual(plan.jobs.find((j) => j.ad === 'lp-hero').captures.map((c) => c.screen), ['history']);
-  const after = planOutputs(p, [{ ...before[0], interacted: true }, before[1]], { mode: 'draft' });
+  const after = planOutputs(p, [{ ...before[0], interacted: true, interactHash: interactHash(p.capture.screens.find((x) => x.id === 'converter').interact) }, before[1]], { mode: 'draft' });
   assert.ok(after.jobs.some((j) => j.shot === '02-converter'));
   assert.equal(pickCapture(before, 'history', 'ja', { id: 'history' }).file, 'h.png', '操作の無い画面は今までどおり');
 });
@@ -326,4 +326,91 @@ test('ios: 操作が要る画面は最後に撮り、失敗はその画面だけ
   assert.equal(cmds.filter((c) => c.includes('flow-warmup.yaml" <<')).length, 1, '準備のフローは1回');
   assert.ok(planToRunScript(steps).includes('IOS_SKIP_FILE'));
   assert.deepEqual(parseSkipped('converter\t操作・表示の確認が通らない\n\nbad line\n'), [{ screen: 'converter', reason: '操作・表示の確認が通らない' }]);
+});
+
+test('independent-review: 操作の設定の指紋が違う撮影は使わない（金額・確かめる表示を変えたら撮り直す）', () => {
+  const p = loadProfile(TABIRATE);
+  const spec = p.capture.screens.find((s) => s.id === 'converter').interact;
+  const ok = { screen: 'converter', locale: 'ja', source: 'ios-simulator', file: 'v.png', interacted: true, interactHash: interactHash(spec), device: 'iPhone 17 Pro Max' };
+  assert.ok(planOutputs(p, [ok], { mode: 'draft' }).jobs.some((j) => j.shot === '02-converter'));
+  const old = { ...ok, interactHash: interactHash({ ...spec, steps: [{ inputText: '12' }] }) };
+  const plan = planOutputs(p, [old], { mode: 'draft' });
+  assert.ok(!plan.jobs.some((j) => j.shot === '02-converter'));
+  assert.ok(plan.skipped.some((s) => s.shot === '02-converter' && s.reason.includes('操作の設定')));
+  assert.equal(interactHash({ ...spec, $note: '別の注記' }), interactHash(spec), '注記（$）は指紋に入れない');
+});
+
+test('independent-review: カメラの画面は実機の撮影だけを使う（シミュレーターの撮影は final でも draft でも使わない）', () => {
+  const p = loadProfile(TABIRATE);
+  const plan = planOutputs(p, [{ screen: 'camera', locale: 'ja', source: 'ios-simulator', file: 'c.png' }], { mode: 'final' });
+  assert.ok(!plan.jobs.some((j) => j.shot === '01-camera'));
+  assert.ok(plan.skipped.some((s) => s.shot === '01-camera' && s.reason.includes('device の撮影が要る')));
+  const dev = planOutputs(p, [{ screen: 'camera', locale: 'ja', source: 'device', file: 'c.png' }], { mode: 'final' });
+  assert.ok(dev.jobs.some((j) => j.shot === '01-camera'));
+  assert.deepEqual(dev.jobs.find((j) => j.ad === 'lp-hero').captures.map((c) => c.screen), ['camera'], 'カメラを根拠にした広告はカメラの撮影を先に使う');
+});
+
+test('independent-review: callout は rect を測った端末の撮影にだけ重ね、別の端末では省いて注記を残す', () => {
+  const p = loadProfile(TABIRATE);
+  const caps = (device) => [{ screen: 'history', locale: 'ja', source: 'ios-simulator', file: 'h.png', device }];
+  const same = planOutputs(p, caps('iPhone 17 Pro Max'), { mode: 'draft' }).jobs.find((j) => j.shot === '03-records');
+  assert.ok(same.callout && same.notes.length === 0);
+  const other = planOutputs(p, caps('iPhone 17'), { mode: 'draft' }).jobs.find((j) => j.shot === '03-records');
+  assert.equal(other.callout, null);
+  assert.match(other.notes[0], /callout を省いた/);
+});
+
+test('independent-review: 広告で使えなかった候補を注記に残す（代わりの画面で作ったことを人が確かめられる）', () => {
+  const p = loadProfile(TABIRATE);
+  const hero = planOutputs(p, [{ screen: 'history', locale: 'ja', source: 'ios-simulator', file: 'h.png' }], { mode: 'draft' }).jobs.find((j) => j.ad === 'lp-hero');
+  assert.ok(hero.notes.some((n) => n.includes('01-camera')) && hero.notes.some((n) => n.includes('02-converter')), hero.notes.join('／'));
+});
+
+test('independent-review: 端末の画面も撮影の等倍を超えて拡大しない（小さい撮影・大きい出力先）', () => {
+  const brand = { primary: '#0E9488' };
+  const html = storeShotHtml({ width: 2064, height: 2752, brand, title: 'a', imageDataUrl: 'data:,', imageWidth: 750, imageAspect: 1.78 });
+  const w = Number(html.match(/class="phone" style="width:([\d.]+)px/)[1]);
+  const bezel = (2064 / 100) * 1.5;
+  assert.ok(w - bezel * 2 <= 750 + 1e-6, `画面の幅 ${w - bezel * 2}`);
+  assert.equal(fitPhoneW(500, 1320, 10), 500, '縮小はそのまま');
+  for (const layout of AD_LAYOUTS) {
+    const ad = adHtml({ width: 1920, height: 1920, brand, headline: 'a', images: ['data:,', 'data:,'], imageWidth: 300, imageAspect: 2, layout });
+    // 1920×1920 の unit は 19.2、枠の太さは unit×1.5＝28.8px
+    for (const m of ad.matchAll(/class="phone" style="width:([\d.]+)px/g)) assert.ok(Number(m[1]) - 28.8 * 2 <= 300 + 1e-6, `${layout}: ${m[1]}`);
+  }
+});
+
+test('independent-review: 設定の値の形を検査する（文字のままの確認・JS 評価の ${・不正な tapOn・色・数値）', () => {
+  const p = JSON.parse(fs.readFileSync(TABIRATE, 'utf8'));
+  const conv = (b) => b.capture.screens.find((s) => s.id === 'converter').interact;
+  const t = (mut, re) => { const b = structuredClone(p); mut(b); const e = validateProfile(b); assert.ok(e.some((x) => re.test(x)), `${re}: ${e.join(' / ')}`); };
+  t((b) => { conv(b).expectNotVisible = '金額を入力'; }, /expectNotVisible は文字の配列/);
+  t((b) => { conv(b).steps[1] = { inputText: '${1+1}' }; }, /inputText は/);
+  t((b) => { conv(b).steps[0] = { tapOn: null }; }, /tapOn は/);
+  t((b) => { conv(b).steps[0] = { tapOn: { id: 'x', optional: true } }; }, /tapOn は/);
+  t((b) => { b.brand.primary = 'red;}body{display:none'; }, /brand\.primary は色/);
+  t((b) => { b.shots[2].callout.shiftY = 'x'; }, /shiftY/);
+  t((b) => { b.ads[0].maxPhones = 9; }, /maxPhones/);
+  t((b) => { b.ads[0].tone = { nope: 'light' }; }, /tone の nope/);
+  t((b) => { b.shots[0].sources = ['camera-roll']; }, /sources は/);
+  t((b) => { delete b.shots[2].callout.device; }, /callout\.device/);
+  assert.throws(() => maestroFlow({ bundleId: 'a.b', interact: { steps: [{ inputText: '1' }], expectVisible: 'x' } }), /文字の配列/);
+});
+
+test('independent-review: フローは撮る画面を開き直してから操作し、id も文字として照合する', () => {
+  const flow = maestroFlow({ bundleId: 'a.b', deepLink: 'x:///converter', interact: { steps: [{ tapOn: { id: 'a.b' } }], expectVisible: ['1'] } });
+  const lines = flow.trim().split('\n');
+  assert.equal(lines[2], '- openLink: "x:///converter"');
+  assert.equal(JSON.parse(lines[4].replace('- tapOn: ', '')).id, 'a\\.b');
+});
+
+test('independent-review: 新旧比較の一覧は出力先ごとに前と今回を並べ、前の run を相対パスで参照する', () => {
+  const html = compareHtml(
+    { app: { id: 'x' }, git: { commit: 'aaa' }, outputs: [{ target: 'sns-square', file: 'ads\\ja\\sns-square\\a.png', ad: 'a' }] },
+    { app: { id: 'x' }, git: { commit: 'bbb' }, mode: 'draft', skipped: [], outputs: [{ target: 'sns-square', file: 'ads/ja/sns-square/b.png', ad: 'b', layout: 'square', tone: 'light' }] },
+    '../old<run>',
+  );
+  assert.ok(html.includes('src="../old&lt;run&gt;/ads/ja/sns-square/a.png"'), '前の run は相対パス（エスケープ）');
+  assert.ok(html.includes('src="ads/ja/sns-square/b.png"'));
+  assert.ok(html.includes('前 1枚 → 今回 1枚'));
 });

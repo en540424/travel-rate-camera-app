@@ -225,7 +225,10 @@
           "title": "海外の値札が、\n［日本円］でわかる。",
           "sub": "値札の価格をカメラで読み取り、\n日本円に換算"
         }
-      }
+      },
+      "sources": [
+        "device"
+      ]
     },
     {
       "id": "02-converter",
@@ -242,7 +245,9 @@
           0.305,
           0.94,
           0.24
-        ]
+        ],
+        "device": "iPhone 17 Pro Max",
+        "$note": "換算の結果の枠は金額の有無で高さが変わらない作り（converter.tsx）。結果を表示した撮影での位置は第6回の後に目視する"
       },
       "caption": {
         "ja": {
@@ -266,7 +271,8 @@
           0.122,
           0.93,
           0.118
-        ]
+        ],
+        "device": "iPhone 17 Pro Max"
       },
       "caption": {
         "ja": {
@@ -306,7 +312,9 @@
           0.652,
           0.94,
           0.137
-        ]
+        ],
+        "device": "iPhone 17 Pro Max",
+        "$note": "5週の月で測った位置。6週の月（例 2027年1月）は月合計が下へずれるので、採用前に目視する"
       },
       "caption": {
         "ja": {
@@ -368,6 +376,7 @@
         "default": "light"
       },
       "shots": [
+        "01-camera",
         "02-converter",
         "03-records",
         "05-calendar"
@@ -426,6 +435,7 @@
         "default": "deep"
       },
       "shots": [
+        "01-camera",
         "02-converter",
         "03-records"
       ],
@@ -545,7 +555,7 @@
         "pro-csv"
       ],
       "headline": {
-        "ja": "Proで保存も旅行も\n［無制限］"
+        "ja": "Proなら保存件数も\n記録中の旅行も［無制限］"
       },
       "sub": {
         "ja": "カテゴリー分析・CSV書き出しも使える"

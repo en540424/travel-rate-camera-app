@@ -17,6 +17,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { planIosCapture, runIosPlan } from './drivers/ios-simulator.mjs';
+import { interactHash } from './drivers/interact.mjs';
 import {
   captureRel, CI_BRANCH_PREFIX, CI_JOB_FILE, CI_WORKFLOW, ciBranchFor, createJob, forbiddenIdentifiers, githubDispatchArgs, githubDownloadArgs, isMacMiniHost, newStatus, parsePreflight,
   githubRunProblems, preflightProblems, redactIdentifiers, resolveCiJob, sameImageProblems, RESULT_SCHEMA, sizeNotes, slug, TARGETS, transition, validateJob, verifyResult, verifyRunMeta,
@@ -195,20 +196,26 @@ export async function cmdJobRun(args) {
     }
     const deadline = Date.now() + (job.constraints?.maxRuntimeMinutes ?? 60) * 60_000;
     result.skipped = [];
+    const done = new Set();
     for (const g of groups) {
       const r = await runIosPlan(g.steps, console.log, { deadline });
       // 操作が要る画面で、操作・表示の確認が通らず撮らなかったもの（致命にしない。draft のジョブは他の画面を取り込める）
       for (const k of r?.skipped ?? []) result.skipped.push({ device: g.device, locale: g.locale, screen: k.screen, reason: k.reason });
+      for (const id of r?.interacted ?? []) done.add(`${g.device}|${g.locale}|${id}`);
     }
+    const skippedKeys = new Set(result.skipped.map((k) => `${k.device}|${k.locale}|${k.screen}`));
     for (const device of job.devices) for (const locale of job.locales) for (const screen of job.screens) {
       const rel = captureRel(device, locale, screen);
       const f = path.join(out, rel);
       if (!fs.existsSync(f)) continue;
+      // 操作が要る画面は、シェルが「操作と表示の確認が通って撮れた」印を書いた時だけ撮影として数える（印の無い・飛ばした画面の画像は
+      // 前の試行の残り等なので数えない。独立検収 S1）。合成はこの印と操作の設定の指紋が一致する撮影だけを使う
+      const spec = profile.capture.screens.find((s) => s.id === screen)?.interact;
+      const key = `${device}|${locale}|${screen}`;
+      if (spec && (!done.has(key) || skippedKeys.has(key))) { console.warn(`[job-run] ${rel}：操作の後の撮影の印が無いので数えない`); continue; }
       const buf = fs.readFileSync(f);
       const info = readPngInfo(buf);
-      // 操作が要る画面は、操作と表示の確認が通った時だけ画像ができる（ios_interact）。そのことを記録し、合成はこの印のある撮影だけを使う
-      const interacted = Boolean(profile.capture.screens.find((s) => s.id === screen)?.interact);
-      result.captures.push({ device, locale, screen, file: rel, sha256: sha256(buf), width: info.width, height: info.height, ...(interacted ? { interacted: true } : {}) });
+      result.captures.push({ device, locale, screen, file: rel, sha256: sha256(buf), width: info.width, height: info.height, ...(spec ? { interacted: true, interactHash: interactHash(spec) } : {}) });
     }
     const same = sameImageProblems(result.captures);
     if (same.length) throw new Error(same.join('／'));
@@ -412,7 +419,7 @@ export function cmdJobIngest(args) {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.copyFileSync(path.join(from, c.file), dest);
     const rt = result.env.devices.find((d) => d.name === device)?.runtime ?? null;
-    added.push({ screen: c.screen, locale: c.locale, source: 'ios-simulator', file: dest, device, ...(c.interacted === true ? { interacted: true } : {}), job: { id: job.id, purpose: job.purpose, commit: result.git.commit, runner: result.env.runner, macos: result.env.macos, xcode: result.env.xcode, runtime: rt, capturedAt: result.finishedAt, githubRun: run ? { id: String(run.databaseId), url: run.url } : null } });
+    added.push({ screen: c.screen, locale: c.locale, source: 'ios-simulator', file: dest, device, ...(c.interacted === true && typeof c.interactHash === 'string' ? { interacted: true, interactHash: c.interactHash } : {}), job: { id: job.id, purpose: job.purpose, commit: result.git.commit, runner: result.env.runner, macos: result.env.macos, xcode: result.env.xcode, runtime: rt, capturedAt: result.finishedAt, githubRun: run ? { id: String(run.databaseId), url: run.url } : null } });
   }
   writeCaptures(runDir, added);
   const notes = sizeNotes(result.captures.filter((x) => x.device === device), profile.outputs?.store ?? []);

@@ -7,6 +7,7 @@ import { flattenPng, hasTransparencyChunk, readPngInfo } from './png.mjs';
 import { canUseSource, SOURCES } from './provenance.mjs';
 import { checkCount, checkImageAgainstTarget, getTarget } from './specs.mjs';
 import { adHtml, defaultAdLayout, escapeHtml, renderEmphasis, storeShotHtml } from './templates.mjs';
+import { interactHash } from './drivers/interact.mjs';
 
 // 同じ画面に複数の撮影元がある場合、実機に近いものを優先する
 const SOURCE_PRIORITY = ['device', 'ios-simulator', 'android-emulator', 'web-preview'];
@@ -60,8 +61,12 @@ export function excludeDraftJobCaptures(mode, verified) {
  * screenDef（profile の capture.screens の1件）が操作（interact）を持つ画面は、操作と表示の確認が通った撮影（interacted）だけを使う
  * （2026-11-23 の5回目では換算の画面を金額 0 のまま撮っていた。操作の前の撮影を素材に使わない）。
  */
-export function pickCapture(captures, screen, locale, screenDef = null) {
-  const list = captures.filter((c) => c.screen === screen && c.locale === locale && (!screenDef?.interact || c.interacted === true));
+export function pickCapture(captures, screen, locale, screenDef = null, sources = null) {
+  // 操作の設定（金額・確かめる表示）が撮影の後に変わったら、その撮影は使わない（指紋の一致。独立検収 N7）
+  const hash = screenDef?.interact ? interactHash(screenDef.interact) : null;
+  const list = captures.filter((c) => c.screen === screen && c.locale === locale
+    && (!hash || (c.interacted === true && c.interactHash === hash))
+    && (!sources || sources.includes(c.source)));
   list.sort((a, b) => SOURCE_PRIORITY.indexOf(a.source) - SOURCE_PRIORITY.indexOf(b.source));
   return list[0] ?? null;
 }
@@ -76,21 +81,32 @@ export function planOutputs(profile, captures, { mode = 'draft', locales } = {})
   const useLocales = locales ?? profile.locales;
   const watermarkText = profile.draftWatermark ?? 'DRAFT · Web preview · 提出不可';
   const screenDef = (id) => profile.capture?.screens?.find((s) => s.id === id) ?? null;
-  const noCaptureReason = (id) => (screenDef(id)?.interact && captures.some((c) => c.screen === id) ? `画面 ${id} は操作の後の撮影が無い（操作の前の撮影は使わない）` : `画面 ${id} の撮影が無い`);
+  const noCaptureReason = (shot) => {
+    const id = shot.screen;
+    const any = captures.filter((c) => c.screen === id);
+    if (shot.sources && any.length && any.every((c) => !shot.sources.includes(c.source))) return `画面 ${id} は ${shot.sources.join('・')} の撮影が要る（${[...new Set(any.map((c) => c.source))].join('・')} の撮影は使わない）`;
+    if (screenDef(id)?.interact && any.length) return `画面 ${id} は今の操作の設定での操作の後の撮影が無い（操作の前・設定が変わる前の撮影は使わない）`;
+    return `画面 ${id} の撮影が無い`;
+  };
+  const pick = (shot, locale) => pickCapture(captures, shot.screen, locale, screenDef(shot.screen), shot.sources ?? null);
+  // callout は rect を測った端末の撮影にだけ重ねる（別の端末では位置がずれる。独立検収 S9）
+  const calloutFor = (shot, cap) => (shot.callout && (!shot.callout.device || shot.callout.device === cap.device) ? shot.callout : null);
 
   for (const locale of useLocales) {
     for (const targetId of profile.outputs?.store ?? []) {
       const target = getTarget(targetId);
       for (const shot of profile.shots ?? []) {
-        const cap = pickCapture(captures, shot.screen, locale, screenDef(shot.screen));
-        if (!cap) { skipped.push({ target: targetId, locale, shot: shot.id, reason: noCaptureReason(shot.screen) }); continue; }
+        const cap = pick(shot, locale);
+        if (!cap) { skipped.push({ target: targetId, locale, shot: shot.id, reason: noCaptureReason(shot) }); continue; }
         const use = canUseSource(cap.source, 'store', mode);
         if (!use.ok) { skipped.push({ target: targetId, locale, shot: shot.id, reason: use.reason }); continue; }
+        const callout = calloutFor(shot, cap);
         jobs.push({
           kind: 'store', target, locale, shot: shot.id, captures: [cap], mode,
           watermark: use.watermark ? watermarkText : null,
           title: shot.caption[locale].title, sub: shot.caption[locale].sub ?? '',
-          label: shot.caption[locale].label ?? '', tone: shot.tone ?? 'light', layout: shot.layout ?? 'showcase', callout: shot.callout ?? null,
+          label: shot.caption[locale].label ?? '', tone: shot.tone ?? 'light', layout: shot.layout ?? 'showcase', callout,
+          notes: shot.callout && !callout ? [`callout を省いた（${shot.callout.device} で測った位置。撮影は ${cap.device ?? '不明な端末'}）`] : [],
           file: path.join('store', locale, targetId, `${shot.id}.png`),
         });
       }
@@ -100,28 +116,29 @@ export function planOutputs(profile, captures, { mode = 'draft', locales } = {})
         const target = getTarget(targetId);
         const layout = ad.layout?.[targetId] ?? defaultAdLayout(target.width, target.height);
         const max = ad.maxPhones ?? (['split', 'story'].includes(layout) ? 2 : 1);
-        // ad.shots は優先順の候補。撮影がある・使える撮影元のものを先頭から max 台まで使う（1台も無ければ作らない）
+        // ad.shots は優先順の候補。撮影がある・使える撮影元のものを先頭から max 台まで使う（1台も無ければ作らない）。
+        // 使えなかった候補は manifest と一覧に残す（代わりの画面で作ったことを人が確かめられるように。独立検収 S8）
         const caps = [];
-        const missing = [];
+        const unused = [];
         let watermark = false;
         for (const sid of ad.shots ?? []) {
           if (caps.length >= max) break;
           const shot = profile.shots.find((s) => s.id === sid);
-          const cap = pickCapture(captures, shot.screen, locale, screenDef(shot.screen));
-          if (!cap) { missing.push(noCaptureReason(shot.screen)); continue; }
+          const cap = pick(shot, locale);
+          if (!cap) { unused.push(`${sid}：${noCaptureReason(shot)}`); continue; }
           const use = canUseSource(cap.source, 'ad', mode);
-          if (!use.ok) { missing.push(use.reason); continue; }
+          if (!use.ok) { unused.push(`${sid}：${use.reason}`); continue; }
           watermark ||= use.watermark;
           caps.push(cap);
         }
-        if (!caps.length) { skipped.push({ target: targetId, locale, ad: ad.id, reason: missing.join('・') || '候補の画面が無い' }); continue; }
+        if (!caps.length) { skipped.push({ target: targetId, locale, ad: ad.id, reason: unused.join('・') || '候補の画面が無い' }); continue; }
         jobs.push({
           kind: 'ad', target, locale, ad: ad.id, captures: caps, mode, layout,
           tone: ad.tone?.[targetId] ?? ad.tone?.default ?? 'light',
           watermark: watermark ? watermarkText : null,
           headline: ad.headline[locale], sub: ad.sub?.[locale] ?? '', badge: ad.badge?.[locale] ?? '',
           points: (ad.points ?? []).map((pt) => pt.text?.[locale]).filter(Boolean),
-          unused: missing,
+          notes: unused.map((u) => `使えなかった候補 ${u}`),
           file: path.join('ads', locale, targetId, `${ad.id}.png`),
         });
       }
@@ -156,16 +173,20 @@ export function jobHtml(profile, job, images, imageAspect, { imageWidth = null, 
 
 /** 描画に実際に使われたフォント（Chromium の CDP。見出しの要素）。取れなければ null。実行するマシンにより変わるので manifest に残す。 */
 async function platformFonts(page, selector = 'h1') {
+  let cdp = null;
   try {
-    const cdp = await page.context().newCDPSession(page);
+    cdp = await page.context().newCDPSession(page);
+    await cdp.send('DOM.enable');
+    await cdp.send('CSS.enable');
     const { root } = await cdp.send('DOM.getDocument');
     const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector });
     if (!nodeId) return null;
     const { fonts } = await cdp.send('CSS.getPlatformFontsForNode', { nodeId });
-    await cdp.detach();
     return fonts.map((f) => f.familyName);
   } catch {
     return null;
+  } finally {
+    await cdp?.detach().catch(() => {});
   }
 }
 
@@ -201,7 +222,7 @@ export async function renderPlan(profile, plan, runDir, playwright, log = consol
       const info = readPngInfo(png);
       outputs.push({
         file: job.file, kind: job.kind, target: job.target.id, locale: job.locale, shot: job.shot ?? null, ad: job.ad ?? null,
-        mode: job.mode, watermarked: Boolean(job.watermark), layout: job.layout, tone: job.tone, fonts,
+        mode: job.mode, watermarked: Boolean(job.watermark), layout: job.layout, tone: job.tone, fonts, notes: job.notes ?? [],
         sources: job.captures.map((c) => ({ screen: c.screen, source: c.source, sha256: c.sha256 })),
         width: info.width, height: info.height, sha256: sha256(png),
       });
@@ -256,7 +277,7 @@ export function galleryHtml(manifest) {
     ].join('');
     return `<figure><a href="${escapeHtml(o.file.replace(/\\/g, '/'))}"><img loading="lazy" src="${escapeHtml(o.file.replace(/\\/g, '/'))}"></a>
       <figcaption>${badges}<div>${escapeHtml(o.target)} · ${escapeHtml(o.locale)} · ${escapeHtml(o.shot ?? o.ad)}</div>
-      <small>${o.width}×${o.height}</small></figcaption></figure>`;
+      <small>${o.width}×${o.height}</small>${(o.notes ?? []).map((n) => `<div class="note">${escapeHtml(n)}</div>`).join('')}</figcaption></figure>`;
   };
   const v = manifest.validation;
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>${escapeHtml(manifest.app.id)} 素材一覧</title><style>
@@ -266,7 +287,7 @@ export function galleryHtml(manifest) {
   img{width:100%;border:1px solid #ddd;border-radius:6px} figcaption{font-size:12px;margin-top:6px}
   b{display:inline-block;margin:0 4px 4px 0;padding:1px 6px;border-radius:8px;font-weight:600;background:#eee}
   b.final{background:#d7f0e9} b.draft{background:#fde7c4} b.web{background:#f9d0d0} b.native{background:#d7e6fb}
-  .ng{color:#b00020} .ok{color:#0a766e} pre{white-space:pre-wrap;background:#fff;padding:8px;border-radius:8px}
+  .note{color:#8a5a00;font-size:11px;margin-top:4px} .ng{color:#b00020} .ok{color:#0a766e} pre{white-space:pre-wrap;background:#fff;padding:8px;border-radius:8px}
   </style></head><body>
   <h1>${escapeHtml(manifest.app.id)} 素材一覧</h1>
   <p>生成：${escapeHtml(manifest.generatedAt)} ／ commit ${escapeHtml(manifest.git.commit)}${manifest.git.dirty ? '（未commitの変更あり）' : ''} ／ mode ${escapeHtml(manifest.mode)}</p>

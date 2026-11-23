@@ -32,6 +32,12 @@ concurrency:
 env:
   EXPO_NO_TELEMETRY: '1'
   CI: 'true'
+  # 画面の操作の道具（Maestro）：統計の送信・更新の確認を止める（入れる step の --version から効かせるため job 全体に置く）。
+  # 道具の起動の待ち時間は既定 15 秒（公式の環境変数の表）。CI の初回は遅いので 5 分にする
+  MAESTRO_CLI_NO_ANALYTICS: 'true'
+  MAESTRO_CLI_ANALYSIS_NOTIFICATION_DISABLED: 'true'
+  MAESTRO_DISABLE_UPDATE_CHECK: 'true'
+  MAESTRO_DRIVER_STARTUP_TIMEOUT: '300000'
 
 jobs:
   capture:
@@ -104,9 +110,14 @@ jobs:
           MAESTRO_SHA256: 54dbb0716425626604973cbb374c585ca30272375d9ce15177a1152765ddd9d7
         run: |
           set -euo pipefail
+          # 失敗は撮影を止めないが、注記として run の画面に出す（「道具が入っていない」だけでは原因が分からない）
+          trap 'echo "::warning title=Maestro::Maestro を入れられなかった（操作が要る画面は撮らずに飛ばす）"' ERR
           java -version 2>&1 | head -n 1
           curl -fsSL --retry 3 -o "$RUNNER_TEMP/maestro.zip" "$MAESTRO_URL"
-          echo "$MAESTRO_SHA256  $RUNNER_TEMP/maestro.zip" | shasum -a 256 -c -
+          if ! echo "$MAESTRO_SHA256  $RUNNER_TEMP/maestro.zip" | shasum -a 256 -c -; then
+            echo "::warning title=Maestro::zip の sha256 が固定値と違う（改ざん・差し替えの可能性。入れない）"
+            exit 1
+          fi
           unzip -q "$RUNNER_TEMP/maestro.zip" -d "$RUNNER_TEMP/maestro-cli"
           BIN="$(dirname "$(find "$RUNNER_TEMP/maestro-cli" -type f -path '*/bin/maestro' | head -n 1)")"
           test -x "$BIN/maestro"
@@ -115,10 +126,6 @@ jobs:
 
       - name: 撮影（既存の iOS 撮影手順を job-run で実行。commit の一致・sha256・撮影環境の記録）
         env:
-          # Maestro が外へ送る統計・更新の確認を止める
-          MAESTRO_CLI_NO_ANALYTICS: 'true'
-          MAESTRO_CLI_ANALYSIS_NOTIFICATION_DISABLED: 'true'
-          MAESTRO_DISABLE_UPDATE_CHECK: 'true'
           # アプリが落ちた時、クラッシュの記録（.ips）が書かれるのを待つ秒数（高負荷では書き込みが遅れる）
           IOS_IPS_WAIT: '60'
         run: node tools/store-assets/engine/cli.mjs job-run --job "$RUNNER_TEMP/job.json" --out "$RUNNER_TEMP/result" --app "$APP"

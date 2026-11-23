@@ -117,6 +117,8 @@ export async function buildFixtureDb(outFile, { today = new Date() } = {}) {
     await trips.setActiveTrip(db, tripId);
     await rates.upsertRate(db, 'EUR', FIXTURE.trip.manual_rate);
     const dates = fixtureDates(today);
+    // 旅行一覧の月の表示（started_at が無ければ作った日）を記録の日付と合わせる
+    await trips.updateTrip(db, tripId, { started_at: dates[0] });
     await insertRecords(db, history, tripId, FIXTURE.trip, FIXTURE.records, dates);
     const version = (await db.getFirstAsync('PRAGMA user_version')).user_version;
     const count = await history.getHistoryCountForTrip(db, tripId);

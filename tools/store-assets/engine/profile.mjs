@@ -3,12 +3,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { checkClaims } from './provenance.mjs';
+import { checkClaims, SOURCES } from './provenance.mjs';
 import { TARGETS } from './specs.mjs';
 import { AD_LAYOUTS, STORE_LAYOUTS, TONES } from './templates.mjs';
-import { INTERACT_COMMANDS } from './drivers/interact.mjs';
+import { checkExpectText, checkStepValue, INTERACT_COMMANDS } from './drivers/interact.mjs';
 
 const FEATURE_STATUSES = ['released', 'flagged', 'planned'];
+// ブランドの色は <style> へそのまま入るので、色の書き方だけを受ける（独立検収 S4）
+const COLOR = /^(#[0-9A-Fa-f]{3,8}|rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(,\s*[\d.]+\s*)?\))$/;
 
 function validRect(r) {
   return Array.isArray(r) && r.length === 4 && r.every((v) => typeof v === 'number' && v >= 0 && v <= 1)
@@ -21,13 +23,22 @@ export function validateInteract(it) {
   if (!it || typeof it !== 'object') return ['interact がオブジェクトでない'];
   if (it.driver !== 'maestro') errors.push('interact.driver は maestro');
   if (!Array.isArray(it.steps) || it.steps.length === 0) errors.push('interact.steps が空');
-  for (const [i, st] of (it.steps ?? []).entries()) {
+  for (const [i, st] of (Array.isArray(it.steps) ? it.steps : []).entries()) {
     const keys = st && typeof st === 'object' ? Object.keys(st) : [];
-    if (keys.length !== 1 || !INTERACT_COMMANDS.includes(keys[0])) errors.push(`interact.steps[${i}] は ${INTERACT_COMMANDS.join('|')} のどれか1つ`);
+    if (keys.length !== 1 || !INTERACT_COMMANDS.includes(keys[0])) { errors.push(`interact.steps[${i}] は ${INTERACT_COMMANDS.join('|')} のどれか1つ`); continue; }
+    const bad = checkStepValue(keys[0], st[keys[0]]);
+    if (bad) errors.push(`interact.steps[${i}]：${bad}`);
   }
-  const ex = [...(it.expectVisible ?? []), ...(it.expectNotVisible ?? [])];
-  if (!(it.expectVisible ?? []).length) errors.push('interact.expectVisible が空（操作の結果を確かめずに撮らない）');
-  if (!ex.every((x) => typeof x === 'string' && x.length > 0)) errors.push('interact.expect* は空でない文字列');
+  // 文字のまま書くと1文字ずつの確認になり、必ず通ってしまう（独立検収 S4）。配列だけを受ける
+  for (const k of ['expectVisible', 'expectNotVisible']) {
+    if (it[k] !== undefined && !Array.isArray(it[k])) errors.push(`interact.${k} は文字の配列`);
+  }
+  const arr = (x) => (Array.isArray(x) ? x : []);
+  if (!arr(it.expectVisible).length) errors.push('interact.expectVisible が空（操作の結果を確かめずに撮らない）');
+  for (const x of [...arr(it.expectVisible), ...arr(it.expectNotVisible)]) {
+    const bad = checkExpectText(x);
+    if (bad) { errors.push(`interact.expect*：${bad}`); break; }
+  }
   if (it.timeoutSeconds !== undefined && !(Number.isInteger(it.timeoutSeconds) && it.timeoutSeconds > 0 && it.timeoutSeconds <= 900)) errors.push('interact.timeoutSeconds は1〜900の整数');
   return errors;
 }
@@ -42,6 +53,10 @@ export function validateProfile(p) {
   need(typeof p.app?.id === 'string' && /^[a-z0-9-]+$/.test(p.app.id), 'app.id は英小文字・数字・ハイフン');
   need(Array.isArray(p.locales) && p.locales.length > 0, 'locales が空');
   need(p.brand && typeof p.brand.primary === 'string', 'brand.primary が無い');
+  for (const [k, v] of Object.entries(p.brand ?? {})) {
+    if (k === 'icon') need(typeof v === 'string' && /\.png$/i.test(v), 'brand.icon は PNG のパス');
+    else need(typeof v === 'string' && COLOR.test(v), `brand.${k} は色（#RRGGBB・rgb()・rgba()）`);
+  }
 
   const features = p.features ?? {};
   for (const [id, f] of Object.entries(features)) {
@@ -66,7 +81,15 @@ export function validateProfile(p) {
     }
     if (shot.layout !== undefined) need(STORE_LAYOUTS.includes(shot.layout), `shot ${shot.id}: layout は ${STORE_LAYOUTS.join('|')}`);
     if (shot.tone !== undefined) need(TONES.includes(shot.tone), `shot ${shot.id}: tone は ${TONES.join('|')}`);
-    if (shot.callout !== undefined) need(validRect(shot.callout?.rect), `shot ${shot.id}: callout.rect は [x,y,w,h]（0〜1・画面の内側）`);
+    if (shot.callout !== undefined) {
+      const c = shot.callout;
+      need(validRect(c?.rect), `shot ${shot.id}: callout.rect は [x,y,w,h]（0〜1・画面の内側）`);
+      need(typeof c?.device === 'string' && c.device.length > 0, `shot ${shot.id}: callout.device（rect を測った端末。別の端末の撮影には重ねない）が無い`);
+      if (c?.width !== undefined) need(typeof c.width === 'number' && c.width > 0, `shot ${shot.id}: callout.width は正の数`);
+      if (c?.shiftY !== undefined) need(typeof c.shiftY === 'number' && Math.abs(c.shiftY) <= 0.5, `shot ${shot.id}: callout.shiftY は -0.5〜0.5`);
+    }
+    // 使ってよい撮影元を絞る（例：カメラの画面は実機だけ。シミュレーターには実カメラが無い）
+    if (shot.sources !== undefined) need(Array.isArray(shot.sources) && shot.sources.length > 0 && shot.sources.every((s) => SOURCES[s]), `shot ${shot.id}: sources は ${Object.keys(SOURCES).join('|')} の配列`);
   }
 
   for (const ad of p.ads ?? []) {
@@ -79,7 +102,11 @@ export function validateProfile(p) {
       need((ad.targets ?? []).includes(t), `ad ${ad.id}: layout の ${t} は targets に無い`);
       need(AD_LAYOUTS.includes(l), `ad ${ad.id}: layout.${t} は ${AD_LAYOUTS.join('|')}`);
     }
-    for (const [t, v] of Object.entries(ad.tone ?? {})) need(TONES.includes(v), `ad ${ad.id}: tone.${t} は ${TONES.join('|')}`);
+    for (const [t, v] of Object.entries(ad.tone ?? {})) {
+      need(t === 'default' || (ad.targets ?? []).includes(t), `ad ${ad.id}: tone の ${t} は default か targets のどれか`);
+      need(TONES.includes(v), `ad ${ad.id}: tone.${t} は ${TONES.join('|')}`);
+    }
+    if (ad.maxPhones !== undefined) need(Number.isInteger(ad.maxPhones) && ad.maxPhones >= 1 && ad.maxPhones <= 2, `ad ${ad.id}: maxPhones は 1〜2`);
     // 要点（箇条書き）も文言なので、それぞれ公開済みの機能を根拠に持ち、その根拠は広告の根拠に含まれる
     for (const [i, pt] of (ad.points ?? []).entries()) {
       for (const e of checkClaims(pt.features, features)) errors.push(`ad ${ad.id}: points[${i}]: ${e}`);
