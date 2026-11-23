@@ -262,6 +262,14 @@ test('クラッシュの記録：このアプリの・印より新しい .ips �
   assert.equal(parseIps('{}'), null);
   assert.equal(isForBundle(parseIps(ips({}, { bundleInfo: { CFBundleIdentifier: BID } })), BID), true);
   assert.ok(summarizeIps({ header: {}, body: { asi: { x: ['y'.repeat(1000)] } } }).some((l) => l.endsWith('…')), '長い文は切る');
+  // 2026-11-23 の4回目：dyld の理由が長く、まとめて切ると「どのバイナリが参照したか」が落ちた
+  const dyld = summarizeIps({ header: {}, body: { termination: {
+    namespace: 'DYLD', code: 4, indicator: 'Symbol missing',
+    reasons: [`Symbol not found: _$s15ExpoModulesCore6Record${'x'.repeat(300)}`, `Referenced from: <UUID> /Users/USER/${'d/'.repeat(120)}app.app/Frameworks/ExpoLocation.framework/ExpoLocation`, 'Expected in: <UUID> /Users/USER/app.app/Frameworks/ExpoModulesCore.framework/ExpoModulesCore'],
+  } } });
+  assert.ok(dyld.some((l) => l.includes('Symbol missing')), dyld.join('\n'));
+  assert.ok(dyld.some((l) => l.startsWith('    ・Referenced from')), '理由は1件ずつ出す');
+  assert.ok(dyld.some((l) => l.includes('Expected in') && l.includes('ExpoModulesCore')), '後ろの理由も落とさない');
   assert.deepEqual(findReports(path.join(dir, 'missing'), 0, BID), { mine: [], others: [] });
   fs.rmSync(dir, { recursive: true, force: true });
 });

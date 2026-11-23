@@ -54,7 +54,13 @@ export function summarizeIps(ips) {
   const lines = [];
   lines.push(`  プロセス：${body.procName ?? header.app_name ?? '?'}（${header.bundleID ?? body.bundleInfo?.CFBundleIdentifier ?? '?'}）・種類 ${header.bug_type ?? '?'}・時刻 ${body.captureTime ?? header.timestamp ?? '?'}`);
   if (body.exception) lines.push(`  例外：${clip(JSON.stringify(body.exception))}`);
-  if (body.termination) lines.push(`  終了の理由：${clip(JSON.stringify(body.termination))}`);
+  if (body.termination) {
+    // 理由の文（dyld の「Symbol not found」「Referenced from <どのバイナリ>」等）は1件ずつ出す。
+    // まとめて400字で切ると、肝心の「どのバイナリが参照したか」が落ちる（2026-11-23 の4回目で実際に落ちた）
+    const { reasons, ...rest } = body.termination;
+    lines.push(`  終了の理由：${clip(JSON.stringify(rest))}`);
+    for (const r of [].concat(reasons ?? []).slice(0, 6)) lines.push(`    ・${clip(r)}`);
+  }
   if (body.asi) {
     for (const [k, v] of Object.entries(body.asi)) {
       for (const s of [].concat(v).slice(0, 5)) lines.push(`  asi（${k}）：${clip(s)}`);
