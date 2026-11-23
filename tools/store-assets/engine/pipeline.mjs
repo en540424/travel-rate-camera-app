@@ -120,6 +120,24 @@ function dataUrl(file) {
   return `data:image/png;base64,${fs.readFileSync(file).toString('base64')}`;
 }
 
+/**
+ * 1枚分のHTML（純粋関数）。言語（profile.localeTags。例 ja-JP）を必ず渡す：
+ * 日本語の文節での改行（word-break:auto-phrase）は <html lang> が無いと黙って効かない。
+ */
+export function jobHtml(profile, job, images, imageAspect) {
+  const { width, height } = job.target;
+  const lang = profile.localeTags?.[job.locale] ?? job.locale;
+  return job.kind === 'store'
+    ? storeShotHtml({
+      width, height, brand: profile.brand, title: renderEmphasis(job.title), sub: job.sub,
+      imageDataUrl: images[0], watermark: job.watermark, imageAspect, lang,
+    })
+    : adHtml({
+      width, height, brand: profile.brand, headline: renderEmphasis(job.headline), sub: job.sub,
+      images, watermark: job.watermark, appName: profile.app.name?.[job.locale] ?? profile.app.name?.ja, badge: job.badge, lang,
+    });
+}
+
 /** 計画どおりにHTMLを描き、アルファを除いたPNGで保存する。 */
 export async function renderPlan(profile, plan, runDir, playwright, log = console.log) {
   const browser = await playwright.chromium.launch();
@@ -131,15 +149,7 @@ export async function renderPlan(profile, plan, runDir, playwright, log = consol
       await page.setViewportSize({ width, height });
       const images = job.captures.map((c) => dataUrl(c.file));
       const firstInfo = readPngInfo(fs.readFileSync(job.captures[0].file));
-      const html = job.kind === 'store'
-        ? storeShotHtml({
-          width, height, brand: profile.brand, title: renderEmphasis(job.title), sub: job.sub,
-          imageDataUrl: images[0], watermark: job.watermark, imageAspect: firstInfo.height / firstInfo.width,
-        })
-        : adHtml({
-          width, height, brand: profile.brand, headline: renderEmphasis(job.headline), sub: job.sub,
-          images, watermark: job.watermark, appName: profile.app.name?.[job.locale] ?? profile.app.name?.ja, badge: job.badge,
-        });
+      const html = jobHtml(profile, job, images, firstInfo.height / firstInfo.width);
       await page.setContent(html, { waitUntil: 'load' });
       await page.evaluate(() => document.fonts?.ready);
       const raw = await page.screenshot({ type: 'png', fullPage: false });

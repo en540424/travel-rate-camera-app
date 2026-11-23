@@ -6,12 +6,12 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { planIosCapture, planToShellScript } from './drivers/ios-simulator.mjs';
-import { completenessProblems, pickCapture, planOutputs, validateOutputs, sha256, verifyCaptures } from './pipeline.mjs';
+import { completenessProblems, jobHtml, pickCapture, planOutputs, validateOutputs, sha256, verifyCaptures } from './pipeline.mjs';
 import { decodePng, encodeRgbPng, flattenPng, readPngInfo } from './png.mjs';
 import { loadProfile, validateProfile } from './profile.mjs';
 import { canUseSource, checkClaims } from './provenance.mjs';
 import { checkCount, checkImageAgainstTarget, getTarget, TARGETS } from './specs.mjs';
-import { escapeHtml, renderEmphasis } from './templates.mjs';
+import { adHtml, escapeHtml, renderEmphasis, storeShotHtml } from './templates.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TABIRATE = path.join(HERE, '..', 'apps', 'tabirate', 'profile.json');
@@ -129,6 +129,20 @@ test('pipeline: 実機に近い撮影元を優先し、finalではWeb版プレ�
   assert.equal(draft.jobs.find((j) => j.shot === '02-history').watermark, null, 'iOS撮影は透かし無し');
 });
 
+test('pipeline: 合成のHTMLには profile の言語（localeTags）が入る（無いと文節での改行が黙って効かない）', () => {
+  const p = loadProfile(TABIRATE);
+  const caps = [{ screen: 'history', locale: 'ja', source: 'ios-simulator', file: 'i.png' }, { screen: 'calendar', locale: 'ja', source: 'ios-simulator', file: 'c.png' }];
+  const plan = planOutputs(p, caps, { mode: 'draft' });
+  const store = plan.jobs.find((j) => j.kind === 'store');
+  const ad = plan.jobs.find((j) => j.kind === 'ad');
+  assert.ok(store && ad, '店頭用と広告用の両方を確かめる');
+  for (const job of [store, ad]) {
+    const html = jobHtml(p, job, ['data:,', 'data:,'], 2.17);
+    assert.ok(html.includes(`<html lang="${p.localeTags.ja}">`), `${job.kind}：${html.slice(0, 60)}`);
+    assert.ok(html.includes('word-break:auto-phrase'));
+  }
+});
+
 test('pipeline: 検証は改変・寸法違い・finalの透かしを検出する', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'store-assets-'));
   const png = encodeRgbPng(rgba(1179, 2556, () => [255, 255, 255, 255]));
@@ -166,6 +180,18 @@ test('ios: 撮影手順は画面ごとに開いて撮り、テストデータは
 test('templates: 文言はエスケープされ、［］だけが強調になる', () => {
   assert.equal(escapeHtml('<b>&"'), '&lt;b&gt;&amp;&quot;');
   assert.equal(renderEmphasis('円が［わかる］<x>\n次'), '円が<em>わかる</em>&lt;x&gt;<br>次');
+});
+
+test('templates: 見出し・補足は言語を指定し、文節で改行して行の長さをそろえる（語の途中・助詞1文字の行で折らない）', () => {
+  const brand = { primary: '#0E9488' };
+  const store = storeShotHtml({ width: 1320, height: 2868, brand, title: 'a', sub: 'b', imageDataUrl: 'data:,', lang: 'ja-JP' });
+  const ad = adHtml({ width: 1080, height: 1080, brand, headline: 'a', sub: 'b', images: ['data:,'], appName: 'x', lang: 'ja-JP' });
+  for (const html of [store, ad]) {
+    assert.ok(html.includes('<html lang="ja-JP">'), 'auto-phrase は言語の指定が要る');
+    assert.equal((html.match(/word-break:auto-phrase;line-break:strict;text-wrap:balance/g) ?? []).length, 2, '見出しと補足の両方');
+  }
+  assert.ok(storeShotHtml({ width: 10, height: 10, brand, title: 'a', imageDataUrl: 'data:' }).startsWith('<!doctype html><html><head>'), '言語が無ければ属性を付けない');
+  assert.ok(adHtml({ width: 10, height: 10, brand, headline: 'a', images: [], lang: '"><x>' }).includes('lang="&quot;&gt;&lt;x&gt;"'), '属性はエスケープする');
 });
 
 test('pipeline: finalは作れなかったストア用の画像と、出力0枚の出力先を問題にする（draftでは問わない）', () => {
