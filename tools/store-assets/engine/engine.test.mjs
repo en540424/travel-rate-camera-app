@@ -437,7 +437,7 @@ test('verify: 画面の確認の設定は配列で、操作の画面には書か
   assert.ok(e.some((x) => x.includes('操作の画面の確認は interact')));
   const lp = loadProfile(TABIRATE);
   const plan = planOutputs(lp, [{ screen: 'history', locale: 'ja', source: 'ios-simulator', file: 'h.png' }, { screen: 'calendar', locale: 'ja', source: 'ios-simulator', file: 'c.png' }], { mode: 'draft' });
-  for (const job of plan.jobs) assert.ok(jobHtml(lp, job, ['data:,', 'data:,'], 2.17).includes(`class="disc"`), `${job.file} に注記`);
+  for (const job of plan.jobs) assert.ok(jobHtml(lp, job, ['data:,', 'data:,'], 2.17).includes(`class="sa-note"`), `${job.file} に注記`);
   assert.ok(jobHtml(lp, plan.jobs[0], ['data:,'], 2.17).includes(lp.disclaimer.ja));
 });
 

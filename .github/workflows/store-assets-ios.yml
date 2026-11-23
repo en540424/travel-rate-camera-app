@@ -33,7 +33,7 @@ env:
   EXPO_NO_TELEMETRY: '1'
   CI: 'true'
   # 画面の操作の道具（Maestro）：統計の送信・更新の確認を止める（入れる step の --version から効かせるため job 全体に置く）。
-  # 道具の起動の待ち時間は既定 15 秒（公式の環境変数の表）。CI の初回は遅いので 5 分にする
+  # 道具の起動の待ち時間の既定は Android 15 秒・iOS 120 秒（公式の文書）。CI の初回は遅いので 5 分にする
   MAESTRO_CLI_NO_ANALYTICS: 'true'
   MAESTRO_CLI_ANALYSIS_NOTIFICATION_DISABLED: 'true'
   MAESTRO_DISABLE_UPDATE_CHECK: 'true'

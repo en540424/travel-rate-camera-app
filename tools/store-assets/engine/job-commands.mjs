@@ -139,6 +139,19 @@ function collectEnv(job, picked) {
   return { runner, runnerImage: process.env.ImageOS ?? null, runnerImageVersion: process.env.ImageVersion ?? null, githubRunId: process.env.GITHUB_RUN_ID ?? null, macos, xcode, devices };
 }
 
+/**
+ * 撮影の記録に付ける印（純関数）。null なら撮影として数えない。key は「デバイス|言語|画面」。
+ * - 操作が要る画面（spec あり）は、シェルが「操作と表示の確認が通って撮れた」印（done）を書き、飛ばしていない（skippedKeys に無い）時だけ数える
+ *   （印の無い画像は前の試行の残り等。独立検収 S1）。数える時は interacted と操作の設定の指紋（interactHash）を付ける
+ * - 内容の確認（verified）：操作の画面は操作の中で確かめ済み（true）。他は撮った後の確認（ok→true・fail→false・確かめられない→付けない）
+ */
+export function captureMarks(spec, key, { done, skippedKeys, verification }) {
+  if (spec && (!done.has(key) || skippedKeys.has(key))) return null;
+  const v = verification.get(key);
+  const verified = spec ? true : v?.status === 'ok' ? true : v?.status === 'fail' ? false : undefined;
+  return { ...(spec ? { interacted: true, interactHash: interactHash(spec) } : {}), ...(verified === undefined ? {} : { verified }) };
+}
+
 export async function cmdJobRun(args) {
   const { job } = readJob(args.job);
   const profile = profileFor(args, job);
@@ -211,20 +224,12 @@ export async function cmdJobRun(args) {
       const rel = captureRel(device, locale, screen);
       const f = path.join(out, rel);
       if (!fs.existsSync(f)) continue;
-      // 操作が要る画面は、シェルが「操作と表示の確認が通って撮れた」印を書いた時だけ撮影として数える（印の無い・飛ばした画面の画像は
-      // 前の試行の残り等なので数えない。独立検収 S1）。合成はこの印と操作の設定の指紋が一致する撮影だけを使う
       const spec = profile.capture.screens.find((s) => s.id === screen)?.interact;
-      const key = `${device}|${locale}|${screen}`;
-      if (spec && (!done.has(key) || skippedKeys.has(key))) { console.warn(`[job-run] ${rel}：操作の後の撮影の印が無いので数えない`); continue; }
+      const marks = captureMarks(spec, `${device}|${locale}|${screen}`, { done, skippedKeys, verification });
+      if (!marks) { console.warn(`[job-run] ${rel}：操作の後の撮影の印が無いので数えない`); continue; }
       const buf = fs.readFileSync(f);
       const info = readPngInfo(buf);
-      // 内容の確認：操作の画面は操作の中で確かめ済み（true）。他は撮った後の確認の結果（ok→true・fail→false・確かめられない→記録しない）
-      const v = verification.get(key);
-      const verified = spec ? true : v?.status === 'ok' ? true : v?.status === 'fail' ? false : undefined;
-      result.captures.push({
-        device, locale, screen, file: rel, sha256: sha256(buf), width: info.width, height: info.height,
-        ...(spec ? { interacted: true, interactHash: interactHash(spec) } : {}), ...(verified === undefined ? {} : { verified }),
-      });
+      result.captures.push({ device, locale, screen, file: rel, sha256: sha256(buf), width: info.width, height: info.height, ...marks });
     }
     const same = sameImageProblems(result.captures);
     if (same.length) throw new Error(same.join('／'));

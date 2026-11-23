@@ -74,10 +74,14 @@ export function fitPhoneW(phoneW, imageWidth, unit, frameScale = 1) {
   return Math.min(phoneW, imageWidth + unit * 1.5 * frameScale * 2);
 }
 
-/** 画面の注記（例：画面の金額・レートは表示例）。右下に小さく、端末の上でも読めるよう淡い下地を付ける。 */
-function noteHtml(note, unit, bottom = unit * 2) {
+/**
+ * 画面の注記（例：画面の金額・レートは表示例）。配置ごとに端末・文字と重ならない隅に置く（独立検収 R8：右下は端末の画面に重なった）。
+ * corner：'tr'（右上）・'bl'（左下）。文字は小さすぎないよう 18px 以上。
+ */
+function noteHtml(note, unit, corner = 'tr') {
   if (!note) return '';
-  return `<div class="disc" style="position:absolute;right:${unit * 2}px;bottom:${bottom}px;z-index:8;font-size:${unit * 2.2}px;padding:${unit * 0.5}px ${unit * 1.4}px;border-radius:${unit}px;background:rgba(255,255,255,.9);color:#333;font-weight:500">${escapeHtml(note)}</div>`;
+  const [v, h] = corner === 'bl' ? ['bottom', 'left'] : ['top', 'right'];
+  return `<div class="sa-note" style="position:absolute;${v}:${unit * 2}px;${h}:${unit * 2}px;z-index:8;font-size:${Math.max(unit * 2.2, 18)}px;padding:${unit * 0.5}px ${unit * 1.4}px;border-radius:${unit}px;background:rgba(255,255,255,.9);color:#333;font-weight:500">${escapeHtml(note)}</div>`;
 }
 
 function watermarkHtml(text) {
@@ -278,10 +282,10 @@ export function adHtml({ width, height, brand, headline, sub, images, imageWidth
       <div class="stage">${phones}</div>`;
     return `<!doctype html><html${langAttr(lang)}><head><meta charset="utf-8"><style>${baseCss(width, height, pal)}${css}</style></head><body>
       ${decoHtml(width, height, pal, 'b')}<div class="wrap">${body}</div>
-      <div class="band">${brandHtml(appName, iconDataUrl, unit * 5)}</div>${noteHtml(note, unit, band + unit * 2)}${watermarkHtml(watermark)}</body></html>`;
+      <div class="band">${brandHtml(appName, iconDataUrl, unit * 5)}</div>${noteHtml(note, unit, 'tr')}${watermarkHtml(watermark)}</body></html>`;
   }
   return `<!doctype html><html${langAttr(lang)}><head><meta charset="utf-8"><style>${baseCss(width, height, pal)}${css}</style></head><body>
-    ${decoHtml(width, height, pal, use === 'square' ? 'b' : 'a')}<div class="wrap">${body}</div>${noteHtml(note, unit)}${watermarkHtml(watermark)}</body></html>`;
+    ${decoHtml(width, height, pal, use === 'square' ? 'b' : 'a')}<div class="wrap">${body}</div>${noteHtml(note, unit, use === 'square' ? 'tr' : 'bl')}${watermarkHtml(watermark)}</body></html>`;
 }
 
 /**

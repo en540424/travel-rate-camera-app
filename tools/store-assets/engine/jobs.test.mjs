@@ -7,7 +7,8 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { planIosCapture, planToRunScript } from './drivers/ios-simulator.mjs';
-import { buildJobSteps, cmdJobIngest, cmdJobRun, cmdJobStatus, makeCiCommit, pickSimulators } from './job-commands.mjs';
+import { interactHash } from './drivers/interact.mjs';
+import { buildJobSteps, captureMarks, cmdJobIngest, cmdJobRun, cmdJobStatus, makeCiCommit, pickSimulators } from './job-commands.mjs';
 import {
   captureRel, CI_BRANCH_PREFIX, CI_JOB_FILE, ciBranchFor, createJob, forbiddenIdentifiers, githubDispatchArgs, githubDownloadArgs, isMacMiniHost, newStatus, parsePreflight,
   githubRunProblems, preflightProblems, redactIdentifiers, resolveCiJob, RESULT_SCHEMA, sameImageProblems, transition, validateJob, verifyResult, verifyRunMeta,
@@ -438,4 +439,21 @@ test('撮影の手順：ディープリンクの確認の窓を出さない承�
   assert.ok(i < steps.findIndex((s) => s.cmd.startsWith('ios_probe')), '試しの起動より前');
   assert.ok(i < steps.findIndex((s) => s.cmd.startsWith('ios_launch')));
   assert.ok(i < steps.findIndex((s) => s.cmd.startsWith('xcrun simctl openurl')));
+});
+
+test('job-run の印（独立検収 R6）：操作の画面は印があり飛ばしていない時だけ数え、確認の結果はデバイス・言語・画面ごとに付ける', () => {
+  const spec = { driver: 'maestro', steps: [{ inputText: '89' }], expectVisible: ['¥1'] };
+  const k = (d, l, s) => `${d}|${l}|${s}`;
+  const ctx = {
+    done: new Set([k('A', 'ja', 'converter')]),
+    skippedKeys: new Set([k('B', 'ja', 'converter')]),
+    verification: new Map([[k('A', 'ja', 'history'), { status: 'ok' }], [k('A', 'ja', 'calendar'), { status: 'fail' }], [k('A', 'ja', 'trips'), { status: 'unavailable' }]]),
+  };
+  assert.deepEqual(captureMarks(spec, k('A', 'ja', 'converter'), ctx), { interacted: true, interactHash: interactHash(spec), verified: true });
+  assert.equal(captureMarks(spec, k('B', 'ja', 'converter'), { ...ctx, done: new Set([k('B', 'ja', 'converter')]) }), null, '飛ばした画面は印があっても数えない');
+  assert.equal(captureMarks(spec, k('A', 'en', 'converter'), ctx), null, '別の言語の印では数えない');
+  assert.deepEqual(captureMarks(undefined, k('A', 'ja', 'history'), ctx), { verified: true });
+  assert.deepEqual(captureMarks(undefined, k('A', 'ja', 'calendar'), ctx), { verified: false });
+  assert.deepEqual(captureMarks(undefined, k('A', 'ja', 'trips'), ctx), {}, '確かめられない時は付けない');
+  assert.deepEqual(captureMarks(undefined, k('B', 'ja', 'history'), ctx), {}, '別のデバイスの確認は付けない');
 });

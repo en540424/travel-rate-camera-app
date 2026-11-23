@@ -139,10 +139,12 @@ function helperScript({ dev, bundleId, exe, aliveSeconds, screenCount, shotDir }
     'ios_maestro_ready() {',
     '  local rc=0',
     '  if [ -n "${IOS_MAESTRO_READY:-}" ]; then return 0; fi',
-    '  if ! command -v maestro >/dev/null 2>&1; then IOS_WHY="操作の道具（maestro）が入っていない"; return 1; fi',
+    // 一度失敗したら同じ実行の中では試し直さない（独立検収 R1：画面ごとに最大7分の準備を繰り返すと実行の上限に達し、撮れた画面まで失う）
+    '  if [ -n "${IOS_MAESTRO_FAILED:-}" ]; then IOS_WHY="${IOS_MAESTRO_FAILED}"; return 1; fi',
+    '  if ! command -v maestro >/dev/null 2>&1; then IOS_MAESTRO_FAILED="操作の道具（maestro）が入っていない"; IOS_WHY="${IOS_MAESTRO_FAILED}"; return 1; fi',
     '  echo "[ios] 操作の道具：$(maestro --version 2>/dev/null | tail -n 1)"',
     '  ios_maestro "${IOS_TMP}/flow-warmup.yaml" "${IOS_MAESTRO_WARMUP_SECONDS:-420}" "${IOS_TMP}/maestro-warmup.log" || rc=$?',
-    '  if [ "${rc}" -ne 0 ]; then tail -n 40 "${IOS_TMP}/maestro-warmup.log" | LC_ALL=C cut -c1-300 || true; IOS_WHY="操作の道具の準備が失敗した（終了コード ${rc}）"; return 1; fi',
+    '  if [ "${rc}" -ne 0 ]; then tail -n 40 "${IOS_TMP}/maestro-warmup.log" | LC_ALL=C cut -c1-300 || true; IOS_MAESTRO_FAILED="操作の道具の準備が失敗した（終了コード ${rc}）"; IOS_WHY="${IOS_MAESTRO_FAILED}"; return 1; fi',
     '  IOS_MAESTRO_READY=1',
     '}',
     // 操作して、期待する表示があることを確かめる（確かめは maestro のフローの assertVisible／assertNotVisible）
@@ -160,18 +162,23 @@ function helperScript({ dev, bundleId, exe, aliveSeconds, screenCount, shotDir }
     '  if [ -s "${IOS_BASE}" ]; then if cmp -s "${IOS_BASE}" "${f}"; then mv -f "${f}" "${f%.png}.rejected.png" 2>/dev/null || rm -f "${f}"; IOS_WHY="ホーム画面と同じ画像"; return 1; fi; fi',
     '}',
     // 操作と表示の確認が通り、撮れた画面の印（job-run はこの印のある画面だけを「操作の後の撮影」として記録する）
-    'ios_mark_interacted() { if [ -n "${IOS_DONE_FILE:-}" ]; then printf \'%s\\n\' "${1}" >> "${IOS_DONE_FILE}"; fi; }',
+    'ios_mark_interacted() { if [ -n "${IOS_DONE_FILE:-}" ]; then printf \'%s\\n\' "${1}" >> "${IOS_DONE_FILE}" || true; fi; }',
     // 撮った画面の内容の確認（撮り終えた後。致命にしない）。結果は IOS_VERIFY_FILE へ「画面ID<TAB>ok|fail|unavailable<TAB>理由」
-    'ios_verify_note() { if [ -n "${IOS_VERIFY_FILE:-}" ]; then printf \'%s\\t%s\\t%s\\n\' "${1}" "${2}" "${3:-}" >> "${IOS_VERIFY_FILE}"; fi; echo "[ios] 画面 ${1} の内容の確認：${2} ${3:-}"; }',
+    'ios_verify_note() { if [ -n "${IOS_VERIFY_FILE:-}" ]; then printf \'%s\\t%s\\t%s\\n\' "${1}" "${2}" "${3:-}" >> "${IOS_VERIFY_FILE}" || true; fi; echo "[ios] 画面 ${1} の内容の確認：${2} ${3:-}"; }',
     'ios_verify_screen() {',
-    '  local id="${1}" link="${2}" settle="${3}" rc=0',
+    '  local id="${1}" link="${2}" settle="${3}" rc=0 again="${IOS_TMP}/verify-${1}.png"',
     '  if [ ! -s "${IOS_SHOT_DIR}/${id}.png" ]; then return 0; fi',
     '  if ! ios_maestro_ready; then ios_verify_note "${id}" unavailable "${IOS_WHY}"; return 0; fi',
     '  if ! xcrun simctl openurl "${IOS_DEV}" "${link}"; then ios_verify_note "${id}" unavailable "画面を開く命令が失敗した"; return 0; fi',
     '  sleep "${settle}"',
     '  if ! ios_alive "${IOS_PID}"; then ios_verify_note "${id}" unavailable "確認の時にアプリが動いていない"; return 0; fi',
     '  ios_maestro "${IOS_TMP}/verify-${id}.yaml" "${IOS_VERIFY_SECONDS:-120}" "${IOS_TMP}/verify-${id}.log" || rc=$?',
-    '  if [ "${rc}" -eq 0 ]; then ios_verify_note "${id}" ok; elif [ "${rc}" -eq 124 ]; then ios_verify_note "${id}" unavailable "確認が時間切れ"; else tail -n 20 "${IOS_TMP}/verify-${id}.log" | LC_ALL=C cut -c1-300 || true; ios_verify_note "${id}" fail "期待する表示が無い（maestro の終了コード ${rc}）"; fi',
+    '  if [ "${rc}" -eq 124 ]; then ios_verify_note "${id}" unavailable "確認が時間切れ"; return 0; fi',
+    // 表示の確認そのものが通らなかった時だけ fail（撮影を外す）。道具の接続の失敗などは unavailable（撮影は使う。独立検収 R2）
+    '  if [ "${rc}" -ne 0 ]; then tail -n 20 "${IOS_TMP}/verify-${id}.log" | LC_ALL=C cut -c1-300 || true; if grep -F "Assertion is false" "${IOS_TMP}/verify-${id}.log" >/dev/null 2>&1; then ios_verify_note "${id}" fail "期待する表示が無い"; else ios_verify_note "${id}" unavailable "確認の道具の失敗（maestro の終了コード ${rc}）"; fi; return 0; fi',
+    // 通った時の画面が撮影と同じ時だけ ok（撮影の時点の表示を確かめたことになる。違えば、読み込み途中を撮って後で表示された等＝確かめられない。独立検収 R3）
+    '  if ! xcrun simctl io "${IOS_DEV}" screenshot --type=png "${again}" >/dev/null 2>&1; then ios_verify_note "${id}" unavailable "確認の時の画面を撮れない"; return 0; fi',
+    '  if cmp -s "${again}" "${IOS_SHOT_DIR}/${id}.png"; then ios_verify_note "${id}" ok; else ios_verify_note "${id}" unavailable "表示は確かめたが、確認の時の画面が撮影と違う（撮影の時点の表示は確かめられない）"; fi',
     '}',
     // 撮った後：アプリが同じプロセスで動いているか・ホーム画面と同じ画像でないか。だめなら .rejected.png へ移して止める（結果の撮影には数えない）。
     // ホーム画面と同じ時は15秒後にもう1枚撮る（後から前面に出た＝待機・描画の遅れ、のままホーム画面＝背面・終了、を絵で分ける）

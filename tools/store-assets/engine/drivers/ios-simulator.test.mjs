@@ -37,7 +37,8 @@ case "$2" in
       *home.png|*base-a.png)
         if [ "$STUB_MODE" = flicker ]; then printf "HOME-%s" "$RANDOM$RANDOM" > "$f"; else printf HOME > "$f"; fi;;
       *)
-        if [ "$STUB_MODE" = home ]; then printf HOME > "$f"; else printf "SCREEN-%s" "$(basename "$f")" > "$f"; fi;;
+        n="$(basename "$f")"; n="${'$'}{n#verify-}"
+        if [ "$STUB_MODE" = home ]; then printf HOME > "$f"; elif [ "$STUB_MODE" = verify-changed ]; then case "$f" in */verify-*) printf "LATER-%s" "$n" > "$f";; *) printf "SCREEN-%s" "$n" > "$f";; esac; else printf "SCREEN-%s" "$n" > "$f"; fi;;
     esac
     exit 0;;
   spawn) echo "stub-log $*"; exit 0;;
@@ -202,7 +203,10 @@ test('撮影の手順：試しの起動はテストデータの差し替えよ�
 });
 
 test('撮影の手順：変数の直後に全角文字を置かない（macOS の bash 3.2 は UTF-8 で全角の先頭バイトを変数名に含め、unbound variable で止まる）', () => {
-  const steps = planIosCapture({ device: 'D', bundleId: BID, scheme: 'exampleapp', outDir: '/o', screens, appPath: '/x/app.app', fixtureDb: '/f.db', dbRelPath: 'Documents/SQLite/a.db', locale: 'ja-JP' });
+  // 操作の画面・撮った後の確認の画面も含める（独立検収 R6：この検査が新しい手順を通っていなかった）
+  const all = [...screens.map((s) => ({ ...s, expectVisible: ['x'] })), ...iScreens.slice(0, 1)];
+  const steps = planIosCapture({ device: 'D', bundleId: BID, scheme: 'exampleapp', outDir: '/o', screens: all, appPath: '/x/app.app', fixtureDb: '/f.db', dbRelPath: 'Documents/SQLite/a.db', locale: 'ja-JP' });
+  assert.ok(steps.some((s) => s.cmd.startsWith('ios_verify_screen')) && steps.some((s) => s.cmd.includes('ios_interact')));
   for (const script of [planToRunScript(steps), planToShellScript(steps)]) {
     const bad = script.match(/\$[A-Za-z_][A-Za-z0-9_]*(?=[^\x00-\x7F])/g);
     assert.equal(bad, null, `全角の直前の変数：${bad}`);
@@ -352,8 +356,13 @@ test('ホーム画面の基準が静止しない時の判断は、操作の要�
 const MAESTRO_V = String.raw`#!/bin/bash
 echo "maestro $*" >> "$STUB_DIR/calls"
 case "$*" in *flow-warmup*) exit 0;; esac
-case "$*" in *verify-calendar*) if [ "$MAESTRO_STUB" = calendar-empty ]; then exit 1; fi;; esac
+case "$*" in *verify-calendar*) if [ "$MAESTRO_STUB" = calendar-empty ]; then echo "Assertion is false: \".*¥20,361.*\" is visible"; exit 1; fi;; esac
+case "$*" in *verify-*) if [ "$MAESTRO_STUB" = driver-error ]; then echo "Failed to connect to iOS driver"; exit 1; fi;; esac
 exit 0
+`;
+const MAESTRO_WARMUP_FAIL = String.raw`#!/bin/bash
+echo "maestro $*" >> "$STUB_DIR/calls"
+exit 1
 `;
 test('撮った後の内容の確認：撮り終えた後に開き直して確かめ、表示が無い画面は fail として記録する（撮影は失わない）', { skip: !HAS_BASH }, () => {
   const ctx = setup();
@@ -370,7 +379,7 @@ test('撮った後の内容の確認：撮り終えた後に開き直して確�
   assert.deepEqual(v.map((x) => [x.screen, x.status]), [['history', 'ok'], ['calendar', 'fail']]);
   assert.ok(fs.existsSync(path.join(ctx.out, 'calendar.png')), '撮影は残す（合成が verified:false を外す）');
   const calls = fs.readFileSync(path.join(ctx.dir, 'calls'), 'utf8');
-  assert.ok(calls.lastIndexOf('screenshot') < calls.indexOf('verify-history'), '確認は全ての撮影の後');
+  assert.ok(calls.lastIndexOf(`screenshot ${ctx.out}/calendar.png`) < calls.indexOf('verify-history'), '確認は全ての撮影の後');
   assert.ok(steps.some((s) => s.cmd.includes('- assertVisible: ".*¥20,361.*"')), '含むで照合');
 });
 
@@ -381,4 +390,40 @@ test('撮った後の内容の確認：道具が無ければ unavailable（撮�
   const r = run(ctx, steps, 'alive', { IOS_VERIFY_FILE: toPosix(vf) });
   assert.equal(r.status, 0, r.text);
   assert.deepEqual(parseVerification(fs.readFileSync(vf, 'utf8')).map((x) => x.status), ['unavailable']);
+});
+
+function runVerify(maestroScript, stubMode, mode = 'alive', screensList = null) {
+  const ctx = setup();
+  fs.writeFileSync(path.join(ctx.bin, 'maestro'), maestroScript, { mode: 0o755 });
+  const vf = path.join(ctx.dir, 'verify.tsv');
+  const sk = path.join(ctx.dir, 'skipped.tsv');
+  const list = screensList ?? [
+    { id: 'history', deepLink: 'exampleapp:///history', settleMs: 1000, expectVisible: ['マカロン'] },
+    { id: 'calendar', deepLink: 'exampleapp:///calendar', settleMs: 1000, expectVisible: ['¥20,361'] },
+  ];
+  const steps = planIosCapture({ device: 'D', bundleId: BID, outDir: ctx.out, screens: list, aliveSeconds: 1 });
+  const r = run(ctx, steps, mode, { MAESTRO_STUB: stubMode, IOS_VERIFY_FILE: toPosix(vf), IOS_SKIP_FILE: toPosix(sk) });
+  const read = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '');
+  return { ...r, ctx, verification: parseVerification(read(vf)), skipped: parseSkipped(read(sk)), calls: read(path.join(ctx.dir, 'calls')) };
+}
+
+test('内容の確認（独立検収 R2）：道具の接続の失敗は unavailable（撮影を外さない）。表示の確認が通らない時だけ fail', { skip: !HAS_BASH }, () => {
+  const r = runVerify(MAESTRO_V, 'driver-error');
+  assert.equal(r.status, 0, r.text);
+  assert.deepEqual(r.verification.map((x) => x.status), ['unavailable', 'unavailable']);
+});
+
+test('内容の確認（独立検収 R3）：確認の時の画面が撮影と違えば ok にしない（読み込み途中を撮った等）', { skip: !HAS_BASH }, () => {
+  const r = runVerify(MAESTRO_V, 'ok', 'verify-changed');
+  assert.equal(r.status, 0, r.text);
+  assert.deepEqual(r.verification.map((x) => x.status), ['unavailable', 'unavailable']);
+  assert.match(r.verification[0].reason, /撮影と違う/);
+});
+
+test('道具の準備（独立検収 R1）：一度失敗したら同じ実行の中で試し直さない（画面ごとに待つと上限に達し、撮れた画面まで失う）', { skip: !HAS_BASH }, () => {
+  const r = runVerify(MAESTRO_WARMUP_FAIL, 'x', 'alive', [...iScreens, { id: 'calendar', deepLink: 'exampleapp:///calendar', settleMs: 1000, expectVisible: ['a'] }, { id: 'trips', deepLink: 'exampleapp:///trips', settleMs: 1000, expectVisible: ['b'] }]);
+  assert.equal(r.status, 0, r.text);
+  assert.equal((r.calls.match(/flow-warmup/g) ?? []).length, 1, r.calls);
+  assert.deepEqual(r.verification.map((x) => x.status), ['unavailable', 'unavailable']);
+  assert.equal(r.skipped[0]?.screen, 'converter');
 });
