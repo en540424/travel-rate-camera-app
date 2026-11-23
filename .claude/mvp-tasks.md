@@ -9,6 +9,8 @@
 > - profile：実機専用の画面 `smart-camera`・`live-translation`（deepLink なし＝ジョブに入らない）と shot `01a-live-translation`・`01b-smart-camera`（文言は §E-4-2 のキャプション案・`sources: ["device"]`）。カメラOCRは既存の `01-camera`、写真翻訳は既存の `translation` へ実機の撮影として入れる（README「実機の撮影を取り込む」）
 > - **取り違えの検出**：`job-ingest` が別の画面どうしの見た目の近さ（違う画素 0.5% 以下）を比べ、前の画面を写した撮影を合成から外す（致命にしない・理由は `reviewNote` と一覧に出る）。実画像で第6回のカレンダーだけが該当（0.000%）・第5回は該当なし
 > - カレンダー：撮り直しを推奨（`--screens history,calendar` の2画面・待ち5秒）。第5回の画像は日付（17〜21日）が第6回の履歴（19〜23日）と合わないので流用しない
+> - **撮り直しのジョブ（作成・dry-run 済み・未実行）**：`tabirate-20261123-131550-ccb64c8`（commit `ccb64c8`）。承認の後 `npm run store-assets -- job-dispatch --job tools/store-assets/out/tabirate/jobs/tabirate-20261123-131550-ccb64c8 --execute` → `job-fetch --execute` → 第6回の取り込み先 `out/tabirate/20261123-123059-f14724e` を derive した**新しい run** へ `job-ingest --run <新run>`（同じ画面は置き換わる＝履歴も新しい撮影になる）→ compose。**11月中（日本時間 12/1 9:00＝UTC の月初より前、余裕を持って）に dispatch する**：月をまたぐとカレンダー（12月）と残りの画面（11月・¥20,361）が合わず、機械の確認は通ってしまう（その場合は全画面の撮り直し）。旧ジョブ `…044128-80b8299` は依頼しない
+> - 実機の素材を入れた下書きのプレビュー：`out/tabirate/20261123-131129-5dd4390-device-preview/index.html`（20枚・manifest の commit は `ccb64c8`・16枚の run は不変）
 > [!important] 2026-11-23（5件目）**第6回 iOS 自動撮影を実行・取り込み・合成まで完了**（run 45169001221・`f14724e`・同じbranch・コード変更なし）
 > - 結果：撮影 8枚（履歴・旅行一覧・カレンダー・分析・レート設定・翻訳・Pro比較・換算）。**Maestro は CI で初めて実動作**し、換算は 89 EUR → 「¥14,685」を確かめて撮れた（スキップなし）。撮影後の確認は6画面が ok、カレンダーだけ `unavailable`。
 > - **⚠️ カレンダーの撮影は旅行一覧の画面が写っていた（目視で発見）**。取り込み先 run の `captures.json` で `verified:false` にして合成から外した（画像・記録は残してある）。**カレンダー（5枚目）は未撮影として扱う**。再撮影は新しいジョブ（＝新しい Human 承認）が要る
