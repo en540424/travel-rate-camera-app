@@ -10,7 +10,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { maestroFlow, maestroWarmupFlow } from './interact.mjs';
+import { maestroFlow, maestroVerifyFlow, maestroWarmupFlow } from './interact.mjs';
 
 function shellQuote(s) {
   return `'${String(s).replace(/'/g, `'\\''`)}'`;
@@ -161,6 +161,18 @@ function helperScript({ dev, bundleId, exe, aliveSeconds, screenCount, shotDir }
     '}',
     // 操作と表示の確認が通り、撮れた画面の印（job-run はこの印のある画面だけを「操作の後の撮影」として記録する）
     'ios_mark_interacted() { if [ -n "${IOS_DONE_FILE:-}" ]; then printf \'%s\\n\' "${1}" >> "${IOS_DONE_FILE}"; fi; }',
+    // 撮った画面の内容の確認（撮り終えた後。致命にしない）。結果は IOS_VERIFY_FILE へ「画面ID<TAB>ok|fail|unavailable<TAB>理由」
+    'ios_verify_note() { if [ -n "${IOS_VERIFY_FILE:-}" ]; then printf \'%s\\t%s\\t%s\\n\' "${1}" "${2}" "${3:-}" >> "${IOS_VERIFY_FILE}"; fi; echo "[ios] 画面 ${1} の内容の確認：${2} ${3:-}"; }',
+    'ios_verify_screen() {',
+    '  local id="${1}" link="${2}" settle="${3}" rc=0',
+    '  if [ ! -s "${IOS_SHOT_DIR}/${id}.png" ]; then return 0; fi',
+    '  if ! ios_maestro_ready; then ios_verify_note "${id}" unavailable "${IOS_WHY}"; return 0; fi',
+    '  if ! xcrun simctl openurl "${IOS_DEV}" "${link}"; then ios_verify_note "${id}" unavailable "画面を開く命令が失敗した"; return 0; fi',
+    '  sleep "${settle}"',
+    '  if ! ios_alive "${IOS_PID}"; then ios_verify_note "${id}" unavailable "確認の時にアプリが動いていない"; return 0; fi',
+    '  ios_maestro "${IOS_TMP}/verify-${id}.yaml" "${IOS_VERIFY_SECONDS:-120}" "${IOS_TMP}/verify-${id}.log" || rc=$?',
+    '  if [ "${rc}" -eq 0 ]; then ios_verify_note "${id}" ok; elif [ "${rc}" -eq 124 ]; then ios_verify_note "${id}" unavailable "確認が時間切れ"; else tail -n 20 "${IOS_TMP}/verify-${id}.log" | LC_ALL=C cut -c1-300 || true; ios_verify_note "${id}" fail "期待する表示が無い（maestro の終了コード ${rc}）"; fi',
+    '}',
     // 撮った後：アプリが同じプロセスで動いているか・ホーム画面と同じ画像でないか。だめなら .rejected.png へ移して止める（結果の撮影には数えない）。
     // ホーム画面と同じ時は15秒後にもう1枚撮る（後から前面に出た＝待機・描画の遅れ、のままホーム画面＝背面・終了、を絵で分ける）
     'ios_verify_shot() {',
@@ -264,7 +276,7 @@ export function planIosCapture(opts) {
     if (s.interact) {
       if (!warmed) add(heredoc('${IOS_TMP}/flow-warmup.yaml', maestroWarmupFlow(opts.bundleId)), '操作の道具を動かし始めるフロー');
       warmed = true;
-      add(heredoc(`\${IOS_TMP}/flow-${s.id}.yaml`, maestroFlow({ bundleId: opts.bundleId, interact: s.interact, deepLink: s.deepLink })), `画面 ${s.id} の操作と、結果の表示の確認のフロー`);
+      add(heredoc(`\${IOS_TMP}/flow-${s.id}.yaml`, maestroFlow({ bundleId: opts.bundleId, interact: s.interact })), `画面 ${s.id} の操作と、結果の表示の確認のフロー`);
       const id = shellQuote(s.id);
       add([
         // 前の試行の画像が残っていると、今回の操作が失敗しても撮れたものとして数えてしまう（独立検収 S1）
@@ -284,6 +296,18 @@ export function planIosCapture(opts) {
     add(`ios_require_alive ${shellQuote(s.id)}`, `撮る前にアプリが同じプロセスで動いていることを確かめる`);
     add(`xcrun simctl io ${dev} screenshot --type=png ${file} || ios_fail 27 "画面 ${s.id} を撮る命令が失敗した（simctl の終了コード \${?}）"`, `画面 ${s.id} を撮る`);
     add(`ios_verify_shot ${file}`, `撮った後：アプリが動いている・ホーム画面と同じ画像でないことを確かめる`);
+  }
+  // 撮り終えた後に、各画面を開き直して期待する表示があるかを確かめる（「アプリが動いている・ホーム画面と違う」だけでは、
+  // 空のカレンダー・違う画面・読み込み途中でも通っていた）。確かめは撮影の後なので、失敗・道具が無い時も撮れた画面は失わない。
+  // 結果は撮影ごとに verified として残り、合成は「確認で表示が無かった（fail）」撮影だけを外す
+  const verify = ordered.filter((s) => !s.interact && Array.isArray(s.expectVisible) && s.expectVisible.length);
+  if (verify.length) {
+    if (!warmed) add(heredoc('${IOS_TMP}/flow-warmup.yaml', maestroWarmupFlow(opts.bundleId)), '操作の道具を動かし始めるフロー');
+    for (const s of verify) {
+      const settle = Math.max(1, Math.round((s.settleMs ?? 1500) / 1000));
+      add(heredoc(`\${IOS_TMP}/verify-${s.id}.yaml`, maestroVerifyFlow({ bundleId: opts.bundleId, screen: s })), `画面 ${s.id} の内容の確認のフロー`);
+      add(`ios_verify_screen ${shellQuote(s.id)} ${shellQuote(s.deepLink)} ${settle}`, `画面 ${s.id} を開き直して、期待する表示があるかを確かめる（致命にしない）`);
+    }
   }
   add(`xcrun simctl status_bar ${dev} clear`, 'ステータスバーを戻す');
   return steps;
@@ -333,14 +357,15 @@ export async function runIosPlan(steps, log = console.log, { deadline = Infinity
   const reasonFile = path.join(tmp, 'reason.txt');
   const skipFile = path.join(tmp, 'skipped.tsv');
   const doneFile = path.join(tmp, 'interacted.txt');
+  const verifyFile = path.join(tmp, 'verify.tsv');
   try {
     execFileSync('/bin/bash', ['-c', planToRunScript(steps)], {
       stdio: 'inherit',
       timeout: Number.isFinite(left) ? left : undefined,
-      env: { ...process.env, IOS_IPS_TOOL: IPS_TOOL, IOS_REASON_FILE: reasonFile, IOS_SKIP_FILE: skipFile, IOS_DONE_FILE: doneFile },
+      env: { ...process.env, IOS_IPS_TOOL: IPS_TOOL, IOS_REASON_FILE: reasonFile, IOS_SKIP_FILE: skipFile, IOS_DONE_FILE: doneFile, IOS_VERIFY_FILE: verifyFile },
     });
     const read = (f) => { try { return fs.readFileSync(f, 'utf8'); } catch { return ''; } };
-    return { skipped: parseSkipped(read(skipFile)), interacted: parseInteracted(read(doneFile)) };
+    return { skipped: parseSkipped(read(skipFile)), interacted: parseInteracted(read(doneFile)), verification: parseVerification(read(verifyFile)) };
   } catch (e) {
     let reason = null;
     try { reason = fs.readFileSync(reasonFile, 'utf8'); } catch { /* 理由を書く前に止まった */ }
@@ -353,6 +378,17 @@ export async function runIosPlan(steps, log = console.log, { deadline = Infinity
 /** 操作と表示の確認が通って撮れた画面の印（1行に画面ID）を読む。画面IDの形でない行は捨てる。 */
 export function parseInteracted(text) {
   return [...new Set(String(text ?? '').split('\n').map((l) => l.trim()).filter((l) => /^[A-Za-z0-9._-]+$/.test(l)))];
+}
+
+/** 内容の確認の記録（1行に「画面ID<TAB>ok|fail|unavailable<TAB>理由」）を読む。形の違う行は捨てる。同じ画面は後の行を使う。 */
+export function parseVerification(text) {
+  const map = new Map();
+  for (const l of String(text ?? '').split('\n')) {
+    const [screen, status, ...rest] = l.split('\t');
+    if (!/^[A-Za-z0-9._-]+$/.test(screen ?? '') || !['ok', 'fail', 'unavailable'].includes(status)) continue;
+    map.set(screen, { screen, status, reason: rest.join(' ').trim().slice(0, 300) });
+  }
+  return [...map.values()];
 }
 
 /** 撮らなかった画面の記録（1行に「画面ID<TAB>理由」）を読む。 */

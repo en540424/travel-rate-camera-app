@@ -1,5 +1,5 @@
 {
-  "$comment": "旅レートカメラの素材生成設定。エンジン（../../engine）はアプリ非依存で、アプリ固有の値はすべてここに置く。features.status が released 以外の機能は、どの文言にも使えない（エンジンが拒否する）。",
+  "$comment": "旅レートカメラの素材生成設定。エンジン（../../engine）はアプリ非依存で、アプリ固有の値はすべてここに置く。features.status が released 以外の機能は、どの文言にも使えない（エンジンが拒否する）。 文言・並びは下書き（Human の採用待ち）。App Store 提出の確定版は Vault の提出パッケージ（AI_CONTEXT.md 参照）。",
   "app": {
     "id": "tabirate",
     "name": {
@@ -167,25 +167,40 @@
         "id": "history",
         "route": "/history",
         "deepLink": "travelratecameraapp:///history",
-        "waitForText": "履歴"
+        "waitForText": "履歴",
+        "expectVisible": [
+          "マカロン 6個入り",
+          "¥129,639"
+        ]
       },
       {
         "id": "trip-list",
         "route": "/trip-list",
         "deepLink": "travelratecameraapp:///trip-list",
         "waitForText": "旅行",
-        "$note": "終了した旅行2件を含む（テストデータ）"
+        "$note": "終了した旅行2件を含む（テストデータ）",
+        "expectVisible": [
+          "パリ旅行",
+          "ソウル旅行"
+        ]
       },
       {
         "id": "calendar",
         "route": "/calendar",
         "deepLink": "travelratecameraapp:///calendar",
-        "waitForText": "買い物カレンダー"
+        "waitForText": "買い物カレンダー",
+        "expectVisible": [
+          "¥20,361"
+        ]
       },
       {
         "id": "analytics",
         "route": "/analytics",
-        "deepLink": "travelratecameraapp:///analytics"
+        "deepLink": "travelratecameraapp:///analytics",
+        "expectVisible": [
+          "のカテゴリー別"
+        ],
+        "$note": "提出パッケージ §E-1 の5・7枚目（分析）の素材。「分析」はタブの名前にもあるので、画面固有の見出しで確かめる"
       },
       {
         "id": "translation",
@@ -194,13 +209,32 @@
         "web": {
           "enabled": false
         },
-        "$note": "Web版は「翻訳を利用できません」になる。iOSでは入力の画面だけを撮る（翻訳の実行は言語のダウンロードの窓が出得るため自動では行わない。結果の画面は実機で撮る）"
+        "$note": "Web版は「翻訳を利用できません」になる。iOSでは入力の画面だけを撮る（翻訳の実行は言語のダウンロードの窓が出得るため自動では行わない。結果の画面は実機で撮る）",
+        "expectVisible": [
+          "翻訳する"
+        ],
+        "expectNotVisible": [
+          "翻訳を利用できません"
+        ]
+      },
+      {
+        "id": "rate-setup",
+        "route": "/rate-setup",
+        "deepLink": "travelratecameraapp:///rate-setup",
+        "expectVisible": [
+          "現在のレート",
+          "換算プレビュー"
+        ],
+        "$note": "提出パッケージ §E-1 の4枚目（レートは自分で設定＝自動取得と誤解させない）の素材。文言（shot）は Human の判断の後に足す"
       },
       {
         "id": "pro-features",
         "route": "/pro-features",
         "deepLink": "travelratecameraapp:///pro-features",
-        "waitForText": "無料版とProの違い"
+        "waitForText": "無料版とProの違い",
+        "expectVisible": [
+          "無料版とProの違い"
+        ]
       },
       {
         "id": "help",
@@ -564,5 +598,8 @@
         "ja": "Pro"
       }
     }
-  ]
+  ],
+  "disclaimer": {
+    "ja": "※画面の金額・レートは表示例です"
+  }
 }

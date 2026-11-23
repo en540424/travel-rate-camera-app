@@ -6,7 +6,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { parseSkipped, planIosCapture, planToRunScript, planToShellScript } from './drivers/ios-simulator.mjs';
-import { compareHtml, completenessProblems, jobHtml, pickCapture, planOutputs, validateOutputs, sha256, verifyCaptures } from './pipeline.mjs';
+import { compareHtml, completenessProblems, galleryHtml, jobHtml, pickCapture, planOutputs, validateOutputs, sha256, verifyCaptures } from './pipeline.mjs';
 import { decodePng, encodeRgbPng, flattenPng, readPngInfo } from './png.mjs';
 import { loadProfile, validateProfile } from './profile.mjs';
 import { canUseSource, checkClaims } from './provenance.mjs';
@@ -354,7 +354,7 @@ test('independent-review: callout は rect を測った端末の撮影にだけ�
   const p = loadProfile(TABIRATE);
   const caps = (device) => [{ screen: 'history', locale: 'ja', source: 'ios-simulator', file: 'h.png', device }];
   const same = planOutputs(p, caps('iPhone 17 Pro Max'), { mode: 'draft' }).jobs.find((j) => j.shot === '03-records');
-  assert.ok(same.callout && same.notes.length === 0);
+  assert.ok(same.callout && !same.notes.some((n) => n.includes('callout')));
   const other = planOutputs(p, caps('iPhone 17'), { mode: 'draft' }).jobs.find((j) => j.shot === '03-records');
   assert.equal(other.callout, null);
   assert.match(other.notes[0], /callout を省いた/);
@@ -413,4 +413,36 @@ test('independent-review: 新旧比較の一覧は出力先ごとに前と今回
   assert.ok(html.includes('src="../old&lt;run&gt;/ads/ja/sns-square/a.png"'), '前の run は相対パス（エスケープ）');
   assert.ok(html.includes('src="ads/ja/sns-square/b.png"'));
   assert.ok(html.includes('前 1枚 → 今回 1枚'));
+});
+
+test('verify: 撮った後の確認で表示が無かった撮影は使わず、確かめていない撮影は注記付きで使う', () => {
+  const p = loadProfile(TABIRATE);
+  const base = { screen: 'history', locale: 'ja', source: 'ios-simulator', file: 'h.png', device: 'iPhone 17 Pro Max' };
+  const bad = planOutputs(p, [{ ...base, verified: false }], { mode: 'draft' });
+  assert.ok(!bad.jobs.some((j) => j.shot === '03-records'));
+  assert.ok(bad.skipped.some((s) => s.shot === '03-records' && s.reason.includes('期待する表示が無かった')));
+  const unknown = planOutputs(p, [base], { mode: 'draft' }).jobs.find((j) => j.shot === '03-records');
+  assert.ok(unknown.notes.some((n) => n.includes('機械で未確認')));
+  const ok = planOutputs(p, [{ ...base, verified: true }], { mode: 'draft' }).jobs.find((j) => j.shot === '03-records');
+  assert.ok(!ok.notes.some((n) => n.includes('未確認')));
+});
+
+test('verify: 画面の確認の設定は配列で、操作の画面には書かない。注記（disclaimer）は全ての出力に入る', () => {
+  const p = JSON.parse(fs.readFileSync(TABIRATE, 'utf8'));
+  const b = structuredClone(p);
+  b.capture.screens.find((s) => s.id === 'calendar').expectVisible = '¥20,361';
+  b.capture.screens.find((s) => s.id === 'converter').expectVisible = ['x'];
+  const e = validateProfile(b);
+  assert.ok(e.some((x) => x.includes('screen calendar: expectVisible は文字の配列')));
+  assert.ok(e.some((x) => x.includes('操作の画面の確認は interact')));
+  const lp = loadProfile(TABIRATE);
+  const plan = planOutputs(lp, [{ screen: 'history', locale: 'ja', source: 'ios-simulator', file: 'h.png' }, { screen: 'calendar', locale: 'ja', source: 'ios-simulator', file: 'c.png' }], { mode: 'draft' });
+  for (const job of plan.jobs) assert.ok(jobHtml(lp, job, ['data:,', 'data:,'], 2.17).includes(`class="disc"`), `${job.file} に注記`);
+  assert.ok(jobHtml(lp, plan.jobs[0], ['data:,'], 2.17).includes(lp.disclaimer.ja));
+});
+
+test('gallery: 前の run がある時は index.html から compare.html へつなぐ', () => {
+  const m = { app: { id: 'x' }, generatedAt: 't', git: { commit: 'c' }, mode: 'draft', validation: { ok: true, problems: [] }, skipped: [], outputs: [], parentRun: '20261123-old' };
+  assert.ok(galleryHtml(m).includes('<a href="compare.html">'));
+  assert.ok(!galleryHtml({ ...m, parentRun: undefined }).includes('compare.html'));
 });

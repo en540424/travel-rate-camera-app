@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { IOS_EXIT, iosFailureReason, IPS_TOOL, parseInteracted, parseSkipped, planIosCapture, planToRunScript, planToShellScript } from './ios-simulator.mjs';
+import { IOS_EXIT, iosFailureReason, IPS_TOOL, parseInteracted, parseSkipped, parseVerification, planIosCapture, planToRunScript, planToShellScript } from './ios-simulator.mjs';
 import { findReports, isForBundle, main as ipsMain, parseIps, summarizeIps } from './ips-summary.mjs';
 
 const BID = 'com.example.app';
@@ -346,4 +346,39 @@ test('操作が要る画面：maestro が無ければ準備で飛ばす', { skip
 test('ホーム画面の基準が静止しない時の判断は、操作の要る画面を数えない（独立検収 S2）', () => {
   const steps = planIosCapture({ device: 'D', bundleId: BID, outDir: './o', screens: iScreens });
   assert.ok(steps[0].cmd.includes('IOS_SCREEN_COUNT=1'), '履歴だけ＝1画面として扱い、静止しなければ止める');
+});
+
+// ---- 撮った後の内容の確認（ディープリンクの画面。致命にしない）
+const MAESTRO_V = String.raw`#!/bin/bash
+echo "maestro $*" >> "$STUB_DIR/calls"
+case "$*" in *flow-warmup*) exit 0;; esac
+case "$*" in *verify-calendar*) if [ "$MAESTRO_STUB" = calendar-empty ]; then exit 1; fi;; esac
+exit 0
+`;
+test('撮った後の内容の確認：撮り終えた後に開き直して確かめ、表示が無い画面は fail として記録する（撮影は失わない）', { skip: !HAS_BASH }, () => {
+  const ctx = setup();
+  fs.writeFileSync(path.join(ctx.bin, 'maestro'), MAESTRO_V, { mode: 0o755 });
+  const vf = path.join(ctx.dir, 'verify.tsv');
+  const vScreens = [
+    { id: 'history', deepLink: 'exampleapp:///history', settleMs: 1000, expectVisible: ['マカロン'] },
+    { id: 'calendar', deepLink: 'exampleapp:///calendar', settleMs: 1000, expectVisible: ['¥20,361'] },
+  ];
+  const steps = planIosCapture({ device: 'D', bundleId: BID, outDir: ctx.out, screens: vScreens, aliveSeconds: 1 });
+  const r = run(ctx, steps, 'alive', { MAESTRO_STUB: 'calendar-empty', IOS_VERIFY_FILE: toPosix(vf) });
+  assert.equal(r.status, 0, r.text);
+  const v = parseVerification(fs.readFileSync(vf, 'utf8'));
+  assert.deepEqual(v.map((x) => [x.screen, x.status]), [['history', 'ok'], ['calendar', 'fail']]);
+  assert.ok(fs.existsSync(path.join(ctx.out, 'calendar.png')), '撮影は残す（合成が verified:false を外す）');
+  const calls = fs.readFileSync(path.join(ctx.dir, 'calls'), 'utf8');
+  assert.ok(calls.lastIndexOf('screenshot') < calls.indexOf('verify-history'), '確認は全ての撮影の後');
+  assert.ok(steps.some((s) => s.cmd.includes('- assertVisible: ".*¥20,361.*"')), '含むで照合');
+});
+
+test('撮った後の内容の確認：道具が無ければ unavailable（撮影はそのまま使える）', { skip: !HAS_BASH || HAS_MAESTRO }, () => {
+  const ctx = setup();
+  const vf = path.join(ctx.dir, 'verify.tsv');
+  const steps = planIosCapture({ device: 'D', bundleId: BID, outDir: ctx.out, screens: [{ id: 'history', deepLink: 'exampleapp:///history', settleMs: 1000, expectVisible: ['x'] }, { id: 'calendar', deepLink: 'exampleapp:///calendar', settleMs: 1000 }], aliveSeconds: 1 });
+  const r = run(ctx, steps, 'alive', { IOS_VERIFY_FILE: toPosix(vf) });
+  assert.equal(r.status, 0, r.text);
+  assert.deepEqual(parseVerification(fs.readFileSync(vf, 'utf8')).map((x) => x.status), ['unavailable']);
 });

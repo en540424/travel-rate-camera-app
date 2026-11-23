@@ -53,6 +53,9 @@ export function validateProfile(p) {
   need(typeof p.app?.id === 'string' && /^[a-z0-9-]+$/.test(p.app.id), 'app.id は英小文字・数字・ハイフン');
   need(Array.isArray(p.locales) && p.locales.length > 0, 'locales が空');
   need(p.brand && typeof p.brand.primary === 'string', 'brand.primary が無い');
+  if (p.disclaimer !== undefined) {
+    for (const loc of p.locales ?? []) need(typeof p.disclaimer?.[loc] === 'string' && p.disclaimer[loc].length > 0 && p.disclaimer[loc].length <= 40, `disclaimer.${loc} は40文字以内の文字`);
+  }
   for (const [k, v] of Object.entries(p.brand ?? {})) {
     if (k === 'icon') need(typeof v === 'string' && /\.png$/i.test(v), 'brand.icon は PNG のパス');
     else need(typeof v === 'string' && COLOR.test(v), `brand.${k} は色（#RRGGBB・rgb()・rgba()）`);
@@ -68,6 +71,12 @@ export function validateProfile(p) {
   for (const s of screens.values()) {
     need(typeof s.route === 'string' || typeof s.deepLink === 'string', `screen ${s.id}: route か deepLink が必要`);
     if (s.interact !== undefined) for (const e of validateInteract(s.interact)) errors.push(`screen ${s.id}: ${e}`);
+    // 撮った後の内容の確認（含むで照合）。操作の画面は interact の中で確かめるので、ここには書かない
+    for (const k of ['expectVisible', 'expectNotVisible']) {
+      if (s[k] === undefined) continue;
+      need(Array.isArray(s[k]) && s[k].length > 0 && s[k].every((x) => checkExpectText(x) === null), `screen ${s.id}: ${k} は文字の配列`);
+      need(!s.interact, `screen ${s.id}: 操作の画面の確認は interact.${k} に書く`);
+    }
   }
 
   const shotIds = new Set();

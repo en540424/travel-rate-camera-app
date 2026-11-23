@@ -75,9 +75,11 @@ export function interactHash(interact) {
  * 起動（launchApp）はしない：動いているアプリをそのまま操作する（プロセスが替わると撮影の確認が止める）。
  * deepLink があれば最初に開き直す（道具の起動でアプリが前面から外れても、撮る画面へ戻す。独立検収 S7）。
  */
-export function maestroFlow({ bundleId, interact, deepLink = null }) {
+export function maestroFlow({ bundleId, interact, deepLink = null, match = 'exact' }) {
   if (!/^[A-Za-z0-9.-]+$/.test(String(bundleId))) throw new Error(`bundleId の形が正しくない：${bundleId}`);
   const lines = [`appId: ${bundleId}`, '---'];
+  // 撮る画面を開き直す（呼び手が選ぶ。既定の手順では使わない：Maestro の openLink がシミュレーターで simctl openurl と同じ経路かは
+  // 確かめておらず、別の経路なら「"アプリ"で開きますか？」の確認の窓が出る。開くのはシェルの simctl openurl に任せる）
   if (deepLink) lines.push(`- openLink: ${JSON.stringify(String(deepLink))}`, '- waitForAnimationToEnd: {"timeout":3000}');
   for (const st of interact.steps) {
     const [cmd] = Object.keys(st);
@@ -95,12 +97,26 @@ export function maestroFlow({ bundleId, interact, deepLink = null }) {
     const bad = checkExpectText(t);
     if (bad) throw new Error(bad);
   }
-  for (const t of interact.expectVisible ?? []) lines.push(`- assertVisible: ${JSON.stringify(regexLiteral(t))}`);
-  for (const t of interact.expectNotVisible ?? []) lines.push(`- assertNotVisible: ${JSON.stringify(regexLiteral(t))}`);
+  // exact：要素の文字の全体と一致。contains：要素の文字に含まれる（iOS では押せるカードが中の文字を1つの読み上げにまとめるため、
+  // 一覧の行などは全体一致では見つからない。撮った画面の内容の確認はこちら）
+  const pat = (t) => (match === 'contains' ? `.*${regexLiteral(t)}.*` : regexLiteral(t));
+  for (const t of interact.expectVisible ?? []) lines.push(`- assertVisible: ${JSON.stringify(pat(t))}`);
+  for (const t of interact.expectNotVisible ?? []) lines.push(`- assertNotVisible: ${JSON.stringify(pat(t))}`);
   return `${lines.join('\n')}\n`;
 }
 
 /** 操作の道具を動かし始めるだけのフロー（初回は道具の準備に時間がかかるので、撮る画面を開く前に済ませる）。 */
 export function maestroWarmupFlow(bundleId) {
   return maestroFlow({ bundleId, interact: { steps: [{ waitForAnimationToEnd: { timeout: 1000 } }] } });
+}
+
+/**
+ * 撮った後に、その画面の内容を確かめるフロー（操作はしない。画面は直前にシェルが開く）。
+ * screen.expectVisible／expectNotVisible を「含む」で照合する。
+ */
+export function maestroVerifyFlow({ bundleId, screen }) {
+  return maestroFlow({
+    bundleId, match: 'contains',
+    interact: { steps: [{ waitForAnimationToEnd: { timeout: 3000 } }], expectVisible: screen.expectVisible, expectNotVisible: screen.expectNotVisible },
+  });
 }

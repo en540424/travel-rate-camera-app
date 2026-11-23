@@ -66,6 +66,7 @@ export function pickCapture(captures, screen, locale, screenDef = null, sources 
   const hash = screenDef?.interact ? interactHash(screenDef.interact) : null;
   const list = captures.filter((c) => c.screen === screen && c.locale === locale
     && (!hash || (c.interacted === true && c.interactHash === hash))
+    && c.verified !== false // 撮った後の確認で期待する表示が無かった撮影は使わない（確かめられなかった撮影は使い、一覧に「未確認」と出す）
     && (!sources || sources.includes(c.source)));
   list.sort((a, b) => SOURCE_PRIORITY.indexOf(a.source) - SOURCE_PRIORITY.indexOf(b.source));
   return list[0] ?? null;
@@ -85,9 +86,12 @@ export function planOutputs(profile, captures, { mode = 'draft', locales } = {})
     const id = shot.screen;
     const any = captures.filter((c) => c.screen === id);
     if (shot.sources && any.length && any.every((c) => !shot.sources.includes(c.source))) return `画面 ${id} は ${shot.sources.join('・')} の撮影が要る（${[...new Set(any.map((c) => c.source))].join('・')} の撮影は使わない）`;
+    if (any.length && any.every((c) => c.verified === false)) return `画面 ${id} は撮った後の確認で期待する表示が無かった（使わない）`;
     if (screenDef(id)?.interact && any.length) return `画面 ${id} は今の操作の設定での操作の後の撮影が無い（操作の前・設定が変わる前の撮影は使わない）`;
     return `画面 ${id} の撮影が無い`;
   };
+  // 撮った後の内容の確認が無い撮影（道具が無い・前の版の撮影）は使うが、人が目で確かめるよう注記する
+  const unverifiedNotes = (caps) => caps.filter((c) => c.verified !== true).map((c) => `画面 ${c.screen} の内容は機械で未確認（目視で確かめる）`);
   const pick = (shot, locale) => pickCapture(captures, shot.screen, locale, screenDef(shot.screen), shot.sources ?? null);
   // callout は rect を測った端末の撮影にだけ重ねる（別の端末では位置がずれる。独立検収 S9）
   const calloutFor = (shot, cap) => (shot.callout && (!shot.callout.device || shot.callout.device === cap.device) ? shot.callout : null);
@@ -106,7 +110,7 @@ export function planOutputs(profile, captures, { mode = 'draft', locales } = {})
           watermark: use.watermark ? watermarkText : null,
           title: shot.caption[locale].title, sub: shot.caption[locale].sub ?? '',
           label: shot.caption[locale].label ?? '', tone: shot.tone ?? 'light', layout: shot.layout ?? 'showcase', callout,
-          notes: shot.callout && !callout ? [`callout を省いた（${shot.callout.device} で測った位置。撮影は ${cap.device ?? '不明な端末'}）`] : [],
+          notes: [...(shot.callout && !callout ? [`callout を省いた（${shot.callout.device} で測った位置。撮影は ${cap.device ?? '不明な端末'}）`] : []), ...unverifiedNotes([cap])],
           file: path.join('store', locale, targetId, `${shot.id}.png`),
         });
       }
@@ -138,7 +142,7 @@ export function planOutputs(profile, captures, { mode = 'draft', locales } = {})
           watermark: watermark ? watermarkText : null,
           headline: ad.headline[locale], sub: ad.sub?.[locale] ?? '', badge: ad.badge?.[locale] ?? '',
           points: (ad.points ?? []).map((pt) => pt.text?.[locale]).filter(Boolean),
-          notes: unused.map((u) => `使えなかった候補 ${u}`),
+          notes: [...unused.map((u) => `使えなかった候補 ${u}`), ...unverifiedNotes(caps)],
           file: path.join('ads', locale, targetId, `${ad.id}.png`),
         });
       }
@@ -162,12 +166,12 @@ export function jobHtml(profile, job, images, imageAspect, { imageWidth = null, 
     ? storeShotHtml({
       width, height, brand: profile.brand, title: renderEmphasis(job.title), sub: job.sub,
       imageDataUrl: images[0], watermark: job.watermark, imageAspect, imageWidth, lang,
-      tone: job.tone, label: job.label, callout: job.callout, layout: job.layout,
+      tone: job.tone, label: job.label, callout: job.callout, layout: job.layout, note: profile.disclaimer?.[job.locale] ?? '',
     })
     : adHtml({
       width, height, brand: profile.brand, headline: renderEmphasis(job.headline), sub: job.sub,
       images, watermark: job.watermark, appName: profile.app.name?.[job.locale] ?? profile.app.name?.ja, badge: job.badge, lang,
-      imageAspect, imageWidth, iconDataUrl, points: job.points, tone: job.tone, layout: job.layout,
+      imageAspect, imageWidth, iconDataUrl, points: job.points, tone: job.tone, layout: job.layout, note: profile.disclaimer?.[job.locale] ?? '',
     });
 }
 
@@ -291,6 +295,7 @@ export function galleryHtml(manifest) {
   </style></head><body>
   <h1>${escapeHtml(manifest.app.id)} 素材一覧</h1>
   <p>生成：${escapeHtml(manifest.generatedAt)} ／ commit ${escapeHtml(manifest.git.commit)}${manifest.git.dirty ? '（未commitの変更あり）' : ''} ／ mode ${escapeHtml(manifest.mode)}</p>
+  ${manifest.parentRun ? `<p>前の run（${escapeHtml(manifest.parentRun)}）との比較：<a href="compare.html">compare.html</a>（撮影は同じ画像。違いは合成だけ）</p>` : ''}
   <p class="${v.ok ? 'ok' : 'ng'}">検証：${v.ok ? '問題なし' : `問題 ${v.problems.length}件`}</p>
   ${v.problems.length ? `<pre>${escapeHtml(v.problems.join('\n'))}</pre>` : ''}
   ${manifest.skipped.length ? `<h2>作らなかったもの（${manifest.skipped.length}）</h2><pre>${escapeHtml(manifest.skipped.map((s) => `${s.target} ${s.locale} ${s.shot ?? s.ad}: ${s.reason}`).join('\n'))}</pre>` : ''}

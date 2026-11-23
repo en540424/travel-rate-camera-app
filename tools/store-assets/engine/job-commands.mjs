@@ -197,12 +197,15 @@ export async function cmdJobRun(args) {
     const deadline = Date.now() + (job.constraints?.maxRuntimeMinutes ?? 60) * 60_000;
     result.skipped = [];
     const done = new Set();
+    const verification = new Map();
     for (const g of groups) {
       const r = await runIosPlan(g.steps, console.log, { deadline });
       // 操作が要る画面で、操作・表示の確認が通らず撮らなかったもの（致命にしない。draft のジョブは他の画面を取り込める）
       for (const k of r?.skipped ?? []) result.skipped.push({ device: g.device, locale: g.locale, screen: k.screen, reason: k.reason });
       for (const id of r?.interacted ?? []) done.add(`${g.device}|${g.locale}|${id}`);
+      for (const v of r?.verification ?? []) verification.set(`${g.device}|${g.locale}|${v.screen}`, v);
     }
+    result.verification = [...verification.entries()].map(([k, v]) => ({ device: k.split('|')[0], locale: k.split('|')[1], ...v }));
     const skippedKeys = new Set(result.skipped.map((k) => `${k.device}|${k.locale}|${k.screen}`));
     for (const device of job.devices) for (const locale of job.locales) for (const screen of job.screens) {
       const rel = captureRel(device, locale, screen);
@@ -215,7 +218,13 @@ export async function cmdJobRun(args) {
       if (spec && (!done.has(key) || skippedKeys.has(key))) { console.warn(`[job-run] ${rel}：操作の後の撮影の印が無いので数えない`); continue; }
       const buf = fs.readFileSync(f);
       const info = readPngInfo(buf);
-      result.captures.push({ device, locale, screen, file: rel, sha256: sha256(buf), width: info.width, height: info.height, ...(spec ? { interacted: true, interactHash: interactHash(spec) } : {}) });
+      // 内容の確認：操作の画面は操作の中で確かめ済み（true）。他は撮った後の確認の結果（ok→true・fail→false・確かめられない→記録しない）
+      const v = verification.get(key);
+      const verified = spec ? true : v?.status === 'ok' ? true : v?.status === 'fail' ? false : undefined;
+      result.captures.push({
+        device, locale, screen, file: rel, sha256: sha256(buf), width: info.width, height: info.height,
+        ...(spec ? { interacted: true, interactHash: interactHash(spec) } : {}), ...(verified === undefined ? {} : { verified }),
+      });
     }
     const same = sameImageProblems(result.captures);
     if (same.length) throw new Error(same.join('／'));
@@ -419,7 +428,7 @@ export function cmdJobIngest(args) {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.copyFileSync(path.join(from, c.file), dest);
     const rt = result.env.devices.find((d) => d.name === device)?.runtime ?? null;
-    added.push({ screen: c.screen, locale: c.locale, source: 'ios-simulator', file: dest, device, ...(c.interacted === true && typeof c.interactHash === 'string' ? { interacted: true, interactHash: c.interactHash } : {}), job: { id: job.id, purpose: job.purpose, commit: result.git.commit, runner: result.env.runner, macos: result.env.macos, xcode: result.env.xcode, runtime: rt, capturedAt: result.finishedAt, githubRun: run ? { id: String(run.databaseId), url: run.url } : null } });
+    added.push({ screen: c.screen, locale: c.locale, source: 'ios-simulator', file: dest, device, ...(c.interacted === true && typeof c.interactHash === 'string' ? { interacted: true, interactHash: c.interactHash } : {}), ...(typeof c.verified === 'boolean' ? { verified: c.verified } : {}), job: { id: job.id, purpose: job.purpose, commit: result.git.commit, runner: result.env.runner, macos: result.env.macos, xcode: result.env.xcode, runtime: rt, capturedAt: result.finishedAt, githubRun: run ? { id: String(run.databaseId), url: run.url } : null } });
   }
   writeCaptures(runDir, added);
   const notes = sizeNotes(result.captures.filter((x) => x.device === device), profile.outputs?.store ?? []);

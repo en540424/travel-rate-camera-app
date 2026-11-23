@@ -74,6 +74,12 @@ export function fitPhoneW(phoneW, imageWidth, unit, frameScale = 1) {
   return Math.min(phoneW, imageWidth + unit * 1.5 * frameScale * 2);
 }
 
+/** 画面の注記（例：画面の金額・レートは表示例）。右下に小さく、端末の上でも読めるよう淡い下地を付ける。 */
+function noteHtml(note, unit, bottom = unit * 2) {
+  if (!note) return '';
+  return `<div class="disc" style="position:absolute;right:${unit * 2}px;bottom:${bottom}px;z-index:8;font-size:${unit * 2.2}px;padding:${unit * 0.5}px ${unit * 1.4}px;border-radius:${unit}px;background:rgba(255,255,255,.9);color:#333;font-weight:500">${escapeHtml(note)}</div>`;
+}
+
 function watermarkHtml(text) {
   if (!text) return '';
   return `<div class="wm"><span>${escapeHtml(text)}</span></div>`;
@@ -165,7 +171,7 @@ function phoneHtml({ src, phoneW: wanted, imageWidth, imageAspect, unit, style =
  * opts: { width, height, brand, title, sub, imageDataUrl, imageWidth, imageAspect, lang, tone, label, callout, watermark }
  * title は renderEmphasis 済みのHTML。sub は文字列（ここでエスケープし、［］の強調と改行を反映する）。
  */
-export function storeShotHtml({ width, height, brand, title, sub, imageDataUrl, imageWidth = null, imageAspect = 2.17, lang, tone = 'light', label = '', callout = null, watermark, layout = 'showcase' }) {
+export function storeShotHtml({ width, height, brand, title, sub, imageDataUrl, imageWidth = null, imageAspect = 2.17, lang, tone = 'light', label = '', callout = null, watermark, layout = 'showcase', note = '' }) {
   if (!STORE_LAYOUTS.includes(layout)) throw new Error(`未知のストアの配置: ${layout}`);
   const unit = Math.min(width, height) / 100;
   const pal = tonePalette(brand, tone);
@@ -182,7 +188,7 @@ export function storeShotHtml({ width, height, brand, title, sub, imageDataUrl, 
     ${label ? `<span class="chip">${escapeHtml(label)}</span>` : ''}
     <h1>${title}</h1>${subHtml}
     <div class="stage">${phoneHtml({ src: imageDataUrl, phoneW, imageWidth, imageAspect, unit, callout })}</div>
-  </div>${watermarkHtml(watermark)}</body></html>`;
+  </div>${noteHtml(note, unit)}${watermarkHtml(watermark)}</body></html>`;
 }
 
 function pointsHtml(points, size) {
@@ -195,7 +201,7 @@ function pointsHtml(points, size) {
  * 広告・SNS・LP用。layout（'split'|'banner'|'square'|'story'）ごとに配置を変える。
  * opts: { width, height, brand, headline, sub, images[], imageWidth, imageAspect, appName, iconDataUrl, badge, points[], lang, tone, layout, watermark }
  */
-export function adHtml({ width, height, brand, headline, sub, images, imageWidth = null, imageAspect = 2.17, watermark, appName, iconDataUrl = null, badge, points = [], lang, tone = 'light', layout }) {
+export function adHtml({ width, height, brand, headline, sub, images, imageWidth = null, imageAspect = 2.17, watermark, appName, iconDataUrl = null, badge, points = [], lang, tone = 'light', layout, note = '' }) {
   const use = layout ?? defaultAdLayout(width, height);
   if (!AD_LAYOUTS.includes(use)) throw new Error(`未知の広告の配置: ${use}`);
   const unit = Math.min(width, height) / 100;
@@ -272,10 +278,10 @@ export function adHtml({ width, height, brand, headline, sub, images, imageWidth
       <div class="stage">${phones}</div>`;
     return `<!doctype html><html${langAttr(lang)}><head><meta charset="utf-8"><style>${baseCss(width, height, pal)}${css}</style></head><body>
       ${decoHtml(width, height, pal, 'b')}<div class="wrap">${body}</div>
-      <div class="band">${brandHtml(appName, iconDataUrl, unit * 5)}</div>${watermarkHtml(watermark)}</body></html>`;
+      <div class="band">${brandHtml(appName, iconDataUrl, unit * 5)}</div>${noteHtml(note, unit, band + unit * 2)}${watermarkHtml(watermark)}</body></html>`;
   }
   return `<!doctype html><html${langAttr(lang)}><head><meta charset="utf-8"><style>${baseCss(width, height, pal)}${css}</style></head><body>
-    ${decoHtml(width, height, pal, use === 'square' ? 'b' : 'a')}<div class="wrap">${body}</div>${watermarkHtml(watermark)}</body></html>`;
+    ${decoHtml(width, height, pal, use === 'square' ? 'b' : 'a')}<div class="wrap">${body}</div>${noteHtml(note, unit)}${watermarkHtml(watermark)}</body></html>`;
 }
 
 /**
