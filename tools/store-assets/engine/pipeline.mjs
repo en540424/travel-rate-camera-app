@@ -86,7 +86,11 @@ export function planOutputs(profile, captures, { mode = 'draft', locales } = {})
     const id = shot.screen;
     const any = captures.filter((c) => c.screen === id);
     if (shot.sources && any.length && any.every((c) => !shot.sources.includes(c.source))) return `画面 ${id} は ${shot.sources.join('・')} の撮影が要る（${[...new Set(any.map((c) => c.source))].join('・')} の撮影は使わない）`;
-    if (any.length && any.every((c) => c.verified === false)) return `画面 ${id} は撮った後の確認で期待する表示が無かった（使わない）`;
+    if (any.length && any.every((c) => c.verified === false)) {
+      // 外した理由が記録にあればそれを出す（目視・取り込みの検査で外した撮影を「機械の確認で表示が無かった」と読み違えないように）
+      const note = any.find((c) => typeof c.reviewNote === 'string' && c.reviewNote)?.reviewNote;
+      return note ? `画面 ${id} は使わない：${note}` : `画面 ${id} は撮った後の確認で期待する表示が無かった（使わない）`;
+    }
     if (screenDef(id)?.interact && any.length) return `画面 ${id} は今の操作の設定での操作の後の撮影が無い（操作の前・設定が変わる前の撮影は使わない）`;
     return `画面 ${id} の撮影が無い`;
   };

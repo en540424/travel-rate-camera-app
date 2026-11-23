@@ -389,11 +389,11 @@ test('independent-review: 設定の値の形を検査する（文字のままの
   t((b) => { conv(b).steps[0] = { tapOn: null }; }, /tapOn は/);
   t((b) => { conv(b).steps[0] = { tapOn: { id: 'x', optional: true } }; }, /tapOn は/);
   t((b) => { b.brand.primary = 'red;}body{display:none'; }, /brand\.primary は色/);
-  t((b) => { b.shots[2].callout.shiftY = 'x'; }, /shiftY/);
+  t((b) => { b.shots.find((s) => s.id === '03-records').callout.shiftY = 'x'; }, /shiftY/);
   t((b) => { b.ads[0].maxPhones = 9; }, /maxPhones/);
   t((b) => { b.ads[0].tone = { nope: 'light' }; }, /tone の nope/);
   t((b) => { b.shots[0].sources = ['camera-roll']; }, /sources は/);
-  t((b) => { delete b.shots[2].callout.device; }, /callout\.device/);
+  t((b) => { delete b.shots.find((s) => s.id === '03-records').callout.device; }, /callout\.device/);
   assert.throws(() => maestroFlow({ bundleId: 'a.b', interact: { steps: [{ inputText: '1' }], expectVisible: 'x' } }), /文字の配列/);
 });
 

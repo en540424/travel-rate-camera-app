@@ -194,6 +194,44 @@ export function sameImageProblems(captures) {
   return [...byHash.values()].filter((v) => new Set(v).size > 1).map((v) => `別の画面が同じ画像（画面が切り替わっていない）：${v.join('・')}`);
 }
 
+/** 撮影どうしが「ほぼ同じ見た目」とみなす、違う画素の割合の上限（pixelDiffRatio）。第6回の実測：前の画面を写した撮影は 0.000%、別の画面どうしは 17% 以上 */
+export const NEAR_DUPLICATE_MAX_RATIO = 0.005;
+
+/**
+ * 別の画面なのに見た目がほぼ同じ撮影を見つけ、合成から外す撮影を返す（純関数。致命にしない）。
+ * sha256 が違っても、前の画面を写した撮影（遷移が間に合わなかった等）はこれで見つかる（第6回：カレンダーの撮影が旅行一覧だった）。
+ * どちらを外すか：片方だけが撮影後の内容の確認を通っていれば（verified:true）、もう片方。決められなければ両方。
+ * 撮影の順は使わない（取り込みの時の profile から推し量ると、profile を変えた後の古い結果を取り違える）。
+ * ratioOf(a, b) は 0〜1 か null（比べられない：寸法が違う・読めない形式）を返す。返す値：[{ device, locale, screen, nearDuplicateOf, ratio, reason }]
+ */
+export function nearDuplicateRejects(captures, ratioOf, { maxRatio = NEAR_DUPLICATE_MAX_RATIO } = {}) {
+  const out = new Map();
+  const list = captures.filter((c) => c && typeof c.screen === 'string');
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      const a = list[i];
+      const b = list[j];
+      if (a.device !== b.device || a.locale !== b.locale || a.screen === b.screen) continue;
+      const ratio = ratioOf(a, b);
+      if (typeof ratio !== 'number' || ratio > maxRatio) continue;
+      const pct = `${(ratio * 100).toFixed(3)}%`;
+      const reject = (x, y) => {
+        const key = `${x.device}|${x.locale}|${x.screen}`;
+        if (!out.has(key)) {
+          out.set(key, {
+            device: x.device, locale: x.locale, screen: x.screen, nearDuplicateOf: y.screen, ratio,
+            reason: `取り込みの検査で除外：画面 ${y.screen} の撮影と見た目がほぼ同じ（違う画素 ${pct}）。前の画面を写した可能性（${y.verified === true ? `${y.screen} は撮影後の確認が通っている` : 'どちらが正しいか決められないので両方外す'}）`,
+          });
+        }
+      };
+      if (a.verified === true && b.verified !== true) reject(b, a);
+      else if (b.verified === true && a.verified !== true) reject(a, b);
+      else { reject(a, b); reject(b, a); }
+    }
+  }
+  return [...out.values()];
+}
+
 /** ストアの寸法に合うか（参考の検査。合わなくても取り込みは止めない：合成で縮小・余白を付けるため）。 */
 export function sizeNotes(captures, targetIds) {
   const notes = [];

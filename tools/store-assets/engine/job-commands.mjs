@@ -20,10 +20,10 @@ import { planIosCapture, runIosPlan } from './drivers/ios-simulator.mjs';
 import { interactHash } from './drivers/interact.mjs';
 import {
   captureRel, CI_BRANCH_PREFIX, CI_JOB_FILE, CI_WORKFLOW, ciBranchFor, createJob, forbiddenIdentifiers, githubDispatchArgs, githubDownloadArgs, isMacMiniHost, newStatus, parsePreflight,
-  githubRunProblems, preflightProblems, redactIdentifiers, resolveCiJob, sameImageProblems, RESULT_SCHEMA, sizeNotes, slug, TARGETS, transition, validateJob, verifyResult, verifyRunMeta,
+  githubRunProblems, nearDuplicateRejects, preflightProblems, redactIdentifiers, resolveCiJob, sameImageProblems, RESULT_SCHEMA, sizeNotes, slug, TARGETS, transition, validateJob, verifyResult, verifyRunMeta,
 } from './jobs.mjs';
 import { sha256 } from './pipeline.mjs';
-import { readPngInfo } from './png.mjs';
+import { decodePng, pixelDiffRatio, readPngInfo } from './png.mjs';
 import { loadProfile } from './profile.mjs';
 import { defaultRunDir, gitInfo, projectRootOf, readCaptures, writeCaptures } from './runs.mjs';
 import { escapeHtml } from './templates.mjs';
@@ -426,6 +426,18 @@ export function cmdJobIngest(args) {
   const mine = result.captures.filter((x) => x.device === device);
   const dup = mine.find((c) => webHashes.has(c.sha256));
   if (dup) throw new Error(`${dup.file} はWeb版プレビューの撮影と同じ画像です`);
+  // 別の画面なのに見た目がほぼ同じ撮影（前の画面を写した等。sha256 は違うので同一画像の検査をすり抜ける）を合成から外す。
+  // 致命にしない（他の画面は取り込む）。8bit 以外の PNG・寸法の違う組は比べない
+  const decoded = new Map();
+  const pixelsOf = (c) => {
+    if (!decoded.has(c.file)) { try { decoded.set(c.file, decodePng(fs.readFileSync(path.join(from, c.file)))); } catch { decoded.set(c.file, null); } }
+    return decoded.get(c.file);
+  };
+  const nearDup = nearDuplicateRejects(mine, (a, b) => pixelDiffRatio(pixelsOf(a), pixelsOf(b)));
+  decoded.clear();
+  const nearDupOf = new Map(nearDup.map((r) => [`${r.locale}|${r.screen}`, r]));
+  for (const r of nearDup) console.warn(`[job-ingest] 画面 ${r.screen}（${r.locale}）を合成から外す：${r.reason}`);
+  if (nearDup.length) fs.writeFileSync(path.join(p.dir, 'ingest.json'), JSON.stringify({ ...record, nearDuplicates: nearDup }, null, 2));
   fs.mkdirSync(runDir, { recursive: true });
   const added = [];
   for (const c of mine) {
@@ -433,7 +445,7 @@ export function cmdJobIngest(args) {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.copyFileSync(path.join(from, c.file), dest);
     const rt = result.env.devices.find((d) => d.name === device)?.runtime ?? null;
-    added.push({ screen: c.screen, locale: c.locale, source: 'ios-simulator', file: dest, device, ...(c.interacted === true && typeof c.interactHash === 'string' ? { interacted: true, interactHash: c.interactHash } : {}), ...(typeof c.verified === 'boolean' ? { verified: c.verified } : {}), job: { id: job.id, purpose: job.purpose, commit: result.git.commit, runner: result.env.runner, macos: result.env.macos, xcode: result.env.xcode, runtime: rt, capturedAt: result.finishedAt, githubRun: run ? { id: String(run.databaseId), url: run.url } : null } });
+    added.push({ screen: c.screen, locale: c.locale, source: 'ios-simulator', file: dest, device, ...(c.interacted === true && typeof c.interactHash === 'string' ? { interacted: true, interactHash: c.interactHash } : {}), ...(typeof c.verified === 'boolean' ? { verified: c.verified } : {}), ...(nearDupOf.has(`${c.locale}|${c.screen}`) ? { verified: false, reviewNote: nearDupOf.get(`${c.locale}|${c.screen}`).reason, nearDuplicateOf: nearDupOf.get(`${c.locale}|${c.screen}`).nearDuplicateOf } : {}), job: { id: job.id, purpose: job.purpose, commit: result.git.commit, runner: result.env.runner, macos: result.env.macos, xcode: result.env.xcode, runtime: rt, capturedAt: result.finishedAt, githubRun: run ? { id: String(run.databaseId), url: run.url } : null } });
   }
   writeCaptures(runDir, added);
   const notes = sizeNotes(result.captures.filter((x) => x.device === device), profile.outputs?.store ?? []);

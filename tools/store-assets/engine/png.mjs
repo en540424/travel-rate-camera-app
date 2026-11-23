@@ -155,3 +155,24 @@ export function flattenPng(buf, background) {
   if (!info.hasAlphaChannel && !hasTransparencyChunk(buf)) return buf;
   return encodeRgbPng(decodePng(buf), background);
 }
+
+/**
+ * 2枚の画像（decodePng の結果）で、見た目が違う画素の割合（0〜1）。寸法が違えば null（比べない）。
+ * 各画素の RGB の差の最大が tol を超えたら「違う」とし、上端の skipTop（ステータスバー）は数えない。step 画素おきに数える。
+ * 用途：撮影が前の画面を写していないか（第6回：カレンダーの撮影が旅行一覧と 0.000%。別の画面どうしは 17% 以上）。
+ */
+export function pixelDiffRatio(a, b, { tol = 16, skipTop = 0.06, step = 2 } = {}) {
+  if (!a || !b || a.width !== b.width || a.height !== b.height) return null;
+  const y0 = Math.floor(a.height * skipTop);
+  let diff = 0;
+  let n = 0;
+  for (let y = y0; y < a.height; y += step) {
+    for (let x = 0; x < a.width; x += step) {
+      const i = (y * a.width + x) * 4;
+      const m = Math.max(Math.abs(a.pixels[i] - b.pixels[i]), Math.abs(a.pixels[i + 1] - b.pixels[i + 1]), Math.abs(a.pixels[i + 2] - b.pixels[i + 2]));
+      if (m > tol) diff++;
+      n++;
+    }
+  }
+  return n ? diff / n : null;
+}

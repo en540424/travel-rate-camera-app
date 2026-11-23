@@ -11,10 +11,10 @@ import { interactHash } from './drivers/interact.mjs';
 import { buildJobSteps, captureMarks, cmdJobIngest, cmdJobRun, cmdJobStatus, makeCiCommit, pickSimulators } from './job-commands.mjs';
 import {
   captureRel, CI_BRANCH_PREFIX, CI_JOB_FILE, ciBranchFor, createJob, forbiddenIdentifiers, githubDispatchArgs, githubDownloadArgs, isMacMiniHost, newStatus, parsePreflight,
-  githubRunProblems, preflightProblems, redactIdentifiers, resolveCiJob, RESULT_SCHEMA, sameImageProblems, transition, validateJob, verifyResult, verifyRunMeta,
+  githubRunProblems, NEAR_DUPLICATE_MAX_RATIO, nearDuplicateRejects, preflightProblems, redactIdentifiers, resolveCiJob, RESULT_SCHEMA, sameImageProblems, transition, validateJob, verifyResult, verifyRunMeta,
 } from './jobs.mjs';
-import { excludeDraftJobCaptures, sha256 } from './pipeline.mjs';
-import { encodeRgbPng, readPngInfo } from './png.mjs';
+import { excludeDraftJobCaptures, planOutputs, sha256 } from './pipeline.mjs';
+import { decodePng, encodeRgbPng, pixelDiffRatio, readPngInfo } from './png.mjs';
 import { loadProfile } from './profile.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -456,4 +456,76 @@ test('job-run の印（独立検収 R6）：操作の画面は印があり飛ば
   assert.deepEqual(captureMarks(undefined, k('A', 'ja', 'calendar'), ctx), { verified: false });
   assert.deepEqual(captureMarks(undefined, k('A', 'ja', 'trips'), ctx), {}, '確かめられない時は付けない');
   assert.deepEqual(captureMarks(undefined, k('B', 'ja', 'history'), ctx), {}, '別のデバイスの確認は付けない');
+});
+
+// ---- 画面の取り違え（前の画面を写した撮影）の検出（第6回：カレンダーの撮影が旅行一覧だった。sha256 は違い、同一画像の検査をすり抜けた）
+
+/** 単色の画像。top（0〜1）より上の行だけ別の色にできる（ステータスバーの時刻・電池の違いの代わり） */
+function imgPng(w, h, rgb, { top = 0, topRgb = [0, 0, 0] } = {}) {
+  const pixels = Buffer.alloc(w * h * 4);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) pixels.set([...(y < h * top ? topRgb : rgb), 255], (y * w + x) * 4);
+  return encodeRgbPng({ width: w, height: h, pixels });
+}
+
+test('画素の比較：同じ見た目は 0・ステータスバーだけの違いは数えない・はっきり違えば 1・寸法が違えば比べない', () => {
+  const a = decodePng(imgPng(100, 200, [10, 100, 200]));
+  assert.equal(pixelDiffRatio(a, a), 0);
+  assert.equal(pixelDiffRatio(a, decodePng(imgPng(100, 200, [10, 100, 200], { top: 0.05, topRgb: [255, 255, 255] }))), 0, '上端（ステータスバー）は数えない');
+  assert.equal(pixelDiffRatio(a, decodePng(imgPng(100, 200, [30, 100, 200]))), 1, '20 の違いは「違う」');
+  assert.equal(pixelDiffRatio(a, decodePng(imgPng(100, 200, [20, 100, 200]))), 0, '許容（16）以内の違いは数えない');
+  assert.equal(pixelDiffRatio(a, decodePng(imgPng(100, 100, [10, 100, 200]))), null);
+  assert.equal(pixelDiffRatio(a, null), null);
+});
+
+test('取り違えの判定：片方だけが確認済みならもう片方を外し、決められなければ両方。遠い組・比べられない組・別の端末は外さない', () => {
+  const c = (screen, verified, device = 'D') => ({ device, locale: 'ja', screen, ...(verified === undefined ? {} : { verified }) });
+  const near = () => 0;
+  // 確認済みの旅行一覧と未確認のカレンダー → カレンダーだけ外す（第6回の形）
+  let r = nearDuplicateRejects([c('trip-list', true), c('calendar')], near);
+  assert.deepEqual(r.map((x) => [x.screen, x.nearDuplicateOf]), [['calendar', 'trip-list']]);
+  assert.match(r[0].reason, /trip-list の撮影と見た目がほぼ同じ（違う画素 0.000%）/);
+  assert.deepEqual(nearDuplicateRejects([c('calendar'), c('trip-list', true)], near).map((x) => x.screen), ['calendar'], '順に依らない');
+  // どちらも未確認・どちらも確認済み → 両方
+  assert.deepEqual(nearDuplicateRejects([c('a'), c('b')], near).map((x) => x.screen).sort(), ['a', 'b']);
+  assert.deepEqual(nearDuplicateRejects([c('a', true), c('b', true)], near).map((x) => x.screen).sort(), ['a', 'b']);
+  // しきい値を超える・比べられない・別の端末・同じ画面 → 外さない
+  assert.deepEqual(nearDuplicateRejects([c('a'), c('b')], () => NEAR_DUPLICATE_MAX_RATIO + 0.001), []);
+  assert.deepEqual(nearDuplicateRejects([c('a'), c('b')], () => null), []);
+  assert.deepEqual(nearDuplicateRejects([c('a', undefined, 'D1'), c('b', undefined, 'D2')], near), []);
+});
+
+test('取り込み：前の画面を写した撮影（見た目がほぼ同じ・sha256 は違う）は合成から外し、理由を記録と一覧に残す。他の画面は取り込む', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-ingest-neardup-'));
+  const j = job({ screens: ['history', 'trip-list', 'calendar'] });
+  fs.writeFileSync(path.join(tmp, 'job.json'), JSON.stringify(j));
+  fs.writeFileSync(path.join(tmp, 'status.json'), JSON.stringify(transition(newStatus(j), 'dispatched')));
+  const { dir } = makeResult(j, {
+    mutate: (r, d) => {
+      // 旅行一覧とカレンダーを「ステータスバーだけ違う同じ画面」にする（sha256 は違う）。旅行一覧は撮影後の確認が通っている
+      const set = (screen, buf, extra) => {
+        const cap = r.captures.find((x) => x.screen === screen);
+        fs.writeFileSync(path.join(d, cap.file), buf);
+        Object.assign(cap, { sha256: sha256(buf), width: 320, height: 640, ...extra });
+      };
+      set('trip-list', imgPng(320, 640, [40, 90, 60]), { verified: true });
+      set('calendar', imgPng(320, 640, [40, 90, 60], { top: 0.03, topRgb: [250, 250, 250] }));
+    },
+  });
+  const run = path.join(tmp, 'run');
+  const res = cmdJobIngest({ job: tmp, profile: TABIRATE, from: dir, run });
+  assert.equal(res.added, 3, '画像は取り込む（記録に外した理由を残す）');
+  const caps = JSON.parse(fs.readFileSync(path.join(run, 'captures.json'), 'utf8'));
+  const by = Object.fromEntries(caps.map((x) => [x.screen, x]));
+  assert.equal(by.calendar.verified, false);
+  assert.equal(by.calendar.nearDuplicateOf, 'trip-list');
+  assert.match(by.calendar.reviewNote, /前の画面を写した可能性/);
+  assert.equal(by['trip-list'].verified, true);
+  assert.equal(by.history.verified, undefined, '別の見た目の画面は触らない');
+  const ingest = JSON.parse(fs.readFileSync(path.join(tmp, 'ingest.json'), 'utf8'));
+  assert.deepEqual(ingest.nearDuplicates.map((x) => x.screen), ['calendar']);
+  // 合成の「作らなかったもの」には、機械の確認の定型文ではなく、外した理由が出る
+  const plan = planOutputs(profile, caps.map((x) => ({ ...x, file: path.join(run, x.file) })), { mode: 'draft' });
+  const cal = plan.skipped.find((s) => s.shot === '05-calendar');
+  assert.match(cal.reason, /使わない：取り込みの検査で除外/);
+  assert.doesNotMatch(cal.reason, /期待する表示が無かった/);
 });

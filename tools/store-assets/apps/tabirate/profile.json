@@ -129,6 +129,22 @@
         "$note": "Web版はカメラ・OCR非対応の表示になるため撮らない。iOSで撮る"
       },
       {
+        "id": "smart-camera",
+        "route": "/",
+        "web": {
+          "enabled": false
+        },
+        "$note": "実機だけ（カメラにかざした値札へ、商品名の翻訳と円の目安が重なる画面）。シミュレーター・CI には実カメラが無いので撮らない（deepLink を持たないのでジョブに入らない）。実機の撮影を import --source device で取り込む"
+      },
+      {
+        "id": "live-translation",
+        "route": "/translation",
+        "web": {
+          "enabled": false
+        },
+        "$note": "実機だけ（翻訳タブ「ライブ翻訳」で、カメラを向けた文字の近くに訳が重なる画面。iOS 18以降）。シミュレーター・CI では撮らない。2026-10-24 の実機素材は旧表示（「カメラ」「リアルタイム翻訳中」）のため使えない＝現行の版で実機で撮り直す"
+      },
+      {
         "id": "converter",
         "route": "/converter",
         "deepLink": "travelratecameraapp:///converter",
@@ -188,6 +204,8 @@
         "id": "calendar",
         "route": "/calendar",
         "deepLink": "travelratecameraapp:///calendar",
+        "settleMs": 5000,
+        "$settleNote": "第6回（run 45169001221）は旅行一覧の後に開いて2秒で撮り、遷移が間に合わず旅行一覧を写した（原因は推定・未特定）。緩和として待ちを5秒にする。取り違えは job-ingest の見た目の比較で外れる",
         "waitForText": "買い物カレンダー",
         "expectVisible": [
           "買い物カレンダー",
@@ -259,6 +277,46 @@
           "label": "カメラで読み取り",
           "title": "海外の値札が、\n［日本円］でわかる。",
           "sub": "値札の価格をカメラで読み取り、\n日本円に換算"
+        }
+      },
+      "sources": [
+        "device"
+      ]
+    },
+    {
+      "id": "01a-live-translation",
+      "screen": "live-translation",
+      "features": [
+        "translation"
+      ],
+      "tone": "light",
+      "$note": "文言は提出パッケージ §E-4-2 の枠2のキャプション案。実機の撮影が無い間は作らない（作らなかったものに理由が出る）",
+      "caption": {
+        "ja": {
+          "label": "ライブ翻訳",
+          "title": "メニューも看板も、\n［向けるだけで翻訳］",
+          "sub": "iOS 18以降・端末内の翻訳機能を利用"
+        }
+      },
+      "sources": [
+        "device"
+      ]
+    },
+    {
+      "id": "01b-smart-camera",
+      "screen": "smart-camera",
+      "features": [
+        "camera-ocr",
+        "translation",
+        "jpy-conversion"
+      ],
+      "tone": "deep",
+      "$note": "文言は提出パッケージ §E-4-2 の枠3のキャプション案。ラベルはアプリの表示（「翻訳・円換算 ON」）",
+      "caption": {
+        "ja": {
+          "label": "翻訳・円換算",
+          "title": "かざすだけで、\n商品名の翻訳と［円の目安］",
+          "sub": "翻訳はiOS 18以降・端末内の翻訳機能を利用"
         }
       },
       "sources": [
