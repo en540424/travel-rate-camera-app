@@ -194,14 +194,21 @@ export async function cmdJobRun(args) {
       execFileSync(process.execPath, [path.resolve(profile._dir, profile.capture.ios.fixtureBuild), fixtureDb], { stdio: ['ignore', 'inherit', 'inherit'] });
     }
     const deadline = Date.now() + (job.constraints?.maxRuntimeMinutes ?? 60) * 60_000;
-    for (const g of groups) await runIosPlan(g.steps, console.log, { deadline });
+    result.skipped = [];
+    for (const g of groups) {
+      const r = await runIosPlan(g.steps, console.log, { deadline });
+      // 操作が要る画面で、操作・表示の確認が通らず撮らなかったもの（致命にしない。draft のジョブは他の画面を取り込める）
+      for (const k of r?.skipped ?? []) result.skipped.push({ device: g.device, locale: g.locale, screen: k.screen, reason: k.reason });
+    }
     for (const device of job.devices) for (const locale of job.locales) for (const screen of job.screens) {
       const rel = captureRel(device, locale, screen);
       const f = path.join(out, rel);
       if (!fs.existsSync(f)) continue;
       const buf = fs.readFileSync(f);
       const info = readPngInfo(buf);
-      result.captures.push({ device, locale, screen, file: rel, sha256: sha256(buf), width: info.width, height: info.height });
+      // 操作が要る画面は、操作と表示の確認が通った時だけ画像ができる（ios_interact）。そのことを記録し、合成はこの印のある撮影だけを使う
+      const interacted = Boolean(profile.capture.screens.find((s) => s.id === screen)?.interact);
+      result.captures.push({ device, locale, screen, file: rel, sha256: sha256(buf), width: info.width, height: info.height, ...(interacted ? { interacted: true } : {}) });
     }
     const same = sameImageProblems(result.captures);
     if (same.length) throw new Error(same.join('／'));
@@ -405,7 +412,7 @@ export function cmdJobIngest(args) {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.copyFileSync(path.join(from, c.file), dest);
     const rt = result.env.devices.find((d) => d.name === device)?.runtime ?? null;
-    added.push({ screen: c.screen, locale: c.locale, source: 'ios-simulator', file: dest, device, job: { id: job.id, purpose: job.purpose, commit: result.git.commit, runner: result.env.runner, macos: result.env.macos, xcode: result.env.xcode, runtime: rt, capturedAt: result.finishedAt, githubRun: run ? { id: String(run.databaseId), url: run.url } : null } });
+    added.push({ screen: c.screen, locale: c.locale, source: 'ios-simulator', file: dest, device, ...(c.interacted === true ? { interacted: true } : {}), job: { id: job.id, purpose: job.purpose, commit: result.git.commit, runner: result.env.runner, macos: result.env.macos, xcode: result.env.xcode, runtime: rt, capturedAt: result.finishedAt, githubRun: run ? { id: String(run.databaseId), url: run.url } : null } });
   }
   writeCaptures(runDir, added);
   const notes = sizeNotes(result.captures.filter((x) => x.device === device), profile.outputs?.store ?? []);

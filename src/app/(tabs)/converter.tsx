@@ -248,7 +248,9 @@ export default function ConverterScreen() {
             {isReverse ? '円金額を入力' : '金額を入力'}
           </ThemedText>
           <View style={styles.inputRow}>
+            {/* testID：ストア素材の撮影で、金額を実際の画面操作で入力するための目印（tools/store-assets。表示・動作は変わらない） */}
             <TextInput
+              testID="converter-amount-input"
               style={[
                 styles.amountInput,
                 Platform.OS === 'web' && ({ outlineStyle: 'none' } as object),

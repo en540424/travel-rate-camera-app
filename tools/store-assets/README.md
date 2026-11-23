@@ -14,9 +14,10 @@
 | `engine/cli.mjs` | 実行の入口（撮影・取り込み・合成・検証・一覧） | 共通 |
 | `engine/drivers/web-preview.mjs` | Web版をbundleしてPlaywrightで撮る（Windowsで動く） | 共通 |
 | `engine/drivers/ios-simulator.mjs` | `xcrun simctl` でシミュレーターを操作して撮る手順（Macで実行） | 共通 |
+| `engine/drivers/interact.mjs` | 入力・タップが要る画面の操作（Maestro のフローを作る。許可した命令だけ） | 共通 |
 | `engine/specs.mjs` | 出力先の寸法・形式（Apple・Google・SNS・広告・LP） | 共通 |
 | `engine/provenance.mjs` | 撮影元と掲載内容の規則（下記） | 共通 |
-| `engine/templates.mjs` | 合成のHTMLテンプレート | 共通 |
+| `engine/templates.mjs` | 合成のHTMLテンプレート（用途ごとの配置・色調。下の「デザインの設定」） | 共通 |
 | `engine/png.mjs` | PNGの読み書き・アルファ除去・寸法検証 | 共通 |
 | `engine/fixtures/expo-sqlite-node.mjs` | expo-sqliteのAPIをnode:sqliteで再現（テストデータDBの生成用） | 共通（Expo＋SQLiteのアプリ） |
 | `apps/tabirate/profile.json` | 画面・遷移・文言・ブランド・言語・出力先・機能の公開状態 | 個別 |
@@ -33,6 +34,37 @@
    finalでは、作れなかったストア用の画像（撮影が無い・Web版しか無い）と出力0枚の出力先も問題にし、`compose`・`validate` は exit 1 で終わる。
 4. 撮影後に差し替えられた画像（`captures.json` のsha256と不一致）は合成に使わない。Web版の撮影と同じ内容の画像を `import` で実機・シミュレーターとして取り込むことは拒否する。
    **限界**：`import --source` は申告であり、加工・縮小したWeb版の画像までは機械的に見分けられない。提出前の目視（index.htmlの撮影元バッジ）は人が行う。
+
+5. **入力・操作が要る画面は、操作の後の撮影だけを使う。** `capture.screens[].interact` を持つ画面（例：換算の金額の入力）は、
+   操作と表示の確認（`expectVisible`／`expectNotVisible`）が通った撮影（`interacted: true`）だけを合成に使う。操作の前の撮影（金額 0 等）は使わない。
+   値を画像処理で後から描き足すことはしない（撮影時のアプリの実際の表示だけ）。
+
+## デザインの設定（profile.json。エンジンはアプリの色・文言を持たない）
+
+| 設定 | 値 | 効果 |
+|---|---|---|
+| `brand.icon` | 設定ファイルからの相対パスのPNG | 広告のアプリ名の横にアイコン（無ければ色の四角） |
+| `brand.deep`・`deepAlt`・`onDeepAccent`・`warm`・`accentSoft`・`accentText` | 色 | 色調 `deep`（濃い背景に白文字）・`warm`（暖色の淡い背景）の色 |
+| `shots[].tone` | `light`／`deep`／`warm` | ストア用の背景の色調（続けて並べた時のメリハリ） |
+| `shots[].caption.<言語>.label` | 文字 | 見出しの上の小さなラベル |
+| `shots[].callout.rect` | `[x,y,w,h]`（撮影に対する0〜1の比） | 実画面の一部を端末の上に重ねて大きく見せる。**撮影の等倍を超えて拡大しない** |
+| `ads[].layout.<出力先>` | `split`（LP）／`banner`（横長）／`square`（SNS）／`story`（縦長） | 用途ごとの配置。省略時は出力先の形から決める |
+| `ads[].tone.<出力先 or default>` | `light`／`deep`／`warm` | 広告の色調 |
+| `ads[].shots` | 優先順の候補 | 撮影のある候補を先頭から使う（`split`・`story` は2台、他は1台）。1台も無ければ作らない |
+| `ads[].points` | `[{ text: {<言語>}, features: [...] }]` | 要点の箇条書き。**それぞれ公開済みの機能を根拠に持ち、その根拠は広告の `features` に含める**（設定の読み込みで検査） |
+| `capture.screens[].interact` | `{ driver:'maestro', steps, expectVisible, expectNotVisible, timeoutSeconds }` | 撮る前の操作。`steps` は `tapOn`・`inputText`・`eraseText`・`hideKeyboard`・`waitForAnimationToEnd`・`scroll`・`swipe` だけ（`launchApp` 等は不可） |
+
+見出し・補足は `［…］` で強調、`\n` で改行（補足も同じ）。文節での改行（`word-break:auto-phrase`）は `localeTags` の言語の指定が要る。
+描画に使われたフォントは出力ごとに manifest の `fonts` に残る（実行するマシンで変わる。Windows では Noto Sans JP、Mac ではヒラギノ）。
+
+### 前の run の撮影から作り直す（新旧比較）
+
+```bash
+npm run store-assets -- derive --profile <p> --from <前の run> [--run <新しい run>]
+```
+
+前の run の撮影を sha256 で照合して新しい run へ複製し（撮影元・ジョブ・GitHub の run の記録を引き継ぎ、`copiedFrom` を付ける）、合成する。
+前の run は読むだけで変えない。新しい run の `compare.html` に出力先ごとの新旧が並ぶ。テンプレート・文言を直した時に撮り直さずに確かめる用途。
 
 ## 使い方
 
@@ -103,6 +135,10 @@ npm run store-assets -- job-list     --profile <p>            # 一覧と out/<a
   - アプリを止めた後のホーム画面を基準として撮り、同じ画像の撮影は `*.rejected.png` へ移して止める
   - 止まる時は終了コードと理由（`result.json` の error）を残し、診断（負荷・launchd の記録・シミュレーターのログ・このアプリのクラッシュの記録の要点・その時点の画面 `_diag-N.rejected.png`）を出す。終了コード：20 ビルドしたアプリ（main.jsbundle・Bundle ID）／21 起動の命令／22 起動の後に動いていない／23 撮影の前後に動いていない／24 ホーム画面と同じ／25 試しの起動を止められない／26 基準が静止しない（1画面のジョブ）／27 画面を開く・撮る命令の失敗
   - 機械で防げないもの：アプリは前面にあるが中身が違う画面（スプラッシュ・存在しない画面・アプリの上の窓）。取り込んだ画像は人が目で確かめる
+- 入力・操作が要る画面（`interact`）は、workflow が版と sha256 を固定して入れる Maestro CLI（2.12.1。GitHub の release の zip。インストール用のスクリプトは流さない・統計の送信と更新の確認は止める）で操作する（2026-11-23 追加・**CI では未実行**）
+  - 撮影の順は「操作の無い画面 → 操作の要る画面」。操作の要る画面の失敗（道具が無い・準備の失敗・操作や表示の確認が通らない・時間切れ・撮った後の確認）は**致命にせず**、その画面だけ撮らずに `result.json` の `skipped` に理由を残して続ける（1画面の操作の失敗で、撮れていた画面まで取り込めなくなるのを防ぐ。アプリの生死・ホーム画面との一致の検査は今までどおり致命）
+  - 操作はディープリンクで開いた、動いているアプリにだけ行う（`launchApp` は使えない）。操作の後もアプリが同じプロセスで動いていることを確かめる
+  - 操作の後に撮れた画面は `interacted: true` として取り込み、合成はこの印のある撮影だけを使う
 - 同じ名前のシミュレーターが複数のランタイムにある時は、版の新しい1台（UDID）を選んで撮り、そのランタイムを記録する。撮る前にシミュレーター内のアプリへ権限を与え、確認の窓が写らないようにする
 - Mac での実行には、シミュレーター向けにbuildしたアプリ（`.app`）が要る（`--app`。`npx expo run:ios --configuration Release` 等。EAS Build は使わない）
 

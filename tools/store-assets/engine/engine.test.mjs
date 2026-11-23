@@ -5,13 +5,14 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { planIosCapture, planToShellScript } from './drivers/ios-simulator.mjs';
+import { parseSkipped, planIosCapture, planToRunScript, planToShellScript } from './drivers/ios-simulator.mjs';
 import { completenessProblems, jobHtml, pickCapture, planOutputs, validateOutputs, sha256, verifyCaptures } from './pipeline.mjs';
 import { decodePng, encodeRgbPng, flattenPng, readPngInfo } from './png.mjs';
 import { loadProfile, validateProfile } from './profile.mjs';
 import { canUseSource, checkClaims } from './provenance.mjs';
 import { checkCount, checkImageAgainstTarget, getTarget, TARGETS } from './specs.mjs';
-import { adHtml, escapeHtml, renderEmphasis, storeShotHtml } from './templates.mjs';
+import { adHtml, AD_LAYOUTS, defaultAdLayout, escapeHtml, renderEmphasis, storeShotHtml, TONES } from './templates.mjs';
+import { maestroFlow, regexLiteral } from './drivers/interact.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TABIRATE = path.join(HERE, '..', 'apps', 'tabirate', 'profile.json');
@@ -120,13 +121,13 @@ test('pipeline: 実機に近い撮影元を優先し、finalではWeb版プレ�
   assert.equal(pickCapture(caps, 'history', 'ja').source, 'ios-simulator');
   const final = planOutputs(p, caps, { mode: 'final' });
   assert.ok(final.jobs.every((j) => j.captures.every((c) => c.source !== 'web-preview')));
-  assert.ok(final.jobs.some((j) => j.shot === '02-history'));
-  assert.ok(final.skipped.some((s) => s.shot === '03-calendar' && s.reason.includes('Web版')));
+  assert.ok(final.jobs.some((j) => j.shot === '03-records'));
+  assert.ok(final.skipped.some((s) => s.shot === '05-calendar' && s.reason.includes('Web版')));
   assert.ok(final.skipped.some((s) => s.shot === '01-camera' && s.reason.includes('撮影が無い')));
   const draft = planOutputs(p, caps, { mode: 'draft' });
-  const cal = draft.jobs.find((j) => j.shot === '03-calendar');
+  const cal = draft.jobs.find((j) => j.shot === '05-calendar');
   assert.ok(cal.watermark, 'draftのWeb版は透かし付き');
-  assert.equal(draft.jobs.find((j) => j.shot === '02-history').watermark, null, 'iOS撮影は透かし無し');
+  assert.equal(draft.jobs.find((j) => j.shot === '03-records').watermark, null, 'iOS撮影は透かし無し');
 });
 
 test('pipeline: 合成のHTMLには profile の言語（localeTags）が入る（無いと文節での改行が黙って効かない）', () => {
@@ -213,4 +214,116 @@ test('pipeline: 撮影後に差し替えられた画像・無い画像は使わ�
   ], read);
   assert.deepEqual(r.ok.map((c) => c.screen), ['s1']);
   assert.deepEqual(r.rejected.map((c) => c.screen), ['s2', 's3']);
+});
+
+test('templates: 用途ごとの配置（LP・横長・正方形・縦長）を形から選び、色調は3種。広告の配置は profile で上書きできる', () => {
+  assert.equal(defaultAdLayout(1920, 1080), 'split');
+  assert.equal(defaultAdLayout(1200, 628), 'banner');
+  assert.equal(defaultAdLayout(1080, 1080), 'square');
+  assert.equal(defaultAdLayout(1080, 1920), 'story');
+  const brand = { primary: '#0E9488', primaryDark: '#0A766E' };
+  for (const layout of AD_LAYOUTS) for (const tone of TONES) {
+    const html = adHtml({ width: 1080, height: 1080, brand, headline: 'a', sub: 'b', images: ['data:,', 'data:,'], appName: 'アプリ', lang: 'ja-JP', layout, tone, points: ['p1'] });
+    assert.equal((html.match(/>アプリ</g) ?? []).length, 1, `${layout}/${tone}：アプリ名は1回だけ（SNSで重複していた）`);
+  }
+  assert.throws(() => adHtml({ width: 10, height: 10, brand, headline: 'a', images: [], layout: 'nope' }), /未知の広告の配置/);
+});
+
+test('templates: callout は実画面の一部を等倍を超えて拡大しない', () => {
+  const brand = { primary: '#0E9488' };
+  // 撮影 1320px 幅のうち 0.5（660px）を切り出す。端末の幅×1.08 は約 1197px だが、等倍の 660px に止める
+  const html = storeShotHtml({ width: 1320, height: 2868, brand, title: 'a', imageDataUrl: 'data:,', imageWidth: 1320, imageAspect: 2.1727, callout: { rect: [0.25, 0.5, 0.5, 0.1] } });
+  const m = html.match(/class="callout" style="left:[\d.]+px;top:[-\d.]+px;width:([\d.]+)px/);
+  assert.ok(m, 'callout がある');
+  assert.ok(Number(m[1]) <= 660 + 1e-6, `幅 ${m[1]}`);
+  assert.ok(html.includes('background-size:1320px auto'), '縮尺 1（等倍）');
+});
+
+test('templates: 補足文も［］の強調と改行を使え、エスケープされる', () => {
+  const html = storeShotHtml({ width: 100, height: 200, brand: { primary: '#000' }, title: 't', sub: '前<b>\n［後］', imageDataUrl: 'data:,' });
+  assert.ok(html.includes('<p class="sub">前&lt;b&gt;<br><em>後</em></p>'));
+});
+
+test('pipeline: 広告の画面は優先順の候補から、撮影のあるものを使う（無い候補は飛ばし、1台も無ければ作らない）', () => {
+  const p = loadProfile(TABIRATE);
+  const caps = [{ screen: 'history', locale: 'ja', source: 'ios-simulator', file: 'h.png' }, { screen: 'calendar', locale: 'ja', source: 'ios-simulator', file: 'c.png' }];
+  const plan = planOutputs(p, caps, { mode: 'draft' });
+  const hero = plan.jobs.find((j) => j.ad === 'lp-hero');
+  assert.deepEqual(hero.captures.map((c) => c.screen), ['history', 'calendar'], '換算の撮影が無いので記録とカレンダー');
+  assert.equal(hero.layout, 'split');
+  assert.equal(plan.jobs.find((j) => j.ad === 'banner').captures.length, 1, '横長は1台');
+  assert.ok(plan.skipped.some((s) => s.ad === 'plan-pro' && s.reason.includes('pro-features')), 'Pro の撮影が無ければ作らない');
+  const withConv = planOutputs(p, [...caps, { screen: 'converter', locale: 'ja', source: 'ios-simulator', file: 'v.png', interacted: true }], { mode: 'draft' });
+  assert.deepEqual(withConv.jobs.find((j) => j.ad === 'lp-hero').captures.map((c) => c.screen), ['converter', 'history']);
+});
+
+test('pipeline: 操作が要る画面（換算）は、操作と表示の確認が通った撮影だけを使う（金額 0 のままの撮影を使わない）', () => {
+  const p = loadProfile(TABIRATE);
+  const before = [{ screen: 'converter', locale: 'ja', source: 'ios-simulator', file: 'v.png' }, { screen: 'history', locale: 'ja', source: 'ios-simulator', file: 'h.png' }];
+  const plan = planOutputs(p, before, { mode: 'draft' });
+  assert.ok(!plan.jobs.some((j) => j.captures.some((c) => c.screen === 'converter')), '操作の前の撮影は店頭用にも広告にも使わない');
+  assert.ok(plan.skipped.some((s) => s.shot === '02-converter' && s.reason.includes('操作の後の撮影が無い')));
+  assert.deepEqual(plan.jobs.find((j) => j.ad === 'lp-hero').captures.map((c) => c.screen), ['history']);
+  const after = planOutputs(p, [{ ...before[0], interacted: true }, before[1]], { mode: 'draft' });
+  assert.ok(after.jobs.some((j) => j.shot === '02-converter'));
+  assert.equal(pickCapture(before, 'history', 'ja', { id: 'history' }).file, 'h.png', '操作の無い画面は今までどおり');
+});
+
+test('profile: 要点・配置・色調・callout・画面の操作を検査する', () => {
+  const p = JSON.parse(fs.readFileSync(TABIRATE, 'utf8'));
+  const bad = structuredClone(p);
+  bad.ads[0].points[0].features = ['proplus-ai-translation'];
+  assert.ok(validateProfile(bad).some((e) => e.includes('points[0]') && e.includes('公開されていない機能')));
+  const bad2 = structuredClone(p);
+  bad2.ads[0].points[0].features = ['budget'];
+  assert.ok(validateProfile(bad2).some((e) => e.includes('広告の features に無い')));
+  const bad3 = structuredClone(p);
+  bad3.shots[1].callout = { rect: [0.5, 0.5, 0.6, 0.1] };
+  assert.ok(validateProfile(bad3).some((e) => e.includes('callout.rect')));
+  const bad4 = structuredClone(p);
+  bad4.shots[0].tone = 'neon';
+  bad4.ads[0].layout = { 'lp-hero': 'zigzag' };
+  const e4 = validateProfile(bad4);
+  assert.ok(e4.some((e) => e.includes('tone')) && e4.some((e) => e.includes('layout.lp-hero')));
+  const bad5 = structuredClone(p);
+  const conv = bad5.capture.screens.find((s) => s.id === 'converter');
+  conv.interact.steps.push({ launchApp: {} });
+  delete conv.interact.expectVisible;
+  const e5 = validateProfile(bad5);
+  assert.ok(e5.some((e) => e.includes('steps[4]')), '許可していない命令（launchApp 等）は使えない');
+  assert.ok(e5.some((e) => e.includes('expectVisible')), '結果を確かめずに撮らない');
+});
+
+test('interact: Maestro のフローは許可した命令だけで、文言は正規表現の記号を逃がして照合する', () => {
+  const flow = maestroFlow({ bundleId: 'com.a.b', interact: { steps: [{ tapOn: { id: 'x' } }, { inputText: '89' }, { tapOn: '1.5 (a)' }, { hideKeyboard: true }], expectVisible: ['¥14,685'], expectNotVisible: ['$1.00'] } });
+  const lines = flow.trimEnd().split('\n');
+  assert.deepEqual(lines.slice(0, 4), ['appId: com.a.b', '---', '- tapOn: {"id":"x"}', '- inputText: "89"']);
+  assert.equal(JSON.parse(lines[4].replace('- tapOn: ', '')), '1\\.5 \\(a\\)');
+  assert.equal(lines[5], '- hideKeyboard');
+  assert.equal(lines[6], '- assertVisible: "¥14,685"');
+  assert.equal(JSON.parse(lines[7].replace('- assertNotVisible: ', '')), '\\$1\\.00');
+  assert.equal(regexLiteral('a.b'), 'a\\.b');
+  assert.throws(() => maestroFlow({ bundleId: 'com.a.b', interact: { steps: [{ launchApp: {} }] } }), /使えない操作/);
+  assert.throws(() => maestroFlow({ bundleId: 'x;rm', interact: { steps: [] } }), /bundleId/);
+});
+
+test('ios: 操作が要る画面は最後に撮り、失敗はその画面だけ飛ばして理由を残す（致命にしない）', () => {
+  const steps = planIosCapture({
+    device: 'D', bundleId: 'com.a.b', outDir: './o',
+    screens: [
+      { id: 'converter', deepLink: 'a:///converter', interact: { driver: 'maestro', steps: [{ inputText: '89' }], expectVisible: ['¥1'] } },
+      { id: 'history', deepLink: 'a:///history' },
+    ],
+  });
+  const cmds = steps.map((s) => s.cmd);
+  const hist = cmds.findIndex((c) => c.includes("screenshot --type=png './o/history.png'"));
+  const conv = cmds.findIndex((c) => c.includes("screenshot --type=png './o/converter.png'"));
+  assert.ok(hist > 0 && conv > hist, '操作が要る画面は後');
+  const block = cmds[conv];
+  assert.ok(!block.includes('ios_fail'), '操作の画面の失敗は致命にしない');
+  for (const k of ['ios_maestro_ready', 'ios_interact', 'ios_verify_shot_soft', 'ios_skip']) assert.ok(block.includes(k), k);
+  assert.ok(cmds.some((c) => c.includes("<<'STORE_ASSETS_FLOW_EOF'") && c.includes('- assertVisible: "¥1"')), 'フローを引用付きのヒアドキュメントで書く');
+  assert.equal(cmds.filter((c) => c.includes('flow-warmup.yaml" <<')).length, 1, '準備のフローは1回');
+  assert.ok(planToRunScript(steps).includes('IOS_SKIP_FILE'));
+  assert.deepEqual(parseSkipped('converter\t操作・表示の確認が通らない\n\nbad line\n'), [{ screen: 'converter', reason: '操作・表示の確認が通らない' }]);
 });

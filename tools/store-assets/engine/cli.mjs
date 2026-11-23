@@ -7,6 +7,7 @@
 //   node tools/store-assets/engine/cli.mjs import    --profile <p> --run <dir> --from <dir> --source device|ios-simulator [--locale ja]
 //   node tools/store-assets/engine/cli.mjs compose   --profile <p> --run <dir> [--mode draft|final]
 //   node tools/store-assets/engine/cli.mjs validate  --run <dir>
+//   node tools/store-assets/engine/cli.mjs derive    --profile <p> --from <前のrun> [--run <dir>] [--mode draft|final]（前のrunの撮影を照合して複製し、新しいrunで合成。前のrunは変えない）
 //   node tools/store-assets/engine/cli.mjs job-create|job-validate|job-run|job-dispatch|job-fetch|job-ingest|job-status|job-list|job-cleanup|job-ci-resolve …（遠隔撮影。job-commands.mjs）
 //
 // 外部への送信・アップロードはしない（ストア・LPへの反映は人が行う）。例外は job-dispatch／job-fetch に --execute を付けた時の
@@ -19,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 
 import { captureWeb, exportWeb } from './drivers/web-preview.mjs';
 import { planIosCapture, planToShellScript } from './drivers/ios-simulator.mjs';
-import { completenessProblems, excludeDraftJobCaptures, galleryHtml, planOutputs, renderPlan, sha256, validateOutputs, verifyCaptures } from './pipeline.mjs';
+import { compareHtml, completenessProblems, excludeDraftJobCaptures, galleryHtml, planOutputs, renderPlan, sha256, validateOutputs, verifyCaptures } from './pipeline.mjs';
 import { defaultRunDir, gitInfo, projectRootOf, readCaptures, writeCaptures } from './runs.mjs';
 import { cmdJobCiResolve, cmdJobCleanup, cmdJobCreate, cmdJobDispatch, cmdJobFetch, cmdJobIngest, cmdJobList, cmdJobRun, cmdJobStatus, cmdJobValidate } from './job-commands.mjs';
 import { loadProfile } from './profile.mjs';
@@ -126,7 +127,7 @@ function cmdImport(profile, args, runDir) {
   console.log(`[import] ${added.length}枚（${source}・${locale}）`);
 }
 
-async function cmdCompose(profile, args, runDir) {
+async function cmdCompose(profile, args, runDir, extra = {}) {
   const mode = args.mode === 'final' ? 'final' : 'draft';
   const verified = excludeDraftJobCaptures(mode, verifyCaptures(readCaptures(runDir).map((c) => ({ ...c, file: path.join(runDir, c.file) }))));
   for (const r of verified.rejected) console.warn(`[compose] 使わない撮影：${r.screen} ${r.locale} ${r.source}（${r.reason}）`);
@@ -136,7 +137,7 @@ async function cmdCompose(profile, args, runDir) {
   const manifest = {
     app: { id: profile.app.id, profile: path.relative(root, profile._file) },
     generatedAt: new Date().toISOString(), mode, git: gitInfo(root), storeTargets: profile.outputs?.store ?? [],
-    captures: readCaptures(runDir), outputs, skipped: plan.skipped,
+    captures: readCaptures(runDir), outputs, skipped: plan.skipped, ...extra,
   };
   manifest.rejectedCaptures = verified.rejected;
   manifest.validation = validateOutputs(runDir, outputs);
@@ -148,6 +149,40 @@ async function cmdCompose(profile, args, runDir) {
   console.log(`[compose] 一覧：${path.join(runDir, 'index.html')}`);
   if (mode === 'final' && !manifest.validation.ok) process.exitCode = 1;
   return manifest;
+}
+
+/**
+ * 前の run の撮影（captures.json に記録された sha256 と一致するものだけ）を新しい run へ複製し、合成する。
+ * 撮影の記録（撮影元・ジョブ・GitHub の run）はそのまま引き継ぎ、どの run から複製したかを copiedFrom に残す。
+ * 前の run は読むだけで変えない（新旧を比べられるように）。比較の一覧は compare.html。
+ */
+async function cmdDerive(profile, args, runDir) {
+  if (!args.from) throw new Error('--from（前の run）が必要です');
+  const from = path.resolve(args.from);
+  if (path.resolve(runDir) === from) throw new Error('--run は前の run と別の場所にする（前の run を上書きしない）');
+  if (fs.existsSync(path.join(runDir, 'captures.json'))) throw new Error(`新しい run に撮影の記録が既にあります：${runDir}`);
+  const prev = readCaptures(from);
+  const verified = verifyCaptures(prev.map((c) => ({ ...c, file: path.join(from, c.file) })));
+  for (const r of verified.rejected) console.warn(`[derive] 複製しない撮影：${r.screen} ${r.locale} ${r.source}（${r.reason}）`);
+  if (!verified.ok.length) throw new Error('複製できる撮影がありません');
+  const copied = [];
+  for (const c of verified.ok) {
+    const rel = path.relative(from, c.file);
+    const dest = path.join(runDir, rel);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(c.file, dest);
+    if (sha256(fs.readFileSync(dest)) !== c.sha256) throw new Error(`複製の後に内容が違う：${rel}`);
+    copied.push({ ...c, file: rel, copiedFrom: path.basename(from) });
+  }
+  fs.writeFileSync(path.join(runDir, 'captures.json'), JSON.stringify(copied, null, 2));
+  console.log(`[derive] 撮影 ${copied.length}枚を照合して複製（${path.basename(from)} → ${path.basename(runDir)}）`);
+  const manifest = await cmdCompose(profile, args, runDir, { parentRun: path.basename(from) });
+  const parentManifest = path.join(from, 'manifest.json');
+  if (fs.existsSync(parentManifest)) {
+    const rel = path.relative(runDir, from).replace(/\\/g, '/');
+    fs.writeFileSync(path.join(runDir, 'compare.html'), compareHtml(JSON.parse(fs.readFileSync(parentManifest, 'utf8')), manifest, rel));
+    console.log(`[derive] 新旧比較：${path.join(runDir, 'compare.html')}`);
+  }
 }
 
 function cmdValidate(runDir) {
@@ -191,6 +226,7 @@ async function main() {
     case 'plan-ios': cmdPlanIos(profile, args, runDir); break;
     case 'import': cmdImport(profile, args, runDir); break;
     case 'compose': await cmdCompose(profile, args, runDir); break;
+    case 'derive': await cmdDerive(profile, args, runDir); break;
     case 'all': {
       await cmdCaptureWeb(profile, args, runDir);
       cmdPlanIos(profile, args, runDir);

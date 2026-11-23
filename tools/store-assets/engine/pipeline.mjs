@@ -6,7 +6,7 @@ import path from 'node:path';
 import { flattenPng, hasTransparencyChunk, readPngInfo } from './png.mjs';
 import { canUseSource, SOURCES } from './provenance.mjs';
 import { checkCount, checkImageAgainstTarget, getTarget } from './specs.mjs';
-import { adHtml, escapeHtml, renderEmphasis, storeShotHtml } from './templates.mjs';
+import { adHtml, defaultAdLayout, escapeHtml, renderEmphasis, storeShotHtml } from './templates.mjs';
 
 // 同じ画面に複数の撮影元がある場合、実機に近いものを優先する
 const SOURCE_PRIORITY = ['device', 'ios-simulator', 'android-emulator', 'web-preview'];
@@ -55,9 +55,13 @@ export function excludeDraftJobCaptures(mode, verified) {
   return { ok, rejected };
 }
 
-/** 画面・言語ごとに、最も優先度の高い撮影記録を選ぶ。 */
-export function pickCapture(captures, screen, locale) {
-  const list = captures.filter((c) => c.screen === screen && c.locale === locale);
+/**
+ * 画面・言語ごとに、最も優先度の高い撮影記録を選ぶ。
+ * screenDef（profile の capture.screens の1件）が操作（interact）を持つ画面は、操作と表示の確認が通った撮影（interacted）だけを使う
+ * （2026-11-23 の5回目では換算の画面を金額 0 のまま撮っていた。操作の前の撮影を素材に使わない）。
+ */
+export function pickCapture(captures, screen, locale, screenDef = null) {
+  const list = captures.filter((c) => c.screen === screen && c.locale === locale && (!screenDef?.interact || c.interacted === true));
   list.sort((a, b) => SOURCE_PRIORITY.indexOf(a.source) - SOURCE_PRIORITY.indexOf(b.source));
   return list[0] ?? null;
 }
@@ -71,19 +75,22 @@ export function planOutputs(profile, captures, { mode = 'draft', locales } = {})
   const skipped = [];
   const useLocales = locales ?? profile.locales;
   const watermarkText = profile.draftWatermark ?? 'DRAFT · Web preview · 提出不可';
+  const screenDef = (id) => profile.capture?.screens?.find((s) => s.id === id) ?? null;
+  const noCaptureReason = (id) => (screenDef(id)?.interact && captures.some((c) => c.screen === id) ? `画面 ${id} は操作の後の撮影が無い（操作の前の撮影は使わない）` : `画面 ${id} の撮影が無い`);
 
   for (const locale of useLocales) {
     for (const targetId of profile.outputs?.store ?? []) {
       const target = getTarget(targetId);
       for (const shot of profile.shots ?? []) {
-        const cap = pickCapture(captures, shot.screen, locale);
-        if (!cap) { skipped.push({ target: targetId, locale, shot: shot.id, reason: `画面 ${shot.screen} の撮影が無い` }); continue; }
+        const cap = pickCapture(captures, shot.screen, locale, screenDef(shot.screen));
+        if (!cap) { skipped.push({ target: targetId, locale, shot: shot.id, reason: noCaptureReason(shot.screen) }); continue; }
         const use = canUseSource(cap.source, 'store', mode);
         if (!use.ok) { skipped.push({ target: targetId, locale, shot: shot.id, reason: use.reason }); continue; }
         jobs.push({
           kind: 'store', target, locale, shot: shot.id, captures: [cap], mode,
           watermark: use.watermark ? watermarkText : null,
           title: shot.caption[locale].title, sub: shot.caption[locale].sub ?? '',
+          label: shot.caption[locale].label ?? '', tone: shot.tone ?? 'light', layout: shot.layout ?? 'showcase', callout: shot.callout ?? null,
           file: path.join('store', locale, targetId, `${shot.id}.png`),
         });
       }
@@ -91,23 +98,30 @@ export function planOutputs(profile, captures, { mode = 'draft', locales } = {})
     for (const ad of profile.ads ?? []) {
       for (const targetId of ad.targets ?? []) {
         const target = getTarget(targetId);
+        const layout = ad.layout?.[targetId] ?? defaultAdLayout(target.width, target.height);
+        const max = ad.maxPhones ?? (['split', 'story'].includes(layout) ? 2 : 1);
+        // ad.shots は優先順の候補。撮影がある・使える撮影元のものを先頭から max 台まで使う（1台も無ければ作らない）
         const caps = [];
-        let reason = null;
+        const missing = [];
         let watermark = false;
         for (const sid of ad.shots ?? []) {
+          if (caps.length >= max) break;
           const shot = profile.shots.find((s) => s.id === sid);
-          const cap = pickCapture(captures, shot.screen, locale);
-          if (!cap) { reason = `画面 ${shot.screen} の撮影が無い`; break; }
+          const cap = pickCapture(captures, shot.screen, locale, screenDef(shot.screen));
+          if (!cap) { missing.push(noCaptureReason(shot.screen)); continue; }
           const use = canUseSource(cap.source, 'ad', mode);
-          if (!use.ok) { reason = use.reason; break; }
+          if (!use.ok) { missing.push(use.reason); continue; }
           watermark ||= use.watermark;
           caps.push(cap);
         }
-        if (reason) { skipped.push({ target: targetId, locale, ad: ad.id, reason }); continue; }
+        if (!caps.length) { skipped.push({ target: targetId, locale, ad: ad.id, reason: missing.join('・') || '候補の画面が無い' }); continue; }
         jobs.push({
-          kind: 'ad', target, locale, ad: ad.id, captures: caps, mode,
+          kind: 'ad', target, locale, ad: ad.id, captures: caps, mode, layout,
+          tone: ad.tone?.[targetId] ?? ad.tone?.default ?? 'light',
           watermark: watermark ? watermarkText : null,
           headline: ad.headline[locale], sub: ad.sub?.[locale] ?? '', badge: ad.badge?.[locale] ?? '',
+          points: (ad.points ?? []).map((pt) => pt.text?.[locale]).filter(Boolean),
+          unused: missing,
           file: path.join('ads', locale, targetId, `${ad.id}.png`),
         });
       }
@@ -124,24 +138,50 @@ function dataUrl(file) {
  * 1枚分のHTML（純粋関数）。言語（profile.localeTags。例 ja-JP）を必ず渡す：
  * 日本語の文節での改行（word-break:auto-phrase）は <html lang> が無いと黙って効かない。
  */
-export function jobHtml(profile, job, images, imageAspect) {
+export function jobHtml(profile, job, images, imageAspect, { imageWidth = null, iconDataUrl = null } = {}) {
   const { width, height } = job.target;
   const lang = profile.localeTags?.[job.locale] ?? job.locale;
   return job.kind === 'store'
     ? storeShotHtml({
       width, height, brand: profile.brand, title: renderEmphasis(job.title), sub: job.sub,
-      imageDataUrl: images[0], watermark: job.watermark, imageAspect, lang,
+      imageDataUrl: images[0], watermark: job.watermark, imageAspect, imageWidth, lang,
+      tone: job.tone, label: job.label, callout: job.callout, layout: job.layout,
     })
     : adHtml({
       width, height, brand: profile.brand, headline: renderEmphasis(job.headline), sub: job.sub,
       images, watermark: job.watermark, appName: profile.app.name?.[job.locale] ?? profile.app.name?.ja, badge: job.badge, lang,
+      imageAspect, imageWidth, iconDataUrl, points: job.points, tone: job.tone, layout: job.layout,
     });
+}
+
+/** 描画に実際に使われたフォント（Chromium の CDP。見出しの要素）。取れなければ null。実行するマシンにより変わるので manifest に残す。 */
+async function platformFonts(page, selector = 'h1') {
+  try {
+    const cdp = await page.context().newCDPSession(page);
+    const { root } = await cdp.send('DOM.getDocument');
+    const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector });
+    if (!nodeId) return null;
+    const { fonts } = await cdp.send('CSS.getPlatformFontsForNode', { nodeId });
+    await cdp.detach();
+    return fonts.map((f) => f.familyName);
+  } catch {
+    return null;
+  }
+}
+
+/** profile.brand.icon（設定ファイルからの相対パスのPNG）を data URL にする。無ければ null。 */
+export function brandIconDataUrl(profile) {
+  const rel = profile.brand?.icon;
+  if (!rel) return null;
+  const abs = path.resolve(profile._dir ?? '.', rel);
+  return fs.existsSync(abs) ? dataUrl(abs) : null;
 }
 
 /** 計画どおりにHTMLを描き、アルファを除いたPNGで保存する。 */
 export async function renderPlan(profile, plan, runDir, playwright, log = console.log) {
   const browser = await playwright.chromium.launch();
   const outputs = [];
+  const icon = brandIconDataUrl(profile);
   try {
     const page = await browser.newPage({ deviceScaleFactor: 1 });
     for (const job of plan.jobs) {
@@ -149,9 +189,10 @@ export async function renderPlan(profile, plan, runDir, playwright, log = consol
       await page.setViewportSize({ width, height });
       const images = job.captures.map((c) => dataUrl(c.file));
       const firstInfo = readPngInfo(fs.readFileSync(job.captures[0].file));
-      const html = jobHtml(profile, job, images, firstInfo.height / firstInfo.width);
+      const html = jobHtml(profile, job, images, firstInfo.height / firstInfo.width, { imageWidth: firstInfo.width, iconDataUrl: icon });
       await page.setContent(html, { waitUntil: 'load' });
       await page.evaluate(() => document.fonts?.ready);
+      const fonts = await platformFonts(page);
       const raw = await page.screenshot({ type: 'png', fullPage: false });
       const png = flattenPng(raw, [255, 255, 255]);
       const abs = path.join(runDir, job.file);
@@ -160,7 +201,7 @@ export async function renderPlan(profile, plan, runDir, playwright, log = consol
       const info = readPngInfo(png);
       outputs.push({
         file: job.file, kind: job.kind, target: job.target.id, locale: job.locale, shot: job.shot ?? null, ad: job.ad ?? null,
-        mode: job.mode, watermarked: Boolean(job.watermark),
+        mode: job.mode, watermarked: Boolean(job.watermark), layout: job.layout, tone: job.tone, fonts,
         sources: job.captures.map((c) => ({ screen: c.screen, source: c.source, sha256: c.sha256 })),
         width: info.width, height: info.height, sha256: sha256(png),
       });
@@ -235,4 +276,33 @@ export function galleryHtml(manifest) {
   <h2>ストア用</h2><div class="grid">${manifest.outputs.filter((o) => o.kind === 'store').map(card).join('')}</div>
   <h2>広告・SNS・LP用</h2><div class="grid">${manifest.outputs.filter((o) => o.kind === 'ad').map(card).join('')}</div>
   </body></html>`;
+}
+
+/**
+ * 新旧の比較の一覧（compare.html）。前の run（parent）の出力と今回の出力を、出力先ごとに並べる（純粋関数）。
+ * parentRel：今回の run から前の run への相対パス（例 ../20261123-023104-389990f）。前の run のファイルは参照するだけで変えない。
+ */
+export function compareHtml(parent, current, parentRel) {
+  const targets = [...new Set([...parent.outputs, ...current.outputs].map((o) => o.target))];
+  const img = (base, o) => {
+    const src = `${base}${o.file.replace(/\\/g, '/')}`;
+    return `<figure><a href="${escapeHtml(src)}"><img loading="lazy" src="${escapeHtml(src)}"></a><figcaption>${escapeHtml(o.shot ?? o.ad)}${o.layout ? ` · ${escapeHtml(o.layout)}` : ''}${o.tone ? ` · ${escapeHtml(o.tone)}` : ''}</figcaption></figure>`;
+  };
+  const rows = targets.map((t) => {
+    const before = parent.outputs.filter((o) => o.target === t);
+    const after = current.outputs.filter((o) => o.target === t);
+    return `<section><h2>${escapeHtml(t)}（前 ${before.length}枚 → 今回 ${after.length}枚）</h2>
+      <div class="cmp"><div><h3>前</h3><div class="row">${before.map((o) => img(`${parentRel}/`, o)).join('') || '<p>なし</p>'}</div></div>
+      <div><h3>今回</h3><div class="row">${after.map((o) => img('', o)).join('') || '<p>なし</p>'}</div></div></div></section>`;
+  }).join('');
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>${escapeHtml(current.app.id)} 新旧比較</title><style>
+  body{font-family:system-ui,"Yu Gothic UI",sans-serif;margin:24px;background:#f6f7f7;color:#16211f}
+  .cmp{display:grid;grid-template-columns:1fr 1fr;gap:16px}.cmp>div{background:#fff;border-radius:10px;padding:10px}
+  .row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start} figure{margin:0;width:200px} section{margin-bottom:28px}
+  img{width:100%;border:1px solid #ddd;border-radius:6px} figcaption{font-size:12px} h3{margin:0 0 8px;font-size:14px}
+  </style></head><body><h1>${escapeHtml(current.app.id)} 新旧比較</h1>
+  <p>前：${escapeHtml(parentRel)}（commit ${escapeHtml(parent.git?.commit ?? '?')}）／今回：commit ${escapeHtml(current.git?.commit ?? '?')}${current.git?.dirty ? '（未commitの変更あり）' : ''}・mode ${escapeHtml(current.mode)}</p>
+  <p>撮影は同じ画像（sha256 で照合して複製）。違いは合成のテンプレート・文言・構成だけ。</p>
+  ${current.skipped?.length ? `<h2>今回作らなかったもの（${current.skipped.length}）</h2><pre>${escapeHtml(current.skipped.map((x) => `${x.target} ${x.shot ?? x.ad}: ${x.reason}`).join('\n'))}</pre>` : ''}
+  ${rows}</body></html>`;
 }
