@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { buildFixtureDb, FIXTURE, fixtureDates, pastTripDate } from './build-fixture-db.mjs';
 import { openExpoSqliteCompat } from '../../engine/fixtures/expo-sqlite-node.mjs';
@@ -66,4 +67,33 @@ test('fixture: 記録の日付は撮影する日の月に入る（月が変わ�
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// 撮影はディープリンクを profile の並びの順に開く。アプリで modal の画面（src/app/_layout.tsx の presentation）の後に
+// 通常の画面を開くと、その画面も modal の上のシートとして表示される（native-stack の決まり。利用者が見る全画面の表示と違う）。
+// タブの画面は開く時に上の画面を閉じるので問題にならない。画面を絞ったジョブ（--screens）でも守れるよう、
+// modal の画面は操作の無い画面の最後にまとめ、操作の画面（最後に撮る）はタブの画面にする
+test('profile: modal の画面は操作の無い画面の最後に置き、操作の画面はタブの画面（modal の上のシートとして撮らない）', () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const appDir = path.join(here, '..', '..', '..', '..', 'src', 'app');
+  const layout = fs.readFileSync(path.join(appDir, '_layout.tsx'), 'utf8');
+  const modal = new Set();
+  for (const chunk of layout.split('<Stack.Screen').slice(1)) {
+    const tag = chunk.split('/>')[0];
+    const name = tag.match(/name="([^"]+)"/)?.[1];
+    const presentation = tag.match(/presentation:\s*'([^']+)'/)?.[1];
+    if (name && presentation && presentation !== 'card') modal.add(name);
+  }
+  assert.ok(modal.has('rate-setup'), 'アプリの modal の画面を読めている（_layout.tsx の書き方が変わったらこの検査を直す）');
+  const profile = JSON.parse(fs.readFileSync(path.join(here, 'profile.json'), 'utf8'));
+  const routeName = (s) => String(s.route ?? '').replace(/^\//, '');
+  const isTab = (s) => routeName(s) === '' || ['', '.tsx'].some((ext) => fs.existsSync(path.join(appDir, '(tabs)', `${routeName(s)}${ext}`)));
+  const linked = profile.capture.screens.filter((s) => s.deepLink);
+  const plain = linked.filter((s) => !s.interact);
+  const firstModal = plain.findIndex((s) => modal.has(routeName(s)));
+  assert.ok(firstModal >= 0, 'profile に modal の画面がある（無くなったらこの検査を直す）');
+  const after = plain.slice(firstModal).filter((s) => !modal.has(routeName(s)));
+  assert.deepEqual(after.map((s) => s.id), [], 'modal の画面の後に、操作の無い通常の画面を置かない');
+  if (firstModal > 0) assert.ok(isTab(plain[firstModal - 1]), `modal の直前はタブの画面（背後が通常の画面になる）：${plain[firstModal - 1].id}`);
+  for (const s of linked.filter((x) => x.interact)) assert.ok(isTab(s), `操作の画面 ${s.id} はタブの画面（開く時に modal を閉じる）`);
 });

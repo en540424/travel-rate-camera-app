@@ -204,6 +204,21 @@
         "$note": "提出パッケージ §E-1 の5・7枚目（分析）の素材。「分析」はタブの名前にもあるので、画面固有の見出しで確かめる"
       },
       {
+        "id": "pro-features",
+        "route": "/pro-features",
+        "deepLink": "travelratecameraapp:///pro-features",
+        "waitForText": "無料版とProの違い",
+        "expectVisible": [
+          "無料版とProの違い"
+        ]
+      },
+      {
+        "id": "help",
+        "route": "/help",
+        "deepLink": "travelratecameraapp:///help",
+        "waitForText": "使い方"
+      },
+      {
         "id": "translation",
         "route": "/translation",
         "deepLink": "travelratecameraapp:///translation",
@@ -226,22 +241,7 @@
           "現在のレート",
           "換算プレビュー"
         ],
-        "$note": "提出パッケージ §E-1 の4枚目（レートは自分で設定＝自動取得と誤解させない）の素材。文言（shot）は Human の判断の後に足す"
-      },
-      {
-        "id": "pro-features",
-        "route": "/pro-features",
-        "deepLink": "travelratecameraapp:///pro-features",
-        "waitForText": "無料版とProの違い",
-        "expectVisible": [
-          "無料版とProの違い"
-        ]
-      },
-      {
-        "id": "help",
-        "route": "/help",
-        "deepLink": "travelratecameraapp:///help",
-        "waitForText": "使い方"
+        "$note": "提出パッケージ §E-1 の4枚目（レートは自分で設定＝自動取得と誤解させない）の素材。文言（shot）は Human の判断の後に足す。この画面はアプリで modal（src/app/_layout.tsx）。撮影はこの並びの順で、modal の後に開いた通常の画面は modal の上のシートとして表示される（利用者が見る全画面の表示と違う）ため、操作の無い画面の最後に置く（fixture.test.mjs で検査）。タブの画面（翻訳）の直後なので、背後は通常の画面"
       }
     ]
   },
