@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 
 import { captureWeb, exportWeb } from './drivers/web-preview.mjs';
 import { planIosCapture, planToShellScript } from './drivers/ios-simulator.mjs';
-import { compareHtml, completenessProblems, excludeDraftJobCaptures, galleryHtml, planOutputs, renderPlan, sha256, validateOutputs, verifyCaptures } from './pipeline.mjs';
+import { compareHtml, completenessProblems, excludeDraftJobCaptures, galleryHtml, planOutputs, renderPlan, sha256, storeSetProblems, storeSetsFor, validateOutputs, verifyCaptures } from './pipeline.mjs';
 import { defaultRunDir, gitInfo, projectRootOf, readCaptures, writeCaptures } from './runs.mjs';
 import { cmdJobCiResolve, cmdJobCleanup, cmdJobCreate, cmdJobDispatch, cmdJobFetch, cmdJobIngest, cmdJobList, cmdJobRun, cmdJobStatus, cmdJobValidate } from './job-commands.mjs';
 import { loadProfile } from './profile.mjs';
@@ -140,8 +140,9 @@ async function cmdCompose(profile, args, runDir, extra = {}) {
     captures: readCaptures(runDir), outputs, skipped: plan.skipped, ...extra,
   };
   manifest.rejectedCaptures = verified.rejected;
+  manifest.storeSets = storeSetsFor(profile, outputs, args.locale ? [args.locale] : profile.locales);
   manifest.validation = validateOutputs(runDir, outputs);
-  const incomplete = completenessProblems(mode, manifest.storeTargets, plan.skipped, outputs);
+  const incomplete = [...completenessProblems(mode, manifest.storeTargets, plan.skipped, outputs), ...storeSetProblems(mode, manifest.storeSets)];
   if (incomplete.length) manifest.validation = { ok: false, problems: [...manifest.validation.problems, ...incomplete] };
   fs.writeFileSync(path.join(runDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
   fs.writeFileSync(path.join(runDir, 'index.html'), galleryHtml(manifest));
@@ -188,8 +189,8 @@ async function cmdDerive(profile, args, runDir) {
 function cmdValidate(runDir) {
   const manifest = JSON.parse(fs.readFileSync(path.join(runDir, 'manifest.json'), 'utf8'));
   const base = validateOutputs(runDir, manifest.outputs);
-  const incomplete = completenessProblems(manifest.mode, manifest.storeTargets ?? [], manifest.skipped ?? [], manifest.outputs);
-  const v = { ok: base.ok && incomplete.length === 0, problems: [...base.problems, ...incomplete] };
+  const incomplete = [...completenessProblems(manifest.mode, manifest.storeTargets ?? [], manifest.skipped ?? [], manifest.outputs), ...storeSetProblems(manifest.mode, manifest.storeSets)];
+  const v ={ ok: base.ok && incomplete.length === 0, problems: [...base.problems, ...incomplete] };
   for (const p of v.problems) console.log(`NG ${p}`);
   console.log(v.ok ? 'OK' : `問題 ${v.problems.length}件`);
   return v.ok;

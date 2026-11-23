@@ -6,7 +6,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { parseSkipped, planIosCapture, planToRunScript, planToShellScript } from './drivers/ios-simulator.mjs';
-import { compareHtml, completenessProblems, galleryHtml, jobHtml, pickCapture, planOutputs, validateOutputs, sha256, verifyCaptures } from './pipeline.mjs';
+import { compareHtml, completenessProblems, galleryHtml, jobHtml, pickCapture, planOutputs, storeSetProblems, storeSetsFor, validateOutputs, sha256, verifyCaptures } from './pipeline.mjs';
 import { decodePng, encodeRgbPng, flattenPng, readPngInfo } from './png.mjs';
 import { loadProfile, validateProfile } from './profile.mjs';
 import { canUseSource, checkClaims } from './provenance.mjs';
@@ -445,4 +445,30 @@ test('gallery: 前の run がある時は index.html から compare.html へつ�
   const m = { app: { id: 'x' }, generatedAt: 't', git: { commit: 'c' }, mode: 'draft', validation: { ok: true, problems: [] }, skipped: [], outputs: [], parentRun: '20261123-old' };
   assert.ok(galleryHtml(m).includes('<a href="compare.html">'));
   assert.ok(!galleryHtml({ ...m, parentRun: undefined }).includes('compare.html'));
+});
+
+test('storeSets: 掲載の並びは定義済みの shot を理由つきで1〜10件。出力の部分集合を順に指し、作れなかった shot を残す', () => {
+  const p = JSON.parse(fs.readFileSync(TABIRATE, 'utf8'));
+  assert.deepEqual(validateProfile(p), []);
+  const bad = (mutate) => { const x = structuredClone(p); mutate(x); return validateProfile(x); };
+  assert.ok(bad((x) => { x.storeSets[0].shots[0].shot = 'nowhere'; }).some((e) => e.includes('未定義の shot')));
+  assert.ok(bad((x) => { x.storeSets[0].shots.push(structuredClone(x.storeSets[0].shots[0])); }).some((e) => e.includes('重複')));
+  assert.ok(bad((x) => { delete x.storeSets[0].shots[0].reason; }).some((e) => e.includes('reason.ja')));
+  assert.ok(bad((x) => { x.storeSets[0].shots = []; }).some((e) => e.includes('1〜10件')));
+
+  const profile = { locales: ['ja'], outputs: { store: ['appstore-iphone-6.9'] }, storeSets: [{ id: 'r', title: { ja: '推奨' }, shots: [{ shot: 'b', reason: { ja: '理由B' } }, { shot: 'a', reason: { ja: '理由A' } }, { shot: 'z', reason: { ja: '理由Z' } }] }] };
+  const out = (shot) => ({ file: `store/ja/appstore-iphone-6.9/${shot}.png`, kind: 'store', target: 'appstore-iphone-6.9', locale: 'ja', shot, mode: 'draft', sources: [{ screen: shot, source: 'device', sha256: 's' }], width: 1320, height: 2868, sha256: `h-${shot}`, notes: [] });
+  const outputs = [out('a'), out('b')];
+  const [set] = storeSetsFor(profile, outputs);
+  const [list] = set.lists;
+  assert.deepEqual(list.items.map((i) => [i.order, i.shot, i.file && path.basename(i.file)]), [[1, 'b', 'b.png'], [2, 'a', 'a.png'], [3, 'z', null]]);
+  assert.deepEqual(list.missing, ['z']);
+  assert.equal(list.items[0].sha256, 'h-b');
+  assert.deepEqual(storeSetProblems('draft', [set]), []);
+  assert.equal(storeSetProblems('final', [set]).length, 1);
+
+  const m = { app: { id: 'x' }, generatedAt: 't', git: { commit: 'c' }, mode: 'draft', validation: { ok: true, problems: [] }, skipped: [], outputs, storeSets: [set] };
+  const html = galleryHtml(m);
+  assert.ok(html.indexOf('理由B') < html.indexOf('理由A'), '並びの順に表示する');
+  assert.ok(html.includes('作れなかった：z'));
 });

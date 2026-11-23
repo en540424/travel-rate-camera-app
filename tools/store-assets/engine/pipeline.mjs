@@ -44,6 +44,30 @@ export function completenessProblems(mode, storeTargets, skipped, outputs) {
   return problems;
 }
 
+/**
+ * 掲載の並び（profile.storeSets）を、出力先・言語ごとの出力ファイルの順の一覧にする（純粋関数）。
+ * 画像は複製しない（出力の部分集合を指すだけ）。作れなかった shot は missing に残す。
+ */
+export function storeSetsFor(profile, outputs, locales = profile.locales) {
+  return (profile.storeSets ?? []).map((set) => ({
+    id: set.id,
+    title: set.title ?? null,
+    lists: locales.flatMap((locale) => (profile.outputs?.store ?? []).map((target) => {
+      const items = set.shots.map((e, i) => {
+        const o = outputs.find((x) => x.kind === 'store' && x.target === target && x.locale === locale && x.shot === e.shot);
+        return { order: i + 1, shot: e.shot, file: o?.file ?? null, sha256: o?.sha256 ?? null, reason: e.reason?.[locale] ?? '', sources: o?.sources ?? [] };
+      });
+      return { target, locale, items, missing: items.filter((x) => !x.file).map((x) => x.shot) };
+    })),
+  }));
+}
+
+/** final では、掲載の並びに作れなかった画像があることを問題にする（draft では一覧に出すだけ）。 */
+export function storeSetProblems(mode, storeSets = []) {
+  if (mode !== 'final') return [];
+  return storeSets.flatMap((s) => s.lists.flatMap((l) => l.missing.map((shot) => `final: 掲載の並び ${s.id} の ${l.target} ${l.locale} に ${shot} が無い`)));
+}
+
 /** final では draft のジョブで撮った画像を使わない（全画面を揃える final-candidate のジョブで撮り直す）。 */
 export function excludeDraftJobCaptures(mode, verified) {
   if (mode !== 'final') return verified;
@@ -288,6 +312,16 @@ export function galleryHtml(manifest) {
       <small>${o.width}×${o.height}</small>${(o.notes ?? []).map((n) => `<div class="note">${escapeHtml(n)}</div>`).join('')}</figcaption></figure>`;
   };
   const v = manifest.validation;
+  const byFile = new Map(manifest.outputs.map((o) => [o.file, o]));
+  const setSections = (manifest.storeSets ?? []).flatMap((s) => s.lists.map((l) => {
+    const title = s.title?.[l.locale] ?? s.id;
+    const items = l.items.map((it) => {
+      const o = it.file ? byFile.get(it.file) : null;
+      return `<li>${o ? card(o) : `<p class="ng">${escapeHtml(it.shot)}：作れなかった</p>`}<p class="reason"><b>${it.order}</b>${escapeHtml(it.reason)}</p></li>`;
+    }).join('');
+    return `<h2>${escapeHtml(title)}：${escapeHtml(l.target)} · ${escapeHtml(l.locale)}（${l.items.length - l.missing.length}/${l.items.length}枚）</h2>
+      ${l.missing.length ? `<p class="ng">作れなかった：${escapeHtml(l.missing.join('・'))}</p>` : ''}<ol class="grid set">${items}</ol>`;
+  })).join('');
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>${escapeHtml(manifest.app.id)} 素材一覧</title><style>
   body{font-family:system-ui,"Yu Gothic UI",sans-serif;margin:24px;background:#f6f7f7;color:#16211f}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
@@ -296,6 +330,7 @@ export function galleryHtml(manifest) {
   b{display:inline-block;margin:0 4px 4px 0;padding:1px 6px;border-radius:8px;font-weight:600;background:#eee}
   b.final{background:#d7f0e9} b.draft{background:#fde7c4} b.web{background:#f9d0d0} b.native{background:#d7e6fb}
   .note{color:#8a5a00;font-size:11px;margin-top:4px} .ng{color:#b00020} .ok{color:#0a766e} pre{white-space:pre-wrap;background:#fff;padding:8px;border-radius:8px}
+  ol.set{list-style:none;padding:0} .reason{font-size:12px;margin:6px 0 0} .reason b{background:#0a766e;color:#fff}
   </style></head><body>
   <h1>${escapeHtml(manifest.app.id)} 素材一覧</h1>
   <p>生成：${escapeHtml(manifest.generatedAt)} ／ commit ${escapeHtml(manifest.git.commit)}${manifest.git.dirty ? '（未commitの変更あり）' : ''} ／ mode ${escapeHtml(manifest.mode)}</p>
@@ -303,7 +338,8 @@ export function galleryHtml(manifest) {
   <p class="${v.ok ? 'ok' : 'ng'}">検証：${v.ok ? '問題なし' : `問題 ${v.problems.length}件`}</p>
   ${v.problems.length ? `<pre>${escapeHtml(v.problems.join('\n'))}</pre>` : ''}
   ${manifest.skipped.length ? `<h2>作らなかったもの（${manifest.skipped.length}）</h2><pre>${escapeHtml(manifest.skipped.map((s) => `${s.target} ${s.locale} ${s.shot ?? s.ad}: ${s.reason}`).join('\n'))}</pre>` : ''}
-  <h2>ストア用</h2><div class="grid">${manifest.outputs.filter((o) => o.kind === 'store').map(card).join('')}</div>
+  ${setSections}
+  <h2>ストア用（全候補）</h2><div class="grid">${manifest.outputs.filter((o) => o.kind === 'store').map(card).join('')}</div>
   <h2>広告・SNS・LP用</h2><div class="grid">${manifest.outputs.filter((o) => o.kind === 'ad').map(card).join('')}</div>
   </body></html>`;
 }

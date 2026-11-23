@@ -58,6 +58,7 @@
 | `shots[].tone` | `light`／`deep`／`warm` | ストア用の背景の色調（続けて並べた時のメリハリ） |
 | `shots[].caption.<言語>.label` | 文字 | 見出しの上の小さなラベル |
 | `shots[].callout` | `{ rect:[x,y,w,h]（撮影に対する0〜1の比）, device:'測った端末' }` | 実画面の一部を端末の上に重ねて大きく見せる。**撮影の等倍を超えて拡大しない**。`device` と違う端末の撮影には重ねない（位置がずれるため。一覧に注記）。表示の行数が変わる画面（例：6週の月のカレンダー）は採用前に目視 |
+| `storeSets[]` | `{ id, title:{<言語>}, shots:[{ shot, reason:{<言語>} }] }`（1〜10件） | ストア用の出力のうち、提出の候補として並べる順と理由。画像は複製せず出力の部分集合を指す。`index.html` の先頭に順番・理由つきで並び、`manifest.storeSets` に出力先・言語ごとのファイルと sha256 が残る。作れなかった shot は一覧に出し、`final` では問題にする |
 | `ads[].layout.<出力先>` | `split`（LP）／`banner`（横長）／`square`（SNS）／`story`（縦長） | 用途ごとの配置。省略時は出力先の形から決める |
 | `ads[].tone.<出力先 or default>` | `light`／`deep`／`warm` | 広告の色調 |
 | `ads[].shots` | 優先順の候補 | 撮影のある候補を先頭から使う（`split`・`story` は2台、他は1台・`maxPhones` で1〜2）。1台も無ければ作らない。使えなかった候補は manifest の `notes` と一覧に残る（文言と画面の対応は人が確かめる） |

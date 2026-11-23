@@ -125,6 +125,22 @@ export function validateProfile(p) {
   }
 
   for (const t of p.outputs?.store ?? []) need(TARGETS[t]?.kind === 'store', `outputs.store: ${t} はストアの出力先でない`);
+
+  // 掲載の並び（ストア用の出力のうち、提出の候補として並べる順と理由）。画像は増やさず、出力の部分集合を指す
+  const setIds = new Set();
+  for (const set of p.storeSets ?? []) {
+    need(typeof set?.id === 'string' && /^[a-z0-9-]+$/.test(set.id) && !setIds.has(set.id), `storeSets: id は英小文字・数字・ハイフン（重複なし）：${set?.id}`);
+    setIds.add(set?.id);
+    const entries = Array.isArray(set?.shots) ? set.shots : [];
+    need(entries.length >= 1 && entries.length <= 10, `storeSet ${set?.id}: shots は1〜10件（Apple の1サイズの上限）`);
+    const seen = new Set();
+    for (const e of entries) {
+      need(shotIds.has(e?.shot), `storeSet ${set?.id}: 未定義の shot ${e?.shot}`);
+      need(!seen.has(e?.shot), `storeSet ${set?.id}: shot ${e?.shot} が重複`);
+      seen.add(e?.shot);
+      for (const loc of p.locales) need(typeof e?.reason?.[loc] === 'string' && e.reason[loc].length > 0, `storeSet ${set?.id}: ${e?.shot} の reason.${loc}（並びの理由）が無い`);
+    }
+  }
   return errors;
 }
 
