@@ -65,6 +65,9 @@ jobs:
 
       - run: npm ci --no-audit --no-fund
 
+      - name: Expo の事前コンパイル版どうしの記号がそろっていることを確かめる（そろっていないとアプリは起動の瞬間に終了する。build の前に止める）
+        run: node tools/native-check/expo-prebuilt-abi.mjs
+
       - name: ネイティブのプロジェクトを作る
         run: npx expo prebuild --platform ios --no-install
 

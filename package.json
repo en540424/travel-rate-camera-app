@@ -18,7 +18,7 @@
     "expo-image": "~56.0.9",
     "expo-image-picker": "~56.0.16",
     "expo-linking": "~56.0.12",
-    "expo-location": "~56.0.26",
+    "expo-location": "56.0.14",
     "expo-router": "~56.2.7",
     "expo-sharing": "~56.0.25",
     "expo-speech": "~56.0.3",
@@ -62,7 +62,9 @@
     "test:store-assets": "node --test \"tools/store-assets/**/*.test.mjs\"",
     "store-assets": "node tools/store-assets/engine/cli.mjs",
     "test:revenue-sim": "node --test \"tools/revenue-sim/**/*.test.mjs\"",
-    "revenue-sim": "node tools/revenue-sim/engine/cli.mjs"
+    "revenue-sim": "node tools/revenue-sim/engine/cli.mjs",
+    "check:native-abi": "node tools/native-check/expo-prebuilt-abi.mjs",
+    "test:native-check": "node --test \"tools/native-check/**/*.test.mjs\""
   },
   "private": true
 }
