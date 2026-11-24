@@ -4,6 +4,11 @@
 
 > 本節が現在地の正。以下の「現在の開発フェーズ」以降は2026-07-01〜08時点の履歴で、完了済み項目を未完へ戻さない。
 
+> [!important] 2026-11-25 **Build 6（1.0.0 (6)）＝ライブ翻訳の修正だけを Build 5 に足したビルド／EAS FINISHED・ASC 未アップロード（submit は Human）・実機未確認**
+> - ビルド元：branch `integrate/build6-live-text-fix` `af4fba8`（worktree `trc-build6-live-text`・base `d97977e`＝Build 5）へ `17a7c5b`・`7f7b152` を cherry-pick。コード7ファイルは `7f7b152` と同一、package.json・lock・app.json・eas.json・DB は `d97977e` と同一。**Tier基盤・Pro+中核・ネイティブ依存の追加（`feat/proplus-core-and-store-assets` の残り49 commit）は載せていない**
+> - EAS `9f7b6201-ea8a-40d5-9934-a9bc077ea3d0`・production・STORE・fingerprint `c6dd6345…`（Build 4・5 と同一＝ネイティブ同一）。npm test 868（新規29）・tsc 0・lint 20。EAS Free iOS 2/15（今期）
+> - 次（Human）：`npx eas-cli@27.11.0 submit -p ios --id 9f7b6201-ea8a-40d5-9934-a9bc077ea3d0`（対話式・ascAppId 6788988252）→ 内部テスト「旅レートカメラ 内部テスト」へ追加 → iPhone で上書き更新（削除しない）→ 実機確認。手順は Vault ログ `2026-11-25_旅レートカメラ_ライブ翻訳修正版Build6とTestFlight配布準備_開発ログ` §7
+
 > [!important] 2026-11-25 **ライブ翻訳の修正（上下の認識の偏り・商品と価格の対応・メニューの訳・表示）／実装・テスト済み・未Build・実機未確認**（同じbranch `feat/proplus-core-and-store-assets`＝ストア素材のbranchにアプリの修正が入っている。main へ入れる時は分けて扱う）
 > - 上下の偏りの原因（観察と一致する仕組みをコード上で特定・実機では未確認）：OCRは全体を読めている。訳を重ねる行を「枠全体の中央に近い8件」で選んでいたため、下タブ・価格の帯に隠れた所を中央扱いにしていた＋追跡の上限40行でメニューの一部の行が毎フレーム切り捨て。→ 見えている範囲の中央から選ぶ・候補14件・上限80行
 > - 商品と価格：価格の行自体に文字があればそれが商品名（従来どおり）、無ければ同じ行の左端＝商品名・間＝説明に分ける／傾きを価格の列から推定／同額の行は位置で対応／カメラの動きの分だけ読めなかった行をずらす／確かでない時は名前なし（`src/lib/live-text-core.ts`・メインカメラと共有）
