@@ -8,6 +8,11 @@
 // - 写っている価格には、旅行の通貨・レート（保存と同じ`manual_rate`）での円換算を添える（2026-10-24）。
 //   位置が揺れる価格の上へ直接重ねず、枠の下部の帯（中央に近い3件）と枠の下の一覧に出す。
 //   価格は追跡中の行から毎回作り直すので、カメラを動かして見えなくなった価格は自然に消える
+// - 2026-11-25（実機の撮影で見つかった問題の修正）:
+//   - 訳を重ねる行は、枠のうち「下タブの下・下部の帯に隠れていない範囲」の中央に近い順に選ぶ
+//     （枠全体の中央で選ぶと、メニューの上の方の行が訳されなかった）
+//   - 価格には商品名と説明を分けて添える（3列のメニューで説明が商品名になっていた）。確かでない時は名前を付けない
+//   - 訳の札は1行・元の文字の高さに合わせ、同じ行の価格を隠さない。訳が届くまでは出さない
 // - ピンチで拡大・縮小、ダブルタップで2×⇄元の倍率（2026-10-24）。映像を引き伸ばさず、カメラそのものの倍率を
 //   変える（認識する映像・撮影する写真も同じように拡大されるので、訳を重ねる位置の計算はそのまま使える）。
 //   倍率を変えた直後は、変える前の映像で読んだ結果を誤った位置に出さないよう、追跡中の文字をいったん捨てて
@@ -18,8 +23,17 @@
 // （メインカメラとsessionを同時に動かさないため。呼び出し側の責務）。
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Linking, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import {
+  ActivityIndicator,
+  Linking,
+  Pressable,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+  type LayoutChangeEvent,
+} from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { LiveTextScanner, type LiveTextScannerStatus } from '@/components/live-text/LiveTextScanner';
@@ -41,8 +55,10 @@ import {
   getVisionLanguagesForSource,
   mapBoxToView,
   resolveSourceLanguageForText,
+  hiddenFrameBottom,
   selectOverlayLines,
-  visibleRegionInImage,
+  stripPriceTokens,
+  unobstructedRegionInImage,
   type LiveTextFrame,
   type Size,
 } from '@/lib/live-text-core';
@@ -52,8 +68,18 @@ import { formatRate } from '@/utils/format';
 
 /** 認識の間隔(ms) */
 const LIVE_TRANSLATION_INTERVAL_MS = 800;
-/** 枠の中に重ねる最大件数（読みにくくならないように） */
-const MAX_OVERLAY_LABELS = 8;
+/**
+ * 訳を重ねる候補の最大件数。実際に出る数は、札どうしが重ならない分だけ（下の配置で間引く）。
+ * 8件では、メニューの「商品名＋説明」の2列が4行分しか入らず、残りの行は一度も訳されなかった（2026-11-25）
+ */
+const MAX_OVERLAY_LABELS = 14;
+/**
+ * 下タブの高さ（iOSの標準49pt。ホームインジケーターの分は別に足す）。
+ * カメラ枠の下端がタブの下に入っている分を、利用者に見えていない範囲として扱うために使う
+ */
+const TAB_BAR_HEIGHT = 49;
+/** 枠の下部の帯（価格・案内）の、枠の下端からの間隔 */
+const BOTTOM_AREA_INSET = 10;
 /** 1件の最大文字数（長い文章は写真翻訳へ） */
 const MAX_LIVE_TEXT_LENGTH = 80;
 /** 円換算を出す価格の最大件数（枠の下の一覧） */
@@ -77,9 +103,11 @@ export type LiveTranslationCameraProps = {
 
 type PriceRow = {
   id: string;
-  /** 商品名（訳せていれば訳）。商品名が分からない価格はnull */
+  /** 商品名（訳せていれば訳）。商品名が分からない・確かでない価格はnull */
   name: string | null;
-  /** 訳した時の原文 */
+  /** 説明（訳せていれば訳）。無ければnull */
+  description: string | null;
+  /** 訳した時の商品名の原文 */
   original: string | null;
   foreign: string;
   /** 円換算。レート未設定ならnull */
@@ -93,8 +121,14 @@ type PlacedLabel = {
   maxWidth: number;
   fontSize: number;
   text: string;
-  translated: boolean;
 };
+
+/** 訳の札の幅の見積もり（日本語は1文字≒文字の大きさ、英数字はその約0.6倍）。重なり判定にだけ使う */
+function estimateLabelWidth(text: string, fontSize: number): number {
+  let width = 0;
+  for (const char of text) width += /[\u0000-ɏ]/.test(char) ? fontSize * 0.6 : fontSize;
+  return width + 10;
+}
 
 export function LiveTranslationCamera({
   sourceLanguage,
@@ -109,6 +143,23 @@ export function LiveTranslationCamera({
   const [captureFailed, setCaptureFailed] = useState(false);
   const [viewSize, setViewSize] = useState<Size | null>(null);
   const [scannerStatus, setScannerStatus] = useState<LiveTextScannerStatus>('off');
+  // 枠のうち利用者に見えていない下の部分(pt)。画面の高さによっては、開いた時に枠の下端が下タブの下に入る
+  // （iPhone 16 Proの実機で約1割）。見えていない所の文字を中央扱いにしない・帯をタブの上に出すために使う
+  const frameRef = useRef<View>(null);
+  const { height: windowHeight } = useWindowDimensions();
+  const { bottom: safeBottom } = useSafeAreaInsets();
+  const [hiddenBottom, setHiddenBottom] = useState(0);
+  // 枠の下部の帯（価格・案内）の高さ。帯に隠れた所の文字にも訳を重ねない
+  const [bottomAreaHeight, setBottomAreaHeight] = useState(0);
+
+  // スクロールでも変わるので、レイアウト時と認識のたび（約0.8秒ごと）に測り直す。ずれが小さければ更新しない
+  const measureHiddenBottom = useCallback(() => {
+    frameRef.current?.measureInWindow((_x, y, _width, height) => {
+      if (!(height > 0)) return;
+      const hidden = hiddenFrameBottom({ top: y, height }, windowHeight, TAB_BAR_HEIGHT + safeBottom);
+      setHiddenBottom((prev) => (Math.abs(prev - hidden) < 2 ? prev : hidden));
+    });
+  }, [windowHeight, safeBottom]);
   // expo-cameraのzoom（0〜1）。このコンポーネントは入力方法の切替・画面離脱・撮影でアンマウントされるので、
   // 次に開いた時は必ず元の倍率から始まる
   const [zoom, setZoom] = useState(0);
@@ -139,28 +190,24 @@ export function LiveTranslationCamera({
   }, [zoomChangeCount]);
   const handleFrame = useCallback(
     (frame: LiveTextFrame) => {
+      measureHiddenBottom();
       if (dropNextFrameRef.current) {
         dropNextFrameRef.current = false;
         return;
       }
       onFrame(frame);
     },
-    [onFrame],
+    [onFrame, measureHiddenBottom],
   );
 
-  const overlayEntries = useMemo(() => {
-    if (frameSize == null || viewSize == null) return [];
-    return selectOverlayLines(tracked, {
-      maxEntries: MAX_OVERLAY_LABELS,
-      maxTextLength: MAX_LIVE_TEXT_LENGTH,
-      minHits: 2,
-      visibleRegion: visibleRegionInImage(frameSize, viewSize),
-    });
-  }, [tracked, frameSize, viewSize]);
-
-  // 価格（メインカメラと同じ「商品名＋価格」の組み立て）。日付・時刻・量・他の通貨の金額は除く
+  // 価格（メインカメラと同じ「商品名・説明＋価格」の組み立て）。日付・時刻・量・他の通貨の金額は除く。
+  // 価格は帯・一覧に出すので、帯の下の価格も選ぶ。下タブの下（利用者に見えない所）だけは除き、見えている範囲の中央に近い順
+  const onScreenRegion = useMemo(
+    () => (frameSize == null || viewSize == null ? null : unobstructedRegionInImage(frameSize, viewSize, hiddenBottom)),
+    [frameSize, viewSize, hiddenBottom],
+  );
   const priceEntries = useMemo(() => {
-    if (priceConversion == null || frameSize == null || viewSize == null) return [];
+    if (priceConversion == null || frameSize == null || onScreenRegion == null) return [];
     const { currency } = priceConversion;
     return buildTranslationPriceEntries(
       tracked,
@@ -169,12 +216,33 @@ export function LiveTranslationCamera({
         maxEntries: MAX_PRICE_ENTRIES,
         maxTextLength: MAX_LIVE_TEXT_LENGTH,
         minHits: 2,
-        visibleRegion: visibleRegionInImage(frameSize, viewSize),
+        visibleRegion: onScreenRegion,
+        imageSize: frameSize,
       },
     );
-  }, [tracked, frameSize, viewSize, priceConversion]);
+  }, [tracked, frameSize, onScreenRegion, priceConversion]);
 
-  // 訳を重ねる行を先に、価格の商品名（価格を除いた文字）を後ろに足す（同じ文字は1回だけ）
+  // 訳を重ねる範囲：枠のうち、下タブの下・下部の帯に隠れていない所。その中央に近い行から選ぶ。
+  // 枠全体の中央で選ぶと、見えている範囲の下寄りの行ばかりになり、メニューの上の方の行が訳されなかった（2026-11-25）
+  const showStrip = !isCapturing && priceEntries.length > 0;
+  const occludedBottom = hiddenBottom + (showStrip ? BOTTOM_AREA_INSET + bottomAreaHeight : 0);
+  // 隠れた分が大きすぎる時（帯が高い・スクロール途中）も、枠の上3割は必ず使う
+  const attentionRegion = useMemo(
+    () => (frameSize == null || viewSize == null ? null : unobstructedRegionInImage(frameSize, viewSize, occludedBottom)),
+    [frameSize, viewSize, occludedBottom],
+  );
+
+  const overlayEntries = useMemo(() => {
+    if (attentionRegion == null) return [];
+    return selectOverlayLines(tracked, {
+      maxEntries: MAX_OVERLAY_LABELS,
+      maxTextLength: MAX_LIVE_TEXT_LENGTH,
+      minHits: 2,
+      visibleRegion: attentionRegion,
+    });
+  }, [tracked, attentionRegion]);
+
+  // 訳を重ねる行を先に、価格の商品名・説明を後ろに足す（同じ文字は1回だけ）
   const translationItems = useMemo(() => {
     const items = overlayEntries.map((entry) => ({
       text: entry.text,
@@ -182,12 +250,11 @@ export function LiveTranslationCamera({
     }));
     const seen = new Set(items.map((item) => item.text));
     for (const entry of priceEntries) {
-      if (entry.label == null || seen.has(entry.label)) continue;
-      seen.add(entry.label);
-      items.push({
-        text: entry.label,
-        sourceLanguage: resolveSourceLanguageForText(entry.label, sourceLanguage, targetLanguage),
-      });
+      for (const text of [entry.label, entry.description]) {
+        if (text == null || seen.has(text)) continue;
+        seen.add(text);
+        items.push({ text, sourceLanguage: resolveSourceLanguageForText(text, sourceLanguage, targetLanguage) });
+      }
     }
     return items;
   }, [overlayEntries, priceEntries, sourceLanguage, targetLanguage]);
@@ -203,20 +270,25 @@ export function LiveTranslationCamera({
     return { entry, translated: translated != null && translated !== '' ? translated : null };
   });
 
+  const translate = (text: string | null): string | null => {
+    if (text == null) return null;
+    const translated = lookup(resolveSourceLanguageForText(text, sourceLanguage, targetLanguage), text);
+    return translated != null && translated !== '' ? translated : null;
+  };
+
   const priceRows: PriceRow[] =
     priceConversion == null
       ? []
       : priceEntries.flatMap((entry) => {
-          const translated =
-            entry.label != null
-              ? lookup(resolveSourceLanguageForText(entry.label, sourceLanguage, targetLanguage), entry.label)
-              : undefined;
-          const hasTranslation = translated != null && translated !== '' && translated !== entry.label;
+          const translatedName = translate(entry.label);
+          const hasTranslation = translatedName != null && translatedName !== entry.label;
+          const description = entry.description != null ? (translate(entry.description) ?? entry.description) : null;
           return entry.amounts.map((amount, index) => {
             const price = formatTranslationPrice(amount, priceConversion);
             return {
               id: `${entry.id}#${index}`,
-              name: hasTranslation ? translated : entry.label,
+              name: hasTranslation ? translatedName : entry.label,
+              description,
               original: hasTranslation ? entry.label : null,
               foreign: price.foreign,
               jpy: price.jpy,
@@ -224,33 +296,43 @@ export function LiveTranslationCamera({
           });
         });
 
-  // 元の文字の位置へ訳を重ねる。重なりすぎる札は省く（下の一覧には全件出る）
+  // 元の文字の位置へ訳を重ねる（1行・元の文字の高さに合わせる）。
+  // - 中央（見えている範囲の）に近い行から置き、先に置いた札と重なる札は省く（下の一覧には全件出る）
+  // - 訳が届くまでは出さない（原文の上に同じ原文を重ねて隠さない）
+  // - 札の右端は同じ行の価格の手前まで（価格を隠さない）。入りきらない訳は折り返さず文字を縮める
   const labels: PlacedLabel[] = [];
   if (frameSize != null && viewSize != null) {
+    const priceRects = tracked
+      .filter((line) => line.hits >= 2 && /\d/.test(line.text) && stripPriceTokens(line.text) === '')
+      .map((line) => mapBoxToView(line.box, frameSize, viewSize));
     const placed: { left: number; top: number; right: number; bottom: number }[] = [];
-    const ordered = [...rows].sort((a, b) => a.entry.box.y - b.entry.box.y);
-    for (const { entry, translated } of ordered) {
+    for (const { entry, translated } of rows) {
+      if (translated == null) continue;
       const rect = mapBoxToView(entry.box, frameSize, viewSize);
-      const fontSize = Math.min(18, Math.max(11, rect.height * 0.62));
-      const left = Math.min(Math.max(rect.left, 4), Math.max(4, viewSize.width - 64));
-      const top = Math.min(Math.max(rect.top, 4), Math.max(4, viewSize.height - 28));
-      const maxWidth = Math.max(64, Math.min(viewSize.width - left - 4, Math.max(rect.width * 1.6, 120)));
-      const estimatedHeight = fontSize * 1.35 * 2 + 6;
-      const box = { left, top, right: left + Math.min(maxWidth, rect.width + 24), bottom: top + estimatedHeight * 0.6 };
+      const fontSize = Math.min(16, Math.max(10, rect.height * 0.85));
+      const labelHeight = fontSize * 1.3 + 2;
+      const left = Math.min(Math.max(rect.left - 2, 4), Math.max(4, viewSize.width - 64));
+      const top = Math.min(
+        Math.max(rect.top + rect.height / 2 - labelHeight / 2, 4),
+        Math.max(4, viewSize.height - occludedBottom - labelHeight),
+      );
+      const centerY = rect.top + rect.height / 2;
+      const rightLimit = priceRects
+        .filter((price) => price.left >= rect.left + rect.width - 2 && centerY >= price.top && centerY <= price.top + price.height)
+        .reduce((limit, price) => Math.min(limit, price.left - 4), viewSize.width - 4);
+      const maxWidth = Math.max(64, rightLimit - left);
+      const box = {
+        left,
+        top,
+        right: left + Math.min(maxWidth, estimateLabelWidth(translated, fontSize)),
+        bottom: top + labelHeight - 2,
+      };
       const overlaps = placed.some(
         (other) => box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top,
       );
       if (overlaps) continue;
       placed.push(box);
-      labels.push({
-        id: entry.id,
-        left,
-        top,
-        maxWidth,
-        fontSize,
-        text: translated ?? entry.text,
-        translated: translated != null,
-      });
+      labels.push({ id: entry.id, left, top, maxWidth, fontSize, text: translated });
     }
   }
 
@@ -286,6 +368,12 @@ export function LiveTranslationCamera({
   function handleLayout(event: LayoutChangeEvent) {
     const { width, height } = event.nativeEvent.layout;
     setViewSize((prev) => (prev && prev.width === width && prev.height === height ? prev : { width, height }));
+    measureHiddenBottom();
+  }
+
+  function handleBottomAreaLayout(event: LayoutChangeEvent) {
+    const { height } = event.nativeEvent.layout;
+    setBottomAreaHeight((prev) => (Math.abs(prev - height) < 1 ? prev : height));
   }
 
   async function handleCapture() {
@@ -346,7 +434,7 @@ export function LiveTranslationCamera({
     <View style={styles.root}>
       {/* ピンチ・ダブルタップは枠の中だけ。1本指のスクロールはページのまま */}
       <GestureDetector gesture={zoomGesture}>
-      <View style={styles.frame} onLayout={handleLayout}>
+      <View ref={frameRef} style={styles.frame} onLayout={handleLayout}>
         <CameraView
           ref={cameraRef}
           style={StyleSheet.absoluteFill}
@@ -369,12 +457,10 @@ export function LiveTranslationCamera({
               pointerEvents="none"
               style={[styles.label, { left: label.left, top: label.top, maxWidth: label.maxWidth }]}>
               <ThemedText
-                style={[
-                  styles.labelText,
-                  { fontSize: label.fontSize, lineHeight: label.fontSize * 1.3 },
-                  !label.translated && styles.labelTextPending,
-                ]}
-                numberOfLines={2}>
+                style={[styles.labelText, { fontSize: label.fontSize, lineHeight: label.fontSize * 1.3 }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.7}>
                 {label.text}
               </ThemedText>
             </View>
@@ -391,7 +477,10 @@ export function LiveTranslationCamera({
         )}
 
         {!isCapturing && (notice != null || priceRows.length > 0) && (
-          <View style={styles.bottomArea} pointerEvents="box-none">
+          <View
+            style={[styles.bottomArea, { bottom: BOTTOM_AREA_INSET + hiddenBottom }]}
+            pointerEvents="box-none"
+            onLayout={handleBottomAreaLayout}>
             {notice != null && (
               <Pressable
                 style={({ pressed }) => [styles.notice, pressed && notice.status !== 'unsupported' && styles.pressed]}
@@ -410,22 +499,21 @@ export function LiveTranslationCamera({
               </Pressable>
             )}
 
-            {/* 円換算の帯（中央に近い価格から）。位置の揺れる価格の上には重ねない */}
+            {/* 円換算の帯（中央に近い価格から）。位置の揺れる価格の上には重ねない。
+                1品1行（商品名・現地の価格・円）にして、映像を隠す高さを抑える。説明は下の一覧に出す */}
             {priceRows.length > 0 && (
               <View style={styles.priceStrip} pointerEvents="none">
                 {priceRows.slice(0, MAX_FRAME_PRICE_ROWS).map((row, index) => (
                   <View key={row.id} style={[styles.priceStripRow, index > 0 && styles.priceStripDivider]}>
-                    <ThemedText style={styles.priceStripName} numberOfLines={1}>
+                    <ThemedText style={[styles.priceStripName, row.name == null && styles.priceStripNameUnknown]} numberOfLines={1}>
                       {row.name ?? '価格'}
                     </ThemedText>
-                    <View style={styles.priceStripAmount}>
-                      <ThemedText style={styles.priceStripForeign} numberOfLines={1}>
-                        {row.foreign}
-                      </ThemedText>
-                      <ThemedText style={row.jpy != null ? styles.priceStripJpy : styles.priceStripNoRate} numberOfLines={1}>
-                        {row.jpy ?? 'レート未設定'}
-                      </ThemedText>
-                    </View>
+                    <ThemedText style={styles.priceStripForeign} numberOfLines={1}>
+                      {row.foreign}
+                    </ThemedText>
+                    <ThemedText style={row.jpy != null ? styles.priceStripJpy : styles.priceStripNoRate} numberOfLines={1}>
+                      {row.jpy ?? 'レート未設定'}
+                    </ThemedText>
                   </View>
                 ))}
               </View>
@@ -466,6 +554,11 @@ export function LiveTranslationCamera({
                 <ThemedText style={styles.listTranslated} numberOfLines={2}>
                   {row.name ?? '価格'}
                 </ThemedText>
+                {row.description != null && (
+                  <ThemedText style={styles.listDescription} numberOfLines={2}>
+                    {row.description}
+                  </ThemedText>
+                )}
                 {row.original != null && (
                   <ThemedText style={styles.listOriginal} numberOfLines={1}>
                     {row.original}
@@ -533,13 +626,12 @@ const styles = StyleSheet.create({
   label: {
     position: 'absolute',
     backgroundColor: 'rgba(255,255,255,0.92)',
-    borderRadius: 6,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
+    borderRadius: 5,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
     ...shadow.card,
   },
   labelText: { color: color.text, fontWeight: '700' },
-  labelTextPending: { color: color.muted, fontWeight: '500' },
 
   statusChip: {
     position: 'absolute',
@@ -563,11 +655,11 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
 
+  // bottomは描画時に「枠の下端が隠れている分」を足して決める（帯を下タブの下に入れない）
   bottomArea: {
     position: 'absolute',
     left: 10,
     right: 10,
-    bottom: 10,
     gap: 6,
   },
   notice: {
@@ -583,17 +675,17 @@ const styles = StyleSheet.create({
 
   priceStrip: {
     backgroundColor: 'rgba(17,32,30,0.80)',
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 3,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 1,
   },
-  priceStripRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
+  priceStripRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5 },
   priceStripDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.18)' },
-  priceStripName: { flex: 1, minWidth: 0, color: '#fff', fontSize: 14, fontWeight: '700' },
-  priceStripAmount: { alignItems: 'flex-end', flexShrink: 0, maxWidth: '55%' },
-  priceStripForeign: { color: color.darkSub, fontSize: 11.5, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  priceStripJpy: { color: color.primaryAccent, fontSize: 16, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  priceStripNoRate: { color: color.darkMuted, fontSize: 11.5, fontWeight: '600' },
+  priceStripName: { flex: 1, minWidth: 0, color: '#fff', fontSize: 13.5, fontWeight: '700' },
+  priceStripNameUnknown: { color: color.darkSub, fontWeight: '600' },
+  priceStripForeign: { flexShrink: 0, color: color.darkSub, fontSize: 11.5, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  priceStripJpy: { flexShrink: 0, color: color.primaryAccent, fontSize: 15, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  priceStripNoRate: { flexShrink: 0, color: color.darkMuted, fontSize: 11.5, fontWeight: '600' },
 
   capturingOverlay: {
     ...StyleSheet.absoluteFill,
@@ -628,5 +720,6 @@ const styles = StyleSheet.create({
   listRow: { paddingVertical: 8, gap: 2 },
   listRowDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: color.line2 },
   listTranslated: { fontSize: 15, fontWeight: '700', color: color.text },
+  listDescription: { fontSize: 13, fontWeight: '500', color: color.text },
   listOriginal: { fontSize: 12, fontWeight: '500', color: color.muted },
 });

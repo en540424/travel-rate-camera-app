@@ -19,6 +19,7 @@
  * 呼び出し側（リアルタイム）は**同時に1要求まで**に絞ること（`use-live-text-translation.ts`）。
  */
 import { LruCache } from './live-text-core';
+import { polishMenuTranslation } from './menu-translation-core';
 import {
   buildTranslationCacheKey,
   normalizeTranslationError,
@@ -118,11 +119,16 @@ export async function translateSceneTexts({
     const response = await native.translateBatch(toRequest, sourceLanguage, targetLanguage);
     const resolved = resolveTranslationsByOriginalText(toRequest, response.results);
     for (const [originalText, translation] of resolved) {
-      sceneCache.set(
-        buildTranslationCacheKey(sourceLanguage, targetLanguage, originalText),
+      // メニューの決まった言い回しの直訳を直す（英語→日本語の短い行だけ）。cacheへ入れる前に1回だけ行い、
+      // 表示中に訳が差し替わって点滅しないようにする
+      const translatedText = polishMenuTranslation(
+        originalText,
         translation.translatedText,
+        sourceLanguage,
+        targetLanguage,
       );
-      translations.set(originalText, translation.translatedText);
+      sceneCache.set(buildTranslationCacheKey(sourceLanguage, targetLanguage, originalText), translatedText);
+      translations.set(originalText, translatedText);
     }
     return { status: 'done', translations };
   } catch (error) {
