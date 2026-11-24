@@ -4,6 +4,16 @@
 
 > 本節が現在地の正。以下の「現在の開発フェーズ」以降は2026-07-01〜08時点の履歴で、完了済み項目を未完へ戻さない。
 
+> [!important] 2026-11-24（3件目）**第9回 ストア素材（下書き）**：写真翻訳の補足・ハワイ・USD のテストデータ・ステータスバー統一の比較・流れの広告（同じbranch・commit `59d6fe3`→`cacb42b`→`5ca3d88`）
+> - 出力：`tools/store-assets/out/tabirate/20261124-phase9-5ca3d88-device/`（**28枚**・validate OK・draft）＝ストア 10×2＋広告8。第8回の26枚との差は**4枚だけ**（写真翻訳 6.9″/6.1″＝補足の変更、広告 `flow-ocr` の LP・縦長＝新規）、他24枚は sha256 同一。**シミュレーターの撮影は第8回と同じパリ・EUR**。`compare-methods.html`＝第8回／第9回 現状／ステータスバー統一の3方式の比較、`sources.json`/`sources.html`＝出力→撮影→原本・ジョブ
+> - 写真翻訳の補足：**「写真内の文字を読み取り、翻訳結果を一覧で確認。」＋（iOS 18以降・端末内の翻訳機能を利用）**（見出し「写真の文字を、まとめて翻訳。」は維持・重複を解消。実機の画面は「写真の翻訳 8件」の一覧）
+> - **ステータスバー統一版**：`out/tabirate/20261124-phase9-5ca3d88-statusbar/`（28枚）。`compose --crop-top 0.06` で全ての撮影の上端6%を表示の枠で隠す（撮影の画素・sha256 は不変・callout は位置を補正）。両サイズ×10枚を目視：時刻・電池・Dynamic Island が消え、見出し（ハワイ旅行・modal のレート設定・戻る矢印・写真の上端）は欠けない
+> - **流れの広告 `flow-ocr`**（LP 1920×1080・縦長 1080×1920）：「値札を撮影 → 商品価格を読み取り → 日本円で確認」を**実機のカメラOCRの撮影（01_円換算）の一部だけ**で並べる（同じ縮尺・等倍以下・描き足しなし）。**被写体の元画像3枚は C2PA で ChatGPT（gpt-image）の AI 生成と記録**されているため使わない。App Store 用には使わない
+> - **ハワイ・USD**：テストデータ `FIXTURE_HAWAII`（`build-fixture-db-hawaii.mjs`）と設定 `profile-hawaii.json`（`$extends` で capture だけ置き換え）を追加。パリ・EUR は既定のまま。品目は価格表の5品（実機に日本語名が出たもの）・予算 ¥50,000・1 USD = ¥163・円はアプリの `convert`。期待値（残り予算 ¥48,255・月の購入済み ¥1,745）はテストでアプリの計算と照合
+> - **ハワイの撮影の1回目は失敗・取り込まない**（ジョブ `tabirate-20261124-015603-59d6fe3`・run 45308718697）：履歴・旅行一覧が白い画面で同じ画像→job-run failed。calendar.png の中身は履歴画面（起動直後のディープリンクの遅れと推定）、換算は 29.9 入力後の ¥4,874 の確認が通らず飛ばし（原因未確認）。**データの表示自体は正しかった**（¥48,255・¥1,745・¥6,047・11/19〜23 の5件・レート設定 1 USD = ¥163）。専用branchは削除済み
+> - **再実行のジョブ（Human GO 待ち・created・dry-run 済み）**：`tabirate-20261124-025002-5ca3d88`（履歴の待ち12秒・旅行一覧6秒・換算は $18.00 → ¥2,934・日付は基準日で 11/19〜23）。GO の後：`npm run store-assets -- job-dispatch --job tools/store-assets/out/tabirate/jobs/tabirate-20261124-025002-5ca3d88 --execute` → `job-fetch --execute` → **新しい run** へ `job-ingest --run <新run>`（`--profile` は profile-hawaii.json）→ 実機3枚を `import --source device` → compose。**日本時間 12/1 9:00 より前に**（月をまたぐと日付が12月になる）
+> - ライブ翻訳の準備（読み取りのみ）：EAS の iOS 最新は Build 4（`70194c1`・名称変更 `74bada7` を含まない）。`d97977e`（fix/calendar-back-and-yen-total）は含む・未build、`a9dca8e`（integrate/first-release-candidate）は含まない。EAS は Free プラン・今期（〜12/1 9:00 JST）iOS 0/15・超過 0円。被写体の候補 CAFE MENU も AI 生成画像
+> - 保全：作業前の `out/` 506ファイル全件一致・新規は第9回の2 run と2ジョブの104ファイル。原本15枚＋元画像3枚も一致
 > [!important] 2026-11-24（2件目）**第8回 ストア素材（下書き）**：新しい撮影・build なし・第7回の撮影から derive（commit `dc24ae6`・同じbranch）
 > - 出力：`tools/store-assets/out/tabirate/20261124-phase8-dc24ae6-device/`（**26枚**・validate OK・draft）。第7回との差は**6枚だけ**（写真翻訳・カレンダー・分析 × 6.9″/6.1″）、他20枚と広告6枚は sha256 同一。`sources.json`/`sources.html` に撮影ごとの表示環境（時刻・電池・旅行・レート）と**被写体の元画像**（OneDrive デスクトップ `ハワイのお土産価格表.png`＝カメラOCR・スマートカメラ、`ChatGPT 画像 2026年10月24日 09_11_47.png`＝写真翻訳）を追加
 > - 写真翻訳の見出し：**「写真の文字を、まとめて翻訳。」**（Human 確定。正本 Vault 提出パッケージ §E-4-2 の枠6にも反映）。補足にも「まとめて翻訳」があり重複（Human 判断）
