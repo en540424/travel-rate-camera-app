@@ -144,10 +144,25 @@ export function validateProfile(p) {
   return errors;
 }
 
+/**
+ * 設定の継承（`$extends`）。同じフォルダの別の設定を読み、こちらに書いた最上位の項目だけを置き換える（深い併合はしない：
+ * 例えば capture を書けば capture 全体が置き換わる）。見出し・広告を二重に持たずに、撮影のテストデータだけを変える用途。
+ * 継承は1段だけ（継承元がさらに $extends を持つと拒否）。返す値は継承元の値と、継承元のファイル名（`$extendsFile`）。
+ */
+export function resolveExtends(raw, dir) {
+  if (raw?.$extends === undefined) return raw;
+  const rel = raw.$extends;
+  if (typeof rel !== 'string' || !/^[A-Za-z0-9._-]+\.json$/.test(rel)) throw new Error('$extends は同じフォルダの設定ファイルの名前（例 profile.json）');
+  const base = JSON.parse(fs.readFileSync(path.join(dir, rel), 'utf8'));
+  if (base.$extends !== undefined) throw new Error('$extends は1段だけ（継承元がさらに継承している）');
+  const { $extends: _drop, ...own } = raw;
+  return { ...base, ...own, $extendsFile: rel };
+}
+
 /** profile.json を読み、検証して返す。不備があれば例外。相対パスは設定ファイルの場所から解決する。 */
 export function loadProfile(file) {
   const abs = path.resolve(file);
-  const p = JSON.parse(fs.readFileSync(abs, 'utf8'));
+  const p = resolveExtends(JSON.parse(fs.readFileSync(abs, 'utf8')), path.dirname(abs));
   const errors = validateProfile(p);
   if (errors.length) throw new Error(`設定の不備（${abs}）:\n- ${errors.join('\n- ')}`);
   return { ...p, _dir: path.dirname(abs), _file: abs };

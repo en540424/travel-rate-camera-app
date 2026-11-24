@@ -1,0 +1,176 @@
+{
+  "$comment": "旅レートカメラ：ハワイ・USD のテストデータで撮影する設定（第9回・2026-11-24）。$extends の profile.json を読み、ここに書いた最上位の項目（capture）だけを置き換える。見出し・並び・広告・機能の公開状態は profile.json が正（二重に持たない）。パリ・EUR の撮影（profile.json）は既定のまま",
+  "$extends": "profile.json",
+  "capture": {
+    "projectRoot": "../../../..",
+    "clock": "2026-11-21T10:00:00+09:00",
+    "timezone": "Asia/Tokyo",
+    "web": {
+      "viewport": {
+        "width": 440,
+        "height": 956,
+        "scale": 3
+      }
+    },
+    "ios": {
+      "devices": [
+        "iPhone 17 Pro Max",
+        "iPhone 17"
+      ],
+      "appearance": "light",
+      "statusBar": {
+        "time": "9:41"
+      },
+      "fixtureBuild": "build-fixture-db-hawaii.mjs",
+      "dbRelPath": "Documents/SQLite/travelrate.db"
+    },
+    "screens": [
+      {
+        "id": "camera",
+        "route": "/",
+        "deepLink": "travelratecameraapp:///",
+        "waitForText": "旅レートカメラ",
+        "web": {
+          "enabled": false
+        },
+        "$note": "Web版はカメラ・OCR非対応の表示になるため撮らない。iOSで撮る"
+      },
+      {
+        "id": "smart-camera",
+        "route": "/",
+        "web": {
+          "enabled": false
+        },
+        "$note": "実機だけ（カメラにかざした値札へ、商品名の翻訳と円の目安が重なる画面）。シミュレーター・CI には実カメラが無いので撮らない（deepLink を持たないのでジョブに入らない）。実機の撮影を import --source device で取り込む"
+      },
+      {
+        "id": "live-translation",
+        "route": "/translation",
+        "web": {
+          "enabled": false
+        },
+        "$note": "実機だけ（翻訳タブ「ライブ翻訳」で、カメラを向けた文字の近くに訳が重なる画面。iOS 18以降）。シミュレーター・CI では撮らない。2026-10-24 の実機素材は旧表示（「カメラ」「リアルタイム翻訳中」）のため使えない＝現行の版で実機で撮り直す"
+      },
+      {
+        "id": "converter",
+        "route": "/converter",
+        "deepLink": "travelratecameraapp:///converter",
+        "waitForText": "手入力で換算",
+        "interact": {
+          "$note": "金額を実際の画面操作で入力して撮る（アプリの値を外から書き換えない）。29.9 USD × 見本の固定レート163 = 4873.7 → ¥4,874（価格表の Aloha T-Shirt $29.90。実機のスマートカメラの表示「約¥4,874」・カメラOCRの価格候補「$29.90 ¥4,874」と同じ）。入力の後、見出しを押してキーボードを閉じる",
+          "driver": "maestro",
+          "steps": [
+            {
+              "tapOn": {
+                "id": "converter-amount-input"
+              }
+            },
+            {
+              "inputText": "29.9"
+            },
+            {
+              "tapOn": "手入力で換算"
+            },
+            {
+              "waitForAnimationToEnd": {
+                "timeout": 3000
+              }
+            }
+          ],
+          "expectVisible": [
+            "¥4,874"
+          ],
+          "expectNotVisible": [
+            "金額を入力してください"
+          ],
+          "timeoutSeconds": 300
+        }
+      },
+      {
+        "id": "history",
+        "route": "/history",
+        "deepLink": "travelratecameraapp:///history",
+        "waitForText": "履歴",
+        "expectVisible": [
+          "アロハTシャツ",
+          "¥48,255"
+        ],
+        "$note": "残り予算 ¥48,255＝予算 ¥50,000 − 購入済み ¥1,745（1件ずつ丸めて足す sumBudgetTotals）"
+      },
+      {
+        "id": "trip-list",
+        "route": "/trip-list",
+        "deepLink": "travelratecameraapp:///trip-list",
+        "waitForText": "旅行",
+        "$note": "終了した旅行2件（ソウル・台北。パリの見本と同じ）を含む。パリ旅行は入らない",
+        "expectVisible": [
+          "ハワイ旅行",
+          "ソウル旅行"
+        ]
+      },
+      {
+        "id": "calendar",
+        "route": "/calendar",
+        "deepLink": "travelratecameraapp:///calendar",
+        "settleMs": 5000,
+        "$settleNote": "第6回（run 45169001221）は旅行一覧の後に開いて2秒で撮り、遷移が間に合わず旅行一覧を写した（原因は推定・未特定）。緩和として待ちを5秒にする。取り違えは job-ingest の見た目の比較で外れる",
+        "waitForText": "買い物カレンダー",
+        "expectVisible": [
+          "買い物カレンダー",
+          "¥1,745"
+        ],
+        "$expectNote": "月合計の購入済み ¥1,745（コナコーヒー ¥734＋マカダミアナッツチョコレート ¥1,011）"
+      },
+      {
+        "id": "analytics",
+        "route": "/analytics",
+        "deepLink": "travelratecameraapp:///analytics",
+        "expectVisible": [
+          "の購入済み金額"
+        ],
+        "$note": "提出パッケージ §E-1 の5・7枚目（分析）の素材。「分析」はタブの名前にもあるので、画面固有の見出しで確かめる"
+      },
+      {
+        "id": "pro-features",
+        "route": "/pro-features",
+        "deepLink": "travelratecameraapp:///pro-features",
+        "waitForText": "無料版とProの違い",
+        "expectVisible": [
+          "無料版とProの違い"
+        ]
+      },
+      {
+        "id": "help",
+        "route": "/help",
+        "deepLink": "travelratecameraapp:///help",
+        "waitForText": "使い方"
+      },
+      {
+        "id": "translation",
+        "route": "/translation",
+        "deepLink": "travelratecameraapp:///translation",
+        "web": {
+          "enabled": false
+        },
+        "$note": "Web版は「翻訳を利用できません」になる。iOSでは入力の画面だけを撮る（翻訳の実行は言語のダウンロードの窓が出得るため自動では行わない。結果の画面は実機で撮る）",
+        "expectVisible": [
+          "翻訳する"
+        ],
+        "expectNotVisible": [
+          "翻訳を利用できません"
+        ]
+      },
+      {
+        "id": "rate-setup",
+        "route": "/rate-setup",
+        "deepLink": "travelratecameraapp:///rate-setup",
+        "expectVisible": [
+          "現在のレート",
+          "換算プレビュー"
+        ],
+        "$note": "提出パッケージ §E-1 の4枚目（レートは自分で設定＝自動取得と誤解させない）の素材。文言は第7回（2026-11-24）に shot 08-rate-setup として下書きで足した（採用は Human）。この画面はアプリで modal（src/app/_layout.tsx）。撮影はこの並びの順で、modal の後に開いた通常の画面は modal の上のシートとして表示される（利用者が見る全画面の表示と違う）ため、操作の無い画面の最後に置く（fixture.test.mjs で検査）。タブの画面（翻訳）の直後なので、背後は通常の画面"
+      }
+    ],
+    "$comment": "ハワイ・USD の撮影（第9回・2026-11-24）。パリ（profile.json）の capture と画面・並び・待ちは同じで、テストデータと画面の内容の確認だけが違う。期待する金額は build-fixture-db.mjs の FIXTURE_HAWAII をアプリの関数（sumBudgetTotals・formatJpy）で計算した値で、fixture.test.mjs が一致を検査する"
+  }
+}

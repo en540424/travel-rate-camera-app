@@ -5,8 +5,12 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { buildFixtureDb, FIXTURE, fixtureDates, pastTripDate } from './build-fixture-db.mjs';
+import { buildFixtureDb, FIXTURE, FIXTURE_HAWAII, fixtureDates, pastTripDate } from './build-fixture-db.mjs';
 import { openExpoSqliteCompat } from '../../engine/fixtures/expo-sqlite-node.mjs';
+import { loadProfile } from '../../engine/profile.mjs';
+import { interactHash } from '../../engine/drivers/interact.mjs';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 test('fixture: アプリ本体のmigrationで最新版のDBを作り、見本の記録が旅行に入る', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabirate-fixture-'));
@@ -73,8 +77,8 @@ test('fixture: 記録の日付は撮影する日の月に入る（月が変わ�
 // 通常の画面を開くと、その画面も modal の上のシートとして表示される（native-stack の決まり。利用者が見る全画面の表示と違う）。
 // タブの画面は開く時に上の画面を閉じるので問題にならない。画面を絞ったジョブ（--screens）でも守れるよう、
 // modal の画面は操作の無い画面の最後にまとめ、操作の画面（最後に撮る）はタブの画面にする
-test('profile: modal の画面は操作の無い画面の最後に置き、操作の画面はタブの画面（modal の上のシートとして撮らない）', () => {
-  const here = path.dirname(fileURLToPath(import.meta.url));
+for (const profileFile of ['profile.json', 'profile-hawaii.json']) test(`profile（${profileFile}）: modal の画面は操作の無い画面の最後に置き、操作の画面はタブの画面（modal の上のシートとして撮らない）`, () => {
+  const here = HERE;
   const appDir = path.join(here, '..', '..', '..', '..', 'src', 'app');
   const layout = fs.readFileSync(path.join(appDir, '_layout.tsx'), 'utf8');
   const modal = new Set();
@@ -85,7 +89,7 @@ test('profile: modal の画面は操作の無い画面の最後に置き、操�
     if (name && presentation && presentation !== 'card') modal.add(name);
   }
   assert.ok(modal.has('rate-setup'), 'アプリの modal の画面を読めている（_layout.tsx の書き方が変わったらこの検査を直す）');
-  const profile = JSON.parse(fs.readFileSync(path.join(here, 'profile.json'), 'utf8'));
+  const profile = loadProfile(path.join(here, profileFile));
   const routeName = (s) => String(s.route ?? '').replace(/^\//, '');
   const isTab = (s) => routeName(s) === '' || ['', '.tsx'].some((ext) => fs.existsSync(path.join(appDir, '(tabs)', `${routeName(s)}${ext}`)));
   const linked = profile.capture.screens.filter((s) => s.deepLink);
@@ -96,4 +100,87 @@ test('profile: modal の画面は操作の無い画面の最後に置き、操�
   assert.deepEqual(after.map((s) => s.id), [], 'modal の画面の後に、操作の無い通常の画面を置かない');
   if (firstModal > 0) assert.ok(isTab(plain[firstModal - 1]), `modal の直前はタブの画面（背後が通常の画面になる）：${plain[firstModal - 1].id}`);
   for (const s of linked.filter((x) => x.interact)) assert.ok(isTab(s), `操作の画面 ${s.id} はタブの画面（開く時に modal を閉じる）`);
+});
+
+// ハワイ・USD の見本（第9回）：パリの見本と混ざらず、期待する表示（profile-hawaii.json）がアプリの計算と一致する
+const appModule = (rel) => import(new URL(`../../../../src/${rel}`, import.meta.url).href);
+
+test('fixture（ハワイ）: ハワイ旅行・USD 163・予算 ¥50,000。パリの旅行・記録は入らず、円はアプリの換算（丸めない値）で保存', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabirate-fixture-hawaii-'));
+  try {
+    const file = path.join(dir, 'travelrate.db');
+    const r = await buildFixtureDb(file, { today: new Date(2026, 10, 24), fixture: FIXTURE_HAWAII });
+    assert.deepEqual([r.from, r.to], ['2026-11-19', '2026-11-23'], '2026-11-24 に作ると第6〜8回の撮影と同じ 11/19〜23');
+    const { convert } = await appModule('utils/currency.ts');
+    const db = openExpoSqliteCompat(file);
+    const trip = await db.getFirstAsync('SELECT * FROM trips WHERE id = ?', r.tripId);
+    assert.equal(trip.name, 'ハワイ旅行');
+    assert.equal(trip.base_currency, 'USD');
+    assert.equal(trip.manual_rate, 163);
+    assert.equal(trip.budget_jpy, 50000);
+    const names = (await db.getAllAsync('SELECT name FROM trips ORDER BY id')).map((t) => t.name);
+    assert.deepEqual(names, ['ソウル旅行', '台北旅行', 'ハワイ旅行'], 'パリ旅行は入らない');
+    const rows = await db.getAllAsync('SELECT * FROM conversion_history WHERE trip_id = ? ORDER BY id', r.tripId);
+    assert.deepEqual(rows.map((x) => x.memo), FIXTURE_HAWAII.records.map((x) => x.memo));
+    for (const [i, row] of rows.entries()) {
+      assert.equal(row.currency, 'USD');
+      assert.equal(row.jpy_amount, convert(FIXTURE_HAWAII.records[i].foreign, 163, 'TO_JPY'), `${row.memo}：保存の時と同じ換算`);
+    }
+    const all = await db.getAllAsync('SELECT memo FROM conversion_history');
+    for (const p of FIXTURE.records) assert.ok(!all.some((x) => x.memo === p.memo), `パリの記録 ${p.memo} は入らない`);
+    const rates = await db.getAllAsync('SELECT * FROM exchange_rates');
+    assert.ok(rates.some((x) => x.currency === 'USD' && x.rate === 163), 'レートは旅行の通貨（USD）で入る');
+    assert.ok(!rates.some((x) => x.currency === 'EUR'), 'EUR のレートは入らない');
+    await db.closeAsync();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('fixture（ハワイ）: 金額は価格表の値・名前は実機の表示だけ（Beach Sandals・コストコの品目は入れない）', () => {
+  const priceTag = { 'コナコーヒー': 4.5, 'マカダミアナッツチョコレート': 6.2, 'アロハTシャツ': 29.9, 'ボトルウォーター': 1.8, 'パイナップルジュース': 5.4 };
+  assert.deepEqual(Object.fromEntries(FIXTURE_HAWAII.records.map((r) => [r.memo, r.foreign])), priceTag);
+  // 実機の記録（03_買い物一覧.png）で候補だった2品
+  for (const m of ['ボトルウォーター', 'パイナップルジュース']) assert.equal(FIXTURE_HAWAII.records.find((r) => r.memo === m).purchased, false);
+});
+
+test('profile-hawaii: 見出し・広告・並びは profile.json と同じで、撮影（capture）だけが違う。期待する金額はアプリの計算と一致', async () => {
+  const paris = loadProfile(path.join(HERE, 'profile.json'));
+  const hawaii = loadProfile(path.join(HERE, 'profile-hawaii.json'));
+  for (const k of ['shots', 'ads', 'storeSets', 'features', 'brand', 'outputs', 'disclaimer']) assert.deepEqual(hawaii[k], paris[k], k);
+  assert.equal(hawaii.capture.ios.fixtureBuild, 'build-fixture-db-hawaii.mjs');
+  assert.equal(paris.capture.ios.fixtureBuild, 'build-fixture-db.mjs', 'パリの撮影は既定のまま');
+  assert.deepEqual(hawaii.capture.screens.map((s) => s.id), paris.capture.screens.map((s) => s.id), '画面と並びは同じ');
+  const scr = (p, id) => p.capture.screens.find((s) => s.id === id);
+  assert.notEqual(interactHash(scr(hawaii, 'converter').interact), interactHash(scr(paris, 'converter').interact), 'パリの換算の撮影をハワイの合成に使わない（指紋が違う）');
+
+  const { sumBudgetTotals } = await appModule('utils/budget-core.ts');
+  const { formatJpy } = await appModule('utils/format.ts');
+  const { convert } = await appModule('utils/currency.ts');
+  const { trip, records } = FIXTURE_HAWAII;
+  const rows = records.map((r) => ({ jpy_amount: convert(r.foreign, trip.manual_rate, 'TO_JPY'), is_purchased: r.purchased ? 1 : 0 }));
+  const t = sumBudgetTotals(rows);
+  assert.ok(scr(hawaii, 'history').expectVisible.includes(formatJpy(trip.budget_jpy - t.purchasedTotalJpy)), `残り予算 ${formatJpy(trip.budget_jpy - t.purchasedTotalJpy)}`);
+  assert.ok(scr(hawaii, 'calendar').expectVisible.includes(formatJpy(t.purchasedTotalJpy)), `月合計の購入済み ${formatJpy(t.purchasedTotalJpy)}`);
+  const conv = scr(hawaii, 'converter').interact;
+  const typed = Number(conv.steps.find((s) => s.inputText).inputText);
+  assert.ok(records.some((r) => r.foreign === typed), '換算に入れる金額は見本（価格表）の金額');
+  assert.deepEqual(conv.expectVisible, [formatJpy(convert(typed, trip.manual_rate, 'TO_JPY'))]);
+  assert.ok(scr(hawaii, 'history').expectVisible.every((x) => typeof x === 'string'));
+  assert.ok(records.some((r) => scr(hawaii, 'history').expectVisible.includes(r.memo)), '履歴の確認に見本の品目名');
+});
+
+test('resolveExtends: 最上位の項目だけ置き換え・1段だけ・同じフォルダの名前だけ', async () => {
+  const { resolveExtends } = await import('../../engine/profile.mjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabirate-extends-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'base.json'), JSON.stringify({ a: 1, capture: { x: 1, y: 2 } }));
+    assert.deepEqual(resolveExtends({ $extends: 'base.json', capture: { x: 9 } }, dir), { a: 1, capture: { x: 9 }, $extendsFile: 'base.json' });
+    assert.deepEqual(resolveExtends({ a: 2 }, dir), { a: 2 });
+    fs.writeFileSync(path.join(dir, 'chain.json'), JSON.stringify({ $extends: 'base.json' }));
+    assert.throws(() => resolveExtends({ $extends: 'chain.json' }, dir), /1段だけ/);
+    assert.throws(() => resolveExtends({ $extends: '../base.json' }, dir), /同じフォルダ/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
