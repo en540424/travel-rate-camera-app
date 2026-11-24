@@ -65,6 +65,16 @@
 | `ads[].points` | `[{ text: {<言語>}, features: [...] }]` | 要点の箇条書き。**それぞれ公開済みの機能を根拠に持ち、その根拠は広告の `features` に含める**（設定の読み込みで検査） |
 | `capture.screens[].interact` | `{ driver:'maestro', steps, expectVisible, expectNotVisible, timeoutSeconds }` | 撮る前の操作。`steps` は `tapOn`・`inputText`・`eraseText`・`hideKeyboard`・`waitForAnimationToEnd`・`scroll`・`swipe` だけ（`launchApp` 等は不可） |
 
+| `ads[].layout.<出力先>: flow`＋`ads[].steps` | `[{ shot, rect?:[x,y,w,h], text:{<言語>}, features:[...] }]`（2〜4件） | 手順の流れ（例：値札を撮影 → 商品価格を読み取り → 日本円で確認）。手順ごとに実際の撮影の一部（rect・省略で全体）を**全ての手順で同じ縮尺・等倍以下**で並べる。画素は変えず、撮影に無い表示を描き足さない（番号・手順の文言・矢印だけが画面の外の説明）。手順の撮影が1つでも無ければ作らない。手順の文言も公開済みの機能が根拠で、広告の `features` に含める。LP・広告用で、App Store 用には使わない |
+| `$extends` | 同じフォルダの設定ファイルの名前 | 継承元を読み、ここに書いた最上位の項目だけを置き換える（深い併合はしない・1段だけ）。例：`apps/tabirate/profile-hawaii.json` は `capture` だけを持ち、見出し・並び・広告は `profile.json` が正（二重に持たない）。ジョブは作った時の設定の場所（`job.profile`）を CI でも使うので、撮影・取り込み・合成を同じ設定で行う |
+
+### ステータスバーを揃える比較（`compose --crop-top 0.06`）
+
+全ての撮影の上端を同じ割合だけ**表示の枠で隠す**（0〜0.12。撮影の画素・sha256 は変えない）。実機（時刻・電池が撮影ごとに違う）とシミュレーター（9:41・満充電）の混在を目立たなくする比較用。
+callout は隠した分だけ位置を上げて同じ場所を指す。割合は manifest の `presentation.cropTop` と各出力の `cropTop` に残る。
+現状版と同じ run・出力先に入れると1サイズ10枚の上限を超えるので、**別の run で作って比べる**。採用は Human。
+0.06 は iPhone 17 Pro Max（1320×2868）・実機（1206×2622）の両方でステータスバーと Dynamic Island を隠し、アプリの見出し（例「ハワイ旅行」）を欠かない値（第9回の目視）。
+
 見出し・補足は `［…］` で強調、`\n` で改行（補足も同じ）。文節での改行（`word-break:auto-phrase`）は `localeTags` の言語の指定が要る。
 描画に使われたフォントは出力ごとに manifest の `fonts` に残る（実行するマシンで変わる。Windows では Noto Sans JP、Mac ではヒラギノ）。
 
@@ -108,7 +118,12 @@ npm run store-assets -- compose --profile <p> --run <run> --mode draft
 ```
 
 同じ画面に実機とシミュレーターの撮影があれば実機を使う（例：`translation` に実機の写真翻訳の結果を入れると、シミュレーターの入力画面より優先）。
-実機の撮影は時刻・電池・旅行のデータが撮った時のまま（加工しない）。シミュレーターの撮影（9:41・満充電・パリ旅行）と揃わない点は採用前に人が判断する。
+実機の撮影は時刻・電池・旅行のデータが撮った時のまま（加工しない）。シミュレーターの撮影（9:41・満充電）と揃わない点は採用前に人が判断する。
+
+**旅行のデータを実機と揃える（第9回・2026-11-24）**：実機の掲載素材はハワイ旅行（USD・1 USD = ¥163.00）。シミュレーターをハワイで撮るには
+`apps/tabirate/profile-hawaii.json`（テストデータ `build-fixture-db-hawaii.mjs`＝`FIXTURE_HAWAII`）でジョブを作る。パリ・EUR（`profile.json`・`FIXTURE`）は既定のまま残し、混ぜない。
+ハワイの見本は被写体の価格表と実機の画面に写っている品目・金額・名前だけで作り（根拠は `build-fixture-db.mjs` の注記）、円の金額はアプリの換算（`convert`）で保存する。
+画面の確認の期待値（残り予算・月合計・換算の結果）は `fixture.test.mjs` がアプリの関数（`sumBudgetTotals`・`formatJpy`）と照らして固定する。
 
 ### iOSシミュレーターでの撮影（Mac・人が実行）
 

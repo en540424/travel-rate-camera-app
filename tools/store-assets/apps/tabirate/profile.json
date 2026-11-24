@@ -635,6 +635,66 @@
       ]
     },
     {
+      "id": "flow-ocr",
+      "$note": "第9回（2026-11-24）：LP・広告用の流れの案（値札を撮影 → 商品価格を読み取り → 日本円で確認）。3つの手順はどれも実機のカメラOCRの撮影（01_円換算.png・10:05）の一部を等倍以下で切り出しただけで、画素を変えず、撮影に無い表示を描き足さない。被写体の元画像（ハワイのお土産価格表.png）は C2PA で ChatGPT（gpt-image）の生成画像と記録されているため使わない（Human 指示：AI生成画像は使用しない）。App Store 用には使わない（ストア用は1画面の実画面）",
+      "targets": [
+        "lp-hero",
+        "ad-vertical"
+      ],
+      "layout": {
+        "lp-hero": "flow",
+        "ad-vertical": "flow"
+      },
+      "tone": {
+        "default": "light"
+      },
+      "shots": [
+        "01-camera"
+      ],
+      "steps": [
+        {
+          "shot": "01-camera",
+          "rect": [0.04, 0.086, 0.92, 0.415],
+          "text": {
+            "ja": "値札を撮影"
+          },
+          "features": [
+            "camera-ocr"
+          ]
+        },
+        {
+          "shot": "01-camera",
+          "rect": [0.065, 0.68, 0.87, 0.096],
+          "text": {
+            "ja": "商品価格を読み取り"
+          },
+          "features": [
+            "camera-ocr"
+          ]
+        },
+        {
+          "shot": "01-camera",
+          "rect": [0.04, 0.52, 0.92, 0.153],
+          "text": {
+            "ja": "日本円で確認"
+          },
+          "features": [
+            "jpy-conversion"
+          ]
+        }
+      ],
+      "features": [
+        "camera-ocr",
+        "jpy-conversion"
+      ],
+      "headline": {
+        "ja": "海外の値札を撮って、\n［日本円］で確認。"
+      },
+      "sub": {
+        "ja": "値札の価格をカメラで読み取り、日本円に換算"
+      }
+    },
+    {
       "id": "banner",
       "targets": [
         "ad-horizontal"

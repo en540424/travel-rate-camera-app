@@ -117,6 +117,19 @@ export function validateProfile(p) {
     }
     if (ad.maxPhones !== undefined) need(Number.isInteger(ad.maxPhones) && ad.maxPhones >= 1 && ad.maxPhones <= 2, `ad ${ad.id}: maxPhones は 1〜2`);
     // 要点（箇条書き）も文言なので、それぞれ公開済みの機能を根拠に持ち、その根拠は広告の根拠に含まれる
+    // 手順の流れ（layout: flow）：手順ごとに画面（shot）・切り出す範囲（rect・省略で全体）・文言。文言は公開済みの機能が根拠
+    const usesFlow = Object.values(ad.layout ?? {}).includes('flow');
+    if (usesFlow || ad.steps !== undefined) {
+      need(usesFlow, `ad ${ad.id}: steps は layout が flow の時だけ`);
+      need(Array.isArray(ad.steps) && ad.steps.length >= 2 && ad.steps.length <= 4, `ad ${ad.id}: steps は2〜4件`);
+      for (const [i, st] of (Array.isArray(ad.steps) ? ad.steps : []).entries()) {
+        need(shotIds.has(st?.shot), `ad ${ad.id}: steps[${i}] の shot ${st?.shot} が未定義`);
+        if (st?.rect !== undefined) need(validRect(st.rect), `ad ${ad.id}: steps[${i}].rect は [x,y,w,h]（0〜1・画面の内側）`);
+        for (const loc of p.locales) need(typeof st?.text?.[loc] === 'string' && st.text[loc].length > 0 && st.text[loc].length <= 20, `ad ${ad.id}: steps[${i}].text.${loc} は20文字以内`);
+        for (const e of checkClaims(st?.features, features)) errors.push(`ad ${ad.id}: steps[${i}]: ${e}`);
+        for (const f of st?.features ?? []) need((ad.features ?? []).includes(f), `ad ${ad.id}: steps[${i}] の根拠 ${f} が広告の features に無い`);
+      }
+    }
     for (const [i, pt] of (ad.points ?? []).entries()) {
       for (const e of checkClaims(pt.features, features)) errors.push(`ad ${ad.id}: points[${i}]: ${e}`);
       for (const f of pt.features ?? []) need((ad.features ?? []).includes(f), `ad ${ad.id}: points[${i}] の根拠 ${f} が広告の features に無い`);

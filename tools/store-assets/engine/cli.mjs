@@ -5,7 +5,7 @@
 //   node tools/store-assets/engine/cli.mjs capture-web --profile <p> --run <dir> [--export <dir>] [--build]
 //   node tools/store-assets/engine/cli.mjs plan-ios  --profile <p> --run <dir> [--device <name>] [--locale ja]
 //   node tools/store-assets/engine/cli.mjs import    --profile <p> --run <dir> --from <dir> --source device|ios-simulator [--locale ja]
-//   node tools/store-assets/engine/cli.mjs compose   --profile <p> --run <dir> [--mode draft|final]
+//   node tools/store-assets/engine/cli.mjs compose   --profile <p> --run <dir> [--mode draft|final] [--crop-top 0.06]（上端を全ての撮影で同じ割合だけ隠す）
 //   node tools/store-assets/engine/cli.mjs validate  --run <dir>
 //   node tools/store-assets/engine/cli.mjs derive    --profile <p> --from <前のrun> [--run <dir>] [--mode draft|final]（前のrunの撮影を照合して複製し、新しいrunで合成。前のrunは変えない）
 //   node tools/store-assets/engine/cli.mjs job-create|job-validate|job-run|job-dispatch|job-fetch|job-ingest|job-status|job-list|job-cleanup|job-ci-resolve …（遠隔撮影。job-commands.mjs）
@@ -131,13 +131,15 @@ async function cmdCompose(profile, args, runDir, extra = {}) {
   const mode = args.mode === 'final' ? 'final' : 'draft';
   const verified = excludeDraftJobCaptures(mode, verifyCaptures(readCaptures(runDir).map((c) => ({ ...c, file: path.join(runDir, c.file) }))));
   for (const r of verified.rejected) console.warn(`[compose] 使わない撮影：${r.screen} ${r.locale} ${r.source}（${r.reason}）`);
-  const plan = planOutputs(profile, verified.ok, { mode, locales: args.locale ? [args.locale] : undefined });
+  const cropTop = args['crop-top'] === undefined ? 0 : Number(args['crop-top']);
+  const plan = planOutputs(profile, verified.ok, { mode, locales: args.locale ? [args.locale] : undefined, cropTop });
   const root = projectRootOf(profile);
   const outputs = await renderPlan(profile, plan, runDir, loadPlaywright(root));
   const manifest = {
     app: { id: profile.app.id, profile: path.relative(root, profile._file) },
     generatedAt: new Date().toISOString(), mode, git: gitInfo(root), storeTargets: profile.outputs?.store ?? [],
     captures: readCaptures(runDir), outputs, skipped: plan.skipped, ...extra,
+    ...(cropTop ? { presentation: { cropTop, note: '全ての撮影の上端から同じ割合を表示の枠で隠した（ステータスバーを揃える比較用。撮影の画素は変えていない）' } } : {}),
   };
   manifest.rejectedCaptures = verified.rejected;
   manifest.storeSets = storeSetsFor(profile, outputs, args.locale ? [args.locale] : profile.locales);

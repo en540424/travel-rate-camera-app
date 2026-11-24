@@ -100,7 +100,10 @@ export function pickCapture(captures, screen, locale, screenDef = null, sources 
  * 出力の計画を作る（純粋関数）。どの画像をどの撮影から作るか、作れないものとその理由を決める。
  * 実際の描画はrenderPlanが行う。
  */
-export function planOutputs(profile, captures, { mode = 'draft', locales } = {}) {
+export const MAX_CROP_TOP = 0.12;
+
+export function planOutputs(profile, captures, { mode = 'draft', locales, cropTop = 0 } = {}) {
+  if (!(typeof cropTop === 'number' && cropTop >= 0 && cropTop <= MAX_CROP_TOP)) throw new Error(`cropTop は 0〜${MAX_CROP_TOP}（ステータスバーを隠す割合）`);
   const jobs = [];
   const skipped = [];
   const useLocales = locales ?? profile.locales;
@@ -134,7 +137,7 @@ export function planOutputs(profile, captures, { mode = 'draft', locales } = {})
         if (!use.ok) { skipped.push({ target: targetId, locale, shot: shot.id, reason: use.reason }); continue; }
         const callout = calloutFor(shot, cap);
         jobs.push({
-          kind: 'store', target, locale, shot: shot.id, captures: [cap], mode,
+          kind: 'store', target, locale, shot: shot.id, captures: [cap], mode, cropTop,
           watermark: use.watermark ? watermarkText : null,
           title: shot.caption[locale].title, sub: shot.caption[locale].sub ?? '',
           label: shot.caption[locale].label ?? '', tone: shot.tone ?? 'light', layout: shot.layout ?? 'showcase', callout,
@@ -147,6 +150,34 @@ export function planOutputs(profile, captures, { mode = 'draft', locales } = {})
       for (const targetId of ad.targets ?? []) {
         const target = getTarget(targetId);
         const layout = ad.layout?.[targetId] ?? defaultAdLayout(target.width, target.height);
+        if (layout === 'flow') {
+          // 手順の流れ：手順ごとに決めた画面の撮影を使う。1つでも無ければ作らない（手順が欠けた流れは見せない）
+          const caps = [];
+          const missing = [];
+          let watermark = false;
+          const stepsOut = [];
+          for (const st of ad.steps ?? []) {
+            const shot = profile.shots.find((s) => s.id === st.shot);
+            const cap = pick(shot, locale);
+            if (!cap) { missing.push(`${st.shot}：${noCaptureReason(shot)}`); continue; }
+            const use = canUseSource(cap.source, 'ad', mode);
+            if (!use.ok) { missing.push(`${st.shot}：${use.reason}`); continue; }
+            watermark ||= use.watermark;
+            let i = caps.indexOf(cap);
+            if (i < 0) { caps.push(cap); i = caps.length - 1; }
+            stepsOut.push({ image: i, shot: st.shot, rect: st.rect ?? null, text: st.text?.[locale] ?? '' });
+          }
+          if (missing.length || !caps.length) { skipped.push({ target: targetId, locale, ad: ad.id, reason: `手順の撮影が無い：${missing.join('・')}` }); continue; }
+          jobs.push({
+            kind: 'ad', target, locale, ad: ad.id, captures: caps, mode, layout, cropTop, steps: stepsOut,
+            tone: ad.tone?.[targetId] ?? ad.tone?.default ?? 'light',
+            watermark: watermark ? watermarkText : null,
+            headline: ad.headline[locale], sub: ad.sub?.[locale] ?? '', badge: ad.badge?.[locale] ?? '', points: [],
+            notes: unverifiedNotes(caps),
+            file: path.join('ads', locale, targetId, `${ad.id}.png`),
+          });
+          continue;
+        }
         const max = ad.maxPhones ?? (['split', 'story'].includes(layout) ? 2 : 1);
         // ad.shots は優先順の候補。撮影がある・使える撮影元のものを先頭から max 台まで使う（1台も無ければ作らない）。
         // 使えなかった候補は manifest と一覧に残す（代わりの画面で作ったことを人が確かめられるように。独立検収 S8）
@@ -165,7 +196,7 @@ export function planOutputs(profile, captures, { mode = 'draft', locales } = {})
         }
         if (!caps.length) { skipped.push({ target: targetId, locale, ad: ad.id, reason: unused.join('・') || '候補の画面が無い' }); continue; }
         jobs.push({
-          kind: 'ad', target, locale, ad: ad.id, captures: caps, mode, layout,
+          kind: 'ad', target, locale, ad: ad.id, captures: caps, mode, layout, cropTop,
           tone: ad.tone?.[targetId] ?? ad.tone?.default ?? 'light',
           watermark: watermark ? watermarkText : null,
           headline: ad.headline[locale], sub: ad.sub?.[locale] ?? '', badge: ad.badge?.[locale] ?? '',
@@ -187,19 +218,20 @@ function dataUrl(file) {
  * 1枚分のHTML（純粋関数）。言語（profile.localeTags。例 ja-JP）を必ず渡す：
  * 日本語の文節での改行（word-break:auto-phrase）は <html lang> が無いと黙って効かない。
  */
-export function jobHtml(profile, job, images, imageAspect, { imageWidth = null, iconDataUrl = null } = {}) {
+export function jobHtml(profile, job, images, imageAspect, { imageWidth = null, iconDataUrl = null, imageSizes = [] } = {}) {
   const { width, height } = job.target;
   const lang = profile.localeTags?.[job.locale] ?? job.locale;
   return job.kind === 'store'
     ? storeShotHtml({
       width, height, brand: profile.brand, title: renderEmphasis(job.title), sub: job.sub,
       imageDataUrl: images[0], watermark: job.watermark, imageAspect, imageWidth, lang,
-      tone: job.tone, label: job.label, callout: job.callout, layout: job.layout, note: profile.disclaimer?.[job.locale] ?? '',
+      tone: job.tone, label: job.label, callout: job.callout, layout: job.layout, note: profile.disclaimer?.[job.locale] ?? '', cropTop: job.cropTop ?? 0,
     })
     : adHtml({
       width, height, brand: profile.brand, headline: renderEmphasis(job.headline), sub: job.sub,
       images, watermark: job.watermark, appName: profile.app.name?.[job.locale] ?? profile.app.name?.ja, badge: job.badge, lang,
       imageAspect, imageWidth, iconDataUrl, points: job.points, tone: job.tone, layout: job.layout, note: profile.disclaimer?.[job.locale] ?? '',
+      cropTop: job.cropTop ?? 0, steps: job.steps ?? [], imageSizes,
     });
 }
 
@@ -241,8 +273,9 @@ export async function renderPlan(profile, plan, runDir, playwright, log = consol
       const { width, height } = job.target;
       await page.setViewportSize({ width, height });
       const images = job.captures.map((c) => dataUrl(c.file));
-      const firstInfo = readPngInfo(fs.readFileSync(job.captures[0].file));
-      const html = jobHtml(profile, job, images, firstInfo.height / firstInfo.width, { imageWidth: firstInfo.width, iconDataUrl: icon });
+      const sizes = job.captures.map((c) => readPngInfo(fs.readFileSync(c.file)));
+      const firstInfo = sizes[0];
+      const html = jobHtml(profile, job, images, firstInfo.height / firstInfo.width, { imageWidth: firstInfo.width, iconDataUrl: icon, imageSizes: sizes });
       await page.setContent(html, { waitUntil: 'load' });
       await page.evaluate(() => document.fonts?.ready);
       const fonts = await platformFonts(page);
@@ -255,6 +288,8 @@ export async function renderPlan(profile, plan, runDir, playwright, log = consol
       outputs.push({
         file: job.file, kind: job.kind, target: job.target.id, locale: job.locale, shot: job.shot ?? null, ad: job.ad ?? null,
         mode: job.mode, watermarked: Boolean(job.watermark), layout: job.layout, tone: job.tone, fonts, notes: job.notes ?? [],
+        ...(job.cropTop ? { cropTop: job.cropTop } : {}),
+        ...(job.steps ? { steps: job.steps.map((st) => ({ shot: st.shot, screen: job.captures[st.image].screen, rect: st.rect, text: st.text })) } : {}),
         sources: job.captures.map((c) => ({ screen: c.screen, source: c.source, sha256: c.sha256 })),
         width: info.width, height: info.height, sha256: sha256(png),
       });

@@ -472,3 +472,58 @@ test('storeSets: 掲載の並びは定義済みの shot を理由つきで1〜10
   assert.ok(html.indexOf('理由B') < html.indexOf('理由A'), '並びの順に表示する');
   assert.ok(html.includes('作れなかった：z'));
 });
+
+// 第9回（2026-11-24）：ステータスバーを全ての撮影で同じ割合だけ隠す比較と、手順の流れ（flow）の配置
+test('templates: cropTop は撮影の上端を表示の枠で隠すだけ（画素は変えない）で、callout の位置もその分だけ上げる', () => {
+  const brand = { primary: '#0E9488' };
+  const base = { width: 1320, height: 2868, brand, title: 't', sub: '', imageDataUrl: 'data:image/png;base64,AA', imageWidth: 1320, imageAspect: 2868 / 1320, lang: 'ja-JP' };
+  const plain = storeShotHtml(base);
+  assert.ok(!/overflow:hidden;border-radius/.test(plain), '既定（0）は従来どおり');
+  const cropped = storeShotHtml({ ...base, cropTop: 0.06 });
+  assert.match(cropped, /overflow:hidden/);
+  assert.match(cropped, /margin-top:-\d+(\.\d+)?px/);
+  const top = (html) => Number(html.match(/class="callout" style="left:[-\d.]+px;top:([-\d.]+)px/)[1]);
+  const callout = { rect: [0.03, 0.3, 0.94, 0.1] };
+  const t0 = top(storeShotHtml({ ...base, callout }));
+  const t1 = top(storeShotHtml({ ...base, callout, cropTop: 0.06 }));
+  assert.ok(t1 < t0, 'callout は隠した分だけ上がる（同じ場所を指す）');
+  const p = loadProfile(TABIRATE);
+  assert.throws(() => planOutputs(p, [], { cropTop: 0.5 }), /cropTop/);
+  const plan = planOutputs(p, [{ screen: 'history', locale: 'ja', source: 'ios-simulator', file: 'h.png' }], { mode: 'draft', cropTop: 0.06 });
+  assert.ok(plan.jobs.length > 0 && plan.jobs.every((j) => j.cropTop === 0.06), '全ての出力に同じ割合');
+});
+
+test('flow: 手順ごとに実際の撮影の一部を等倍以下で並べ、手順の撮影が1つでも無ければ作らない', () => {
+  assert.ok(AD_LAYOUTS.includes('flow'));
+  const p = loadProfile(TABIRATE);
+  const ad = p.ads.find((a) => a.layout && Object.values(a.layout).includes('flow'));
+  assert.ok(ad, 'profile に流れの広告がある');
+  const none = planOutputs(p, [], { mode: 'draft' });
+  assert.ok(none.skipped.some((s) => s.ad === ad.id && /手順の撮影が無い/.test(s.reason)));
+  const cam = { screen: 'camera', locale: 'ja', source: 'device', file: 'c.png' };
+  const plan = planOutputs(p, [cam], { mode: 'draft' });
+  const jobs = plan.jobs.filter((j) => j.ad === ad.id);
+  assert.equal(jobs.length, ad.targets.length);
+  for (const j of jobs) {
+    assert.equal(j.captures.length, 1, '同じ撮影は1回だけ持つ');
+    assert.deepEqual(j.steps.map((s) => s.text), ad.steps.map((s) => s.text.ja));
+  }
+  // シミュレーターのカメラの撮影は使わない（カメラは実機だけ）
+  assert.ok(planOutputs(p, [{ ...cam, source: 'ios-simulator' }], { mode: 'draft' }).skipped.some((s) => s.ad === ad.id));
+  // 描画：切り出しは等倍を超えない
+  const html = adHtml({ width: 1920, height: 1080, brand: p.brand, headline: 'h', sub: '', images: ['data:x'], imageSizes: [{ width: 1206, height: 2622 }], layout: 'flow', steps: jobs[0].steps, lang: 'ja-JP' });
+  for (const m of html.matchAll(/class="crop" style="width:([\d.]+)px;height:([\d.]+)px;[\s\S]*?background-size:([\d.]+)px/g)) assert.ok(Number(m[3]) <= 1206 + 1e-6, '等倍以下');
+  assert.equal((html.match(/class="step"/g) ?? []).length, ad.steps.length);
+});
+
+test('profile: 手順の流れは layout が flow の時だけ・2〜4件・文言は公開済みの機能が根拠で広告の根拠に含まれる', () => {
+  const p = JSON.parse(fs.readFileSync(TABIRATE, 'utf8'));
+  const ad = p.ads.find((a) => a.steps);
+  const bad = (mut) => { const q = structuredClone(p); mut(q.ads.find((a) => a.id === ad.id)); return validateProfile(q); };
+  assert.deepEqual(validateProfile(p), []);
+  assert.ok(bad((a) => { a.steps = a.steps.slice(0, 1); }).some((e) => /2〜4件/.test(e)));
+  assert.ok(bad((a) => { a.steps[0].features = ['proplus-map']; }).some((e) => /公開されていない/.test(e)));
+  assert.ok(bad((a) => { a.steps[0].features = ['records']; }).some((e) => /広告の features に無い/.test(e)));
+  assert.ok(bad((a) => { a.steps[0].rect = [0.5, 0.5, 0.9, 0.9]; }).some((e) => /rect/.test(e)));
+  assert.ok(bad((a) => { a.layout = { 'lp-hero': 'split', 'ad-vertical': 'story' }; }).some((e) => /flow の時だけ/.test(e)));
+});

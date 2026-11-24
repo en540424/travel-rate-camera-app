@@ -12,7 +12,7 @@
 const FONT_STACK = `"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Yu Gothic","Meiryo",system-ui,sans-serif`;
 
 export const STORE_LAYOUTS = ['showcase'];
-export const AD_LAYOUTS = ['split', 'banner', 'square', 'story'];
+export const AD_LAYOUTS = ['split', 'banner', 'square', 'story', 'flow'];
 export const TONES = ['light', 'deep', 'warm'];
 
 /** 出力先の形から既定の広告の配置を決める（profile で layout を指定すればそちらが優先）。 */
@@ -140,12 +140,14 @@ function brandHtml(appName, iconDataUrl, size) {
 /**
  * 端末の枠と実画面。幅 phoneW（px）。画面の縮尺 = 画面の幅 / 撮影の幅（1を超えない値を呼び手が選ぶ）。
  * callout：{ rect:[x,y,w,h]（撮影に対する0〜1の比）, width（px。等倍を超えない幅に切り詰める） }
+ * cropTop：撮影の上端から隠す割合（0〜0.12。ステータスバーを全ての撮影で同じ比率だけ見せない）。画素は変えず、表示の枠で隠すだけ
  */
-function phoneHtml({ src, phoneW: wanted, imageWidth, imageAspect, unit, style = '', callout = null, frameScale = 1 }) {
+function phoneHtml({ src, phoneW: wanted, imageWidth, imageAspect, unit, style = '', callout = null, frameScale = 1, cropTop = 0 }) {
   const phoneW = fitPhoneW(wanted, imageWidth, unit, frameScale); // 等倍を超えて拡大しない
   const bezel = unit * 1.5 * frameScale;
   const screenW = phoneW - bezel * 2;
-  const screenH = screenW * imageAspect;
+  const fullH = screenW * imageAspect;
+  const screenH = fullH * (1 - cropTop);
   const phoneH = screenH + bezel * 2;
   const outerR = unit * 6.4 * frameScale;
   let co = '';
@@ -160,14 +162,17 @@ function phoneHtml({ src, phoneW: wanted, imageWidth, imageAspect, unit, style =
     const w = cropW * scale;
     const h = cropH * scale;
     const inPhoneScale = screenW / capW;
-    const centerY = bezel + (cy + ch / 2) * capH * inPhoneScale;
+    const centerY = bezel + (cy + ch / 2 - cropTop) * capH * inPhoneScale; // 上を隠した分だけ画面の位置が上がる
     const left = (phoneW - w) / 2;
     const top = centerY - h / 2 + (callout.shiftY ?? 0) * phoneW;
     co = `<div class="callout" style="left:${left}px;top:${top}px;width:${w}px;height:${h}px;border-radius:${unit * 2.4}px;
       background-image:url(${src});background-size:${capW * scale}px auto;background-position:${-cx * capW * scale}px ${-cy * capH * scale}px"></div>`;
   }
+  const img = cropTop > 0
+    ? `<div style="height:${screenH}px;overflow:hidden;border-radius:${outerR - bezel}px"><img src="${src}" style="display:block;width:100%;height:auto;margin-top:${-fullH * cropTop}px"></div>`
+    : `<img src="${src}" style="border-radius:${outerR - bezel}px">`;
   return `<div class="phone" style="width:${phoneW}px;height:${phoneH}px;padding:${bezel}px;border-radius:${outerR}px;${style}">
-    <img src="${src}" style="border-radius:${outerR - bezel}px">${co}</div>`;
+    ${img}${co}</div>`;
 }
 
 /**
@@ -175,7 +180,7 @@ function phoneHtml({ src, phoneW: wanted, imageWidth, imageAspect, unit, style =
  * opts: { width, height, brand, title, sub, imageDataUrl, imageWidth, imageAspect, lang, tone, label, callout, watermark }
  * title は renderEmphasis 済みのHTML。sub は文字列（ここでエスケープし、［］の強調と改行を反映する）。
  */
-export function storeShotHtml({ width, height, brand, title, sub, imageDataUrl, imageWidth = null, imageAspect = 2.17, lang, tone = 'light', label = '', callout = null, watermark, layout = 'showcase', note = '' }) {
+export function storeShotHtml({ width, height, brand, title, sub, imageDataUrl, imageWidth = null, imageAspect = 2.17, lang, tone = 'light', label = '', callout = null, watermark, layout = 'showcase', note = '', cropTop = 0 }) {
   if (!STORE_LAYOUTS.includes(layout)) throw new Error(`未知のストアの配置: ${layout}`);
   const unit = Math.min(width, height) / 100;
   const pal = tonePalette(brand, tone);
@@ -191,7 +196,7 @@ export function storeShotHtml({ width, height, brand, title, sub, imageDataUrl, 
   </style></head><body>${decoHtml(width, height, pal, 'a')}<div class="wrap">
     ${label ? `<span class="chip">${escapeHtml(label)}</span>` : ''}
     <h1>${title}</h1>${subHtml}
-    <div class="stage">${phoneHtml({ src: imageDataUrl, phoneW, imageWidth, imageAspect, unit, callout })}</div>
+    <div class="stage">${phoneHtml({ src: imageDataUrl, phoneW, imageWidth, imageAspect, unit, callout, cropTop })}</div>
   </div>${noteHtml(note, unit)}${watermarkHtml(watermark)}</body></html>`;
 }
 
@@ -205,17 +210,20 @@ function pointsHtml(points, size) {
  * 広告・SNS・LP用。layout（'split'|'banner'|'square'|'story'）ごとに配置を変える。
  * opts: { width, height, brand, headline, sub, images[], imageWidth, imageAspect, appName, iconDataUrl, badge, points[], lang, tone, layout, watermark }
  */
-export function adHtml({ width, height, brand, headline, sub, images, imageWidth = null, imageAspect = 2.17, watermark, appName, iconDataUrl = null, badge, points = [], lang, tone = 'light', layout, note = '' }) {
+export function adHtml({ width, height, brand, headline, sub, images, imageWidth = null, imageAspect = 2.17, watermark, appName, iconDataUrl = null, badge, points = [], lang, tone = 'light', layout, note = '', cropTop = 0, steps = [], imageSizes = [] }) {
   const use = layout ?? defaultAdLayout(width, height);
   if (!AD_LAYOUTS.includes(use)) throw new Error(`未知の広告の配置: ${use}`);
   const unit = Math.min(width, height) / 100;
   const pal = tonePalette(brand, tone);
   const subText = sub ? renderEmphasis(sub) : '';
   const badgeHtml = badge ? `<span class="chip badge">${escapeHtml(badge)}</span>` : '';
-  const phone = (i, phoneW, style, frameScale = 1) => phoneHtml({ src: images[i], phoneW, imageWidth, imageAspect, unit, style, frameScale });
+  const phone = (i, phoneW, style, frameScale = 1) => phoneHtml({ src: images[i], phoneW, imageWidth, imageAspect, unit, style, frameScale, cropTop });
   let css = '';
   let body = '';
 
+  if (use === 'flow') {
+    return flowHtml({ width, height, pal, unit, headline, subText, badgeHtml, appName, iconDataUrl, images, imageSizes, steps, lang, note, watermark });
+  }
   if (use === 'split') {
     // LP：左に「何のアプリか・なぜ便利か」（見出し・補足・要点3つ）、右に端末2台（重ねて傾ける）
     const phoneW = height * 0.94 / imageAspect;
@@ -286,6 +294,57 @@ export function adHtml({ width, height, brand, headline, sub, images, imageWidth
   }
   return `<!doctype html><html${langAttr(lang)}><head><meta charset="utf-8"><style>${baseCss(width, height, pal)}${css}</style></head><body>
     ${decoHtml(width, height, pal, use === 'square' ? 'b' : 'a')}<div class="wrap">${body}</div>${noteHtml(note, unit, use === 'square' ? 'tr' : 'bl')}${watermarkHtml(watermark)}</body></html>`;
+}
+
+/**
+ * 手順の流れ（例：値札を撮影 → 価格を読み取り → 日本円で確認）。手順ごとに実際の撮影の一部（rect）か全体を、
+ * 等倍を超えない大きさで切り出して並べる。画素は変えず、撮影に無い表示を描き足さない（番号・手順の文言・矢印は画面の外の説明）。
+ * 横長は左から右、縦長は上から下。steps: [{ image:撮影の番号, rect:[x,y,w,h]|null, text }]、imageSizes: [{width,height}]
+ */
+function flowHtml({ width, height, pal, unit, headline, subText, badgeHtml, appName, iconDataUrl, images, imageSizes, steps, lang, note, watermark }) {
+  const vertical = height > width;
+  const n = steps.length;
+  const gap = unit * (vertical ? 5 : 7); // 矢印の幅（縦長では高さ）
+  const headH = vertical ? height * 0.25 : height * 0.36;
+  const footH = unit * (vertical ? 12 : 9);
+  const labelH = unit * (vertical ? 6.4 : 7.2);
+  const padX = width * (vertical ? 0.08 : 0.06);
+  const areaW = width - padX * 2;
+  const areaH = height - headH - footH;
+  const boxW = vertical ? areaW : (areaW - gap * (n - 1)) / n;
+  const boxH = vertical ? (areaH - gap * (n - 1)) / n - labelH : areaH - labelH;
+  const dims = (st) => {
+    const size = imageSizes[st.image] ?? { width: 1000, height: 2170 };
+    const [rx, ry, rw, rh] = st.rect ?? [0, 0, 1, 1];
+    return { size, rx, ry, cw: rw * size.width, chh: rh * size.height };
+  };
+  // 全ての手順で同じ縮尺（画面の文字の大きさをそろえる。等倍を超えて拡大しない）。縦長は高さを切り出しの高さに比例して配る
+  const scale = vertical
+    ? Math.min(1, ...steps.map((st) => boxW / dims(st).cw), (areaH - gap * (n - 1) - labelH * n) / steps.reduce((a, st) => a + dims(st).chh, 0))
+    : Math.min(1, ...steps.map((st) => { const d = dims(st); return Math.min(boxW / d.cw, boxH / d.chh); }));
+  const card = (st) => {
+    const { size, rx, ry, cw, chh } = dims(st);
+    return `<div class="crop" style="width:${cw * scale}px;height:${chh * scale}px;background-image:url(${images[st.image]});
+      background-size:${size.width * scale}px auto;background-position:${-rx * size.width * scale}px ${-ry * size.height * scale}px"></div>`;
+  };
+  const arrow = vertical ? '↓' : '→';
+  const cells = steps.map((st, i) => `<div class="step" style="${vertical ? `height:${dims(st).chh * scale + labelH}px` : `width:${boxW}px`}">
+      <div class="lbl"><b>${i + 1}</b><span>${escapeHtml(st.text)}</span></div><div class="vis">${card(st)}</div></div>`);
+  const css = `
+  .head{height:${headH}px;padding:${unit * (vertical ? 6 : 4.4)}px ${padX}px 0;${vertical ? 'text-align:center' : ''}}
+  .chip.badge{font-size:${unit * 2.4}px;padding:${unit * .5}px ${unit * 1.8}px;margin-left:${unit * 1.4}px;vertical-align:middle}
+  h1{margin-top:${unit * 2}px;font-size:${unit * (vertical ? 7.6 : 5.8)}px;line-height:1.2}
+  p.sub{margin-top:${unit * 1.4}px;font-size:${unit * (vertical ? 3.4 : 3)}px;line-height:1.45}
+  .flow{position:absolute;left:${padX}px;right:${padX}px;top:${headH}px;bottom:${footH}px;display:flex;flex-direction:${vertical ? 'column' : 'row'};align-items:stretch;justify-content:center}
+  .step{display:flex;flex-direction:column;align-items:center;flex:none}
+  .lbl{height:${labelH}px;display:flex;align-items:center;gap:${unit * 1.2}px;font-weight:800;font-size:${unit * (vertical ? 3.6 : 3.1)}px;color:${pal.text}}
+  .lbl b{display:inline-flex;align-items:center;justify-content:center;width:${unit * 4.6}px;height:${unit * 4.6}px;border-radius:50%;background:${pal.em};color:${pal.checkText};font-size:${unit * 2.6}px}
+  .vis{flex:1;display:flex;align-items:center;justify-content:center;width:100%}
+  .crop{background-repeat:no-repeat;border-radius:${unit * 2}px;border:${unit * 0.35}px solid #FFFFFF;box-shadow:0 ${unit * 1.4}px ${unit * 4}px ${pal.shadow}}
+  .arrow{flex:none;${vertical ? `height:${gap}px` : `width:${gap}px`};display:flex;align-items:center;justify-content:center;font-size:${unit * 5}px;font-weight:800;color:${pal.em}}`;
+  const head = `<div class="head">${brandHtml(appName, iconDataUrl, unit * (vertical ? 3.8 : 3.6))}${badgeHtml}<h1>${headline}</h1>${subText ? `<p class="sub">${subText}</p>` : ''}</div>`;
+  return `<!doctype html><html${langAttr(lang)}><head><meta charset="utf-8"><style>${baseCss(width, height, pal)}${css}</style></head><body>
+    ${decoHtml(width, height, pal, 'a')}<div class="wrap">${head}<div class="flow">${cells.join(`<div class="arrow">${arrow}</div>`)}</div></div>${noteHtml(note, unit, 'tr')}${watermarkHtml(watermark)}</body></html>`;
 }
 
 /**
