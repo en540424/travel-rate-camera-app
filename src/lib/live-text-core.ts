@@ -322,6 +322,34 @@ export function viewRectToImageRegion(rect: ViewRect, image: Size, view: Size): 
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
+/**
+ * プレビュー枠のうち、画面の下端（下タブ等）に隠れている高さ(pt)。枠の位置は画面（window）の座標。
+ * 隠れていなければ0。測り違いで枠のほとんどを捨てないよう、枠の高さの半分までにする。
+ */
+export function hiddenFrameBottom(
+  frame: { top: number; height: number },
+  windowHeight: number,
+  bottomObstruction: number,
+): number {
+  if (!(frame.height > 0)) return 0;
+  const visibleBottom = windowHeight - bottomObstruction;
+  return Math.max(0, Math.min(frame.height * 0.5, frame.top + frame.height - visibleBottom));
+}
+
+/**
+ * 枠の下から`occludedBottom`(pt)が隠れている時に、利用者に見えている部分が正立画像のどの範囲に当たるか。
+ * 隠れた分が大きすぎても、枠の上`minFraction`は必ず残す。
+ */
+export function unobstructedRegionInImage(
+  image: Size,
+  view: Size,
+  occludedBottom: number,
+  minFraction = 0.3,
+): NormalizedBox {
+  const height = Math.max(view.height * minFraction, view.height - Math.max(0, occludedBottom));
+  return viewRectToImageRegion({ left: 0, top: 0, width: view.width, height }, image, view);
+}
+
 export function isBoxInRegion(box: NormalizedBox, region: NormalizedBox): boolean {
   const center = boxCenter(box);
   return (
@@ -716,7 +744,7 @@ export type PriceLabelAssignment = {
  * 1. 同じ行（傾きを補正）で価格より左にある文字。左端を商品名、それより右（価格まで）を説明にする。
  *    左に別の価格があれば、そこより右だけを見る（2列のメニュー）
  * 2. 同じ行に何も無ければ、すぐ上にある行（値札の「商品名／価格」型）
- * 価格の行自体に文字があれば（"Classic Burger $12.50"）、左に何も無い時はそれを商品名、左に商品名があれば説明にする。
+ * 価格の行自体に文字があれば（"Classic Burger $12.50"）、それを商品名にし、左は探さない。
  * 確かでない時（同じ行で縦に重なる文字がある・複数の価格が同じ文字を取り合う）は商品名を付けない。
  */
 export function assignPriceLabels(
@@ -725,14 +753,25 @@ export function assignPriceLabels(
   options: { maxTextLength: number; imageSize?: Size },
 ): Map<string, PriceLabelAssignment> {
   const image = options.imageSize ?? UNIT_SIZE;
-  const slope = estimateColumnSlope(
-    priceLines.map((line) => line.box),
-    image,
-  );
+  // 傾きの推定は画像の大きさ(px)が分かる時だけ（正規化座標のままでは「まっすぐ並んでいるか」を判定できない）
+  const slope =
+    options.imageSize != null
+      ? estimateColumnSlope(
+          priceLines.map((line) => line.box),
+          image,
+        )
+      : 0;
   const sameRow = (a: NormalizedBox, b: NormalizedBox) => rowOverlapRatio(a, b, slope, image) >= ROW_OVERLAP;
+  const ownLabelOf = (price: TrackedLine): string | null => {
+    const ownText = stripPriceTokens(price.text);
+    return isTranslatableText(ownText, options.maxTextLength) ? ownText : null;
+  };
 
   const claims = new Map<string, PriceLabelClaim>();
   for (const price of priceLines) {
+    // 価格の行自体に文字があれば（"Classic Burger $12.50"・値札の"Bread $2.49"）それが商品名。左は探さない
+    // （隣に並んだ別の値札の商品名を取らない。メインカメラの従来の挙動）
+    if (ownLabelOf(price) != null) continue;
     // 左にある別の価格（同じ行）。そこより左は別の品目
     const boundary = priceLines
       .filter((other) => other.id !== price.id && sameRow(other.box, price.box) && boxRight(other.box) <= price.box.x + 0.02)
@@ -797,24 +836,24 @@ export function assignPriceLabels(
   const result = new Map<string, PriceLabelAssignment>();
   for (const price of priceLines) {
     const claim = claims.get(price.id);
-    const ownText = stripPriceTokens(price.text);
-    const ownLabel = isTranslatableText(ownText, options.maxTextLength) ? ownText : null;
+    const ownLabel = ownLabelOf(price);
     let nameLine: TrackedLine | null = null;
     let descriptionLines: TrackedLine[] = [];
 
-    if (claim?.nameLine != null) {
-      // 確かでない時は左の文字を使わない（価格の行自体の文字は同じ行なので、あればそれを使う）
-      if (!claim.ambiguous && !conflicted.has(price.id)) {
-        nameLine = claim.nameLine;
-        descriptionLines = claim.descriptionLines;
+    if (ownLabel == null) {
+      if (claim?.nameLine != null) {
+        // 確かでない時は名前を付けない
+        if (!claim.ambiguous && !conflicted.has(price.id)) {
+          nameLine = claim.nameLine;
+          descriptionLines = claim.descriptionLines;
+        }
+      } else {
+        nameLine = findLineAbove(price, textLines, usedIds);
+        if (nameLine != null) usedIds.add(nameLine.id);
       }
-    } else if (ownLabel == null) {
-      nameLine = findLineAbove(price, textLines, usedIds);
-      if (nameLine != null) usedIds.add(nameLine.id);
     }
 
     const descriptions = descriptionLines.map((line) => normalizeRecognizedText(line.text));
-    if (nameLine != null && ownLabel != null) descriptions.push(ownLabel);
     const label = nameLine != null ? normalizeRecognizedText(nameLine.text) : ownLabel;
     const used = [...(nameLine ? [nameLine] : []), ...descriptionLines];
     result.set(price.id, {

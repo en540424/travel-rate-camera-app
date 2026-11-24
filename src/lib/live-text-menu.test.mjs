@@ -23,9 +23,11 @@ const {
   buildTranslationPriceEntries,
   estimateColumnSlope,
   extractTranslationPrices,
+  hiddenFrameBottom,
   isStableLine,
   mapBoxToView,
   selectOverlayLines,
+  unobstructedRegionInImage,
   updateTrackedLines,
   viewRectToImageRegion,
   visibleRegionInImage,
@@ -249,14 +251,61 @@ test('2列のメニュー：左の列の商品名を右の列の価格に付け�
   assert.deepEqual(byAmount, { 12.5: 'Burger', 9: 'Pasta' });
 });
 
-test('説明と価格が1行に読まれた時：左の商品名を名前、その行の文字を説明にする', () => {
+test('価格の行自体に文字があれば、それを名前にして左は探さない（メインカメラの従来の挙動）', () => {
+  // 棚に並んだ2枚の値札：左は「商品名／価格」の2行、右は「商品名 価格」の1行
   const lines = [
-    { text: 'Cafe Latte', confidence: 1, box: { x: 0.1, y: 0.4, width: 0.16, height: 0.012 } },
-    { text: 'Espresso with steamed milk $5.40', confidence: 1, box: { x: 0.42, y: 0.4, width: 0.53, height: 0.012 } },
+    { text: 'Milk', confidence: 1, box: { x: 0.1, y: 0.4, width: 0.12, height: 0.03 } },
+    { text: '$3.99', confidence: 1, box: { x: 0.1, y: 0.44, width: 0.12, height: 0.03 } },
+    { text: 'Bread $2.49', confidence: 1, box: { x: 0.55, y: 0.4, width: 0.3, height: 0.03 } },
   ];
-  const [entry] = buildTranslationPriceEntries(track([lines, lines]), usd, OPTIONS);
-  assert.equal(entry.label, 'Cafe Latte');
-  assert.equal(entry.description, 'Espresso with steamed milk');
+  const tracked = track([lines, lines]);
+  const smart = buildSmartCameraEntries(tracked, (text) => extractPriceCandidates(text, 'USD'), {
+    ...OPTIONS,
+    maxEntries: 3,
+    maxTextLength: 40,
+  });
+  const byAmount = Object.fromEntries(smart.filter((e) => e.kind === 'price').map((e) => [e.amount, e.label]));
+  assert.deepEqual(byAmount, { 3.99: 'Milk', 2.49: 'Bread' });
+  const live = buildTranslationPriceEntries(tracked, usd, OPTIONS);
+  assert.deepEqual(Object.fromEntries(live.map((e) => [e.amounts[0], e.label])), { 3.99: 'Milk', 2.49: 'Bread' });
+});
+
+test('画像の大きさが分からない時は傾きを推定しない（ばらばらの価格で傾きを作らない）', () => {
+  const lines = [
+    { text: 'Tea', confidence: 1, box: { x: 0.1, y: 0.3, width: 0.25, height: 0.012 } },
+    { text: '$1.00', confidence: 1, box: { x: 0.75, y: 0.3, width: 0.08, height: 0.012 } },
+    { text: 'Coffee', confidence: 1, box: { x: 0.1, y: 0.4, width: 0.25, height: 0.012 } },
+    { text: '$2.00', confidence: 1, box: { x: 0.8, y: 0.4, width: 0.08, height: 0.012 } },
+    { text: 'Juice', confidence: 1, box: { x: 0.1, y: 0.5, width: 0.25, height: 0.012 } },
+    { text: '$3.00', confidence: 1, box: { x: 0.77, y: 0.5, width: 0.08, height: 0.012 } },
+  ];
+  const { imageSize, ...withoutSize } = OPTIONS;
+  assert.ok(imageSize);
+  const entries = buildTranslationPriceEntries(track([lines, lines]), usd, withoutSize);
+  assert.deepEqual(Object.fromEntries(entries.map((e) => [e.amounts[0], e.label])), { 1: 'Tea', 2: 'Coffee', 3: 'Juice' });
+});
+
+test('枠の下端が下タブに隠れた高さと、見えている範囲（iPhone 16 Pro の実機の配置）', () => {
+  // スクリーンショット（1206×2622・3倍）から：枠の上端 365pt・高さ 488pt、画面 874pt、下タブ 49pt＋ホームインジケーター 34pt
+  const hidden = hiddenFrameBottom({ top: 365, height: 488 }, 874, 49 + 34);
+  assert.ok(Math.abs(hidden - 62) < 1, `隠れた高さ ${hidden}`);
+  // スクロールして枠が全部見えている時は0
+  assert.equal(hiddenFrameBottom({ top: 120, height: 488 }, 874, 83), 0);
+  // 測り違いでも枠の半分までしか捨てない
+  assert.equal(hiddenFrameBottom({ top: 800, height: 488 }, 874, 83), 244);
+  assert.equal(hiddenFrameBottom({ top: 0, height: 0 }, 874, 83), 0);
+
+  const view = { width: 366, height: 488 };
+  const whole = visibleRegionInImage(IMAGE, view);
+  const onScreen = unobstructedRegionInImage(IMAGE, view, hidden);
+  assert.ok(Math.abs(onScreen.y - whole.y) < 1e-9);
+  assert.ok(Math.abs(onScreen.height - (whole.height * (488 - hidden)) / 488) < 1e-9);
+  // 価格の帯（約90pt）にも隠れている時、見えている範囲の中央は枠の中央より上
+  const attention = unobstructedRegionInImage(IMAGE, view, hidden + 10 + 90);
+  assert.ok(attention.y + attention.height / 2 < whole.y + whole.height / 2);
+  // 隠れた分が大きすぎても、枠の上3割は残す
+  const minimum = unobstructedRegionInImage(IMAGE, view, 1000);
+  assert.ok(Math.abs(minimum.height - whole.height * 0.3) < 1e-9);
 });
 
 test('追跡：メニュー1枚（45行）でも全ての行が表示の対象になる', () => {

@@ -55,10 +55,10 @@ import {
   getVisionLanguagesForSource,
   mapBoxToView,
   resolveSourceLanguageForText,
+  hiddenFrameBottom,
   selectOverlayLines,
   stripPriceTokens,
-  viewRectToImageRegion,
-  visibleRegionInImage,
+  unobstructedRegionInImage,
   type LiveTextFrame,
   type Size,
 } from '@/lib/live-text-core';
@@ -156,8 +156,7 @@ export function LiveTranslationCamera({
   const measureHiddenBottom = useCallback(() => {
     frameRef.current?.measureInWindow((_x, y, _width, height) => {
       if (!(height > 0)) return;
-      const visibleBottom = windowHeight - (TAB_BAR_HEIGHT + safeBottom);
-      const hidden = Math.max(0, Math.min(height * 0.5, y + height - visibleBottom));
+      const hidden = hiddenFrameBottom({ top: y, height }, windowHeight, TAB_BAR_HEIGHT + safeBottom);
       setHiddenBottom((prev) => (Math.abs(prev - hidden) < 2 ? prev : hidden));
     });
   }, [windowHeight, safeBottom]);
@@ -202,9 +201,13 @@ export function LiveTranslationCamera({
   );
 
   // 価格（メインカメラと同じ「商品名・説明＋価格」の組み立て）。日付・時刻・量・他の通貨の金額は除く。
-  // 価格は帯・一覧に出すので、枠に写っている範囲全体から選ぶ
+  // 価格は帯・一覧に出すので、帯の下の価格も選ぶ。下タブの下（利用者に見えない所）だけは除き、見えている範囲の中央に近い順
+  const onScreenRegion = useMemo(
+    () => (frameSize == null || viewSize == null ? null : unobstructedRegionInImage(frameSize, viewSize, hiddenBottom)),
+    [frameSize, viewSize, hiddenBottom],
+  );
   const priceEntries = useMemo(() => {
-    if (priceConversion == null || frameSize == null || viewSize == null) return [];
+    if (priceConversion == null || frameSize == null || onScreenRegion == null) return [];
     const { currency } = priceConversion;
     return buildTranslationPriceEntries(
       tracked,
@@ -213,22 +216,21 @@ export function LiveTranslationCamera({
         maxEntries: MAX_PRICE_ENTRIES,
         maxTextLength: MAX_LIVE_TEXT_LENGTH,
         minHits: 2,
-        visibleRegion: visibleRegionInImage(frameSize, viewSize),
+        visibleRegion: onScreenRegion,
         imageSize: frameSize,
       },
     );
-  }, [tracked, frameSize, viewSize, priceConversion]);
+  }, [tracked, frameSize, onScreenRegion, priceConversion]);
 
   // 訳を重ねる範囲：枠のうち、下タブの下・下部の帯に隠れていない所。その中央に近い行から選ぶ。
   // 枠全体の中央で選ぶと、見えている範囲の下寄りの行ばかりになり、メニューの上の方の行が訳されなかった（2026-11-25）
   const showStrip = !isCapturing && priceEntries.length > 0;
   const occludedBottom = hiddenBottom + (showStrip ? BOTTOM_AREA_INSET + bottomAreaHeight : 0);
-  const attentionRegion = useMemo(() => {
-    if (frameSize == null || viewSize == null) return null;
-    // 隠れた分が大きすぎる時（帯が高い・スクロール途中）も、枠の上3割は必ず使う
-    const height = Math.max(viewSize.height * 0.3, viewSize.height - occludedBottom);
-    return viewRectToImageRegion({ left: 0, top: 0, width: viewSize.width, height }, frameSize, viewSize);
-  }, [frameSize, viewSize, occludedBottom]);
+  // 隠れた分が大きすぎる時（帯が高い・スクロール途中）も、枠の上3割は必ず使う
+  const attentionRegion = useMemo(
+    () => (frameSize == null || viewSize == null ? null : unobstructedRegionInImage(frameSize, viewSize, occludedBottom)),
+    [frameSize, viewSize, occludedBottom],
+  );
 
   const overlayEntries = useMemo(() => {
     if (attentionRegion == null) return [];
