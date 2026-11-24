@@ -4,6 +4,15 @@
 
 > 本節が現在地の正。以下の「現在の開発フェーズ」以降は2026-07-01〜08時点の履歴で、完了済み項目を未完へ戻さない。
 
+> [!important] 2026-11-24（5件目）**第11回 ストア素材（9枚構成の完成候補・draft）**：Build 5（1.0.0 (5)・EAS `d35b6ee3-8b2e-4097-9430-c6ff05c2a70a`・commit `d97977e`・TestFlight 内部・iPhone 16 Pro）の**実機のライブ翻訳**を取り込み（新しい build・撮影なし・同じbranch）
+> - **Human が開くページ**：`tools/store-assets/out/tabirate/20261124-phase11-hawaii-live-device/preview.html`（推奨9枚の統一版／通常版 × 6.9″／6.1″・ライブ翻訳の拡大・実機原本3枚の比較・第10回との比較・広告・Human の判断）。出典は同じフォルダの `sources.json`／`sources.html`
+> - 出力：通常版 `out/tabirate/20261124-phase11-hawaii-live-device/`・**統一版（推奨）** `…-live-statusbar/`（`--crop-top 0.06`）。各 **28枚**（ストア 10×2＋広告8）・validate OK・draft。第10回の run から `derive`（sha256 照合）→ **trip-list の撮影を外す**（全候補が11枚で Apple の上限10枚を超えるため。04-trips は推奨の外・広告で未使用・第10回の run に残る）→ ライブ翻訳を `import --source device`。**第10回と sha256 同一：各26枚**（既存のストア9種〔推奨8＋02-converter〕×2サイズ＋広告8）、新規はライブ翻訳の2サイズだけ
+> - 推奨の並び（Human 指定）：カメラOCR→スマートカメラ→写真翻訳→**ライブ翻訳**→買い物メモ→レート設定→カレンダー→分析→Pro。色調 deep・light・deep・warm・light・warm・light・warm・deep（隣り合う重複なし）
+> - ライブ翻訳の見出し：「カメラを向けるだけで、**その場で翻訳**。」補足「写真を撮らずに、映った文字のそばに訳を表示。（iOS 18以降・端末内の翻訳機能を利用）」（実画面の説明文に合わせた。§E-4-2 案の「看板」は撮影に無いので外した・「かざすだけで」は2枚目と重なる）。色調 light → warm
+> - 実機原本3枚（`OneDrive\デスクトップ\旅レートカメラAppStore掲載素材\` 直下・UUID名の .PNG・1206×2622・EXIF 23:19:49／23:20:07／23:20:39）：**採用 `A2722469`**（訳4件が折り返し無く重なる・円換算カード $5.40→¥880・$4.20→¥685 とも正しい）。短所：映像上部にモニターのファイル名「ライブ翻訳用画像.png」が小さく写る（画素は変えず隠していない）。不採用 `6D7E1D89`（前回 ChatGPT の第一候補。掲載画像で見える範囲の訳が2件・「フランス菓／子」の折り返しが衝突）・`18F6D74A`（**円換算カードが「毎日絞る」＝$5.60 の品に $3.20 を結び付け**）。3枚とも run の `originals/live-translation-build5/` に同じバイトで保全。原本18枚は作業前後で sha256 一致・移動/改名なし。被写体は AI 生成の CAFE MENU をモニターに表示したもの（実店舗ではない）
+> - **アプリの観察事項（未修正・Human 判断）**：ライブ翻訳の円換算カードで価格の行がフレームによってずれることがある（18F6D74A）。場所は `src/components/live-text/LiveTranslationCamera.tsx` の `buildTranslationPriceEntries` 周り（d97977e と HEAD で差分なし・原因未確定）
+> - **Human の判断**：①ライブ翻訳は A2722469 でよいか（ファイル名の写り込み。撮り直すなら全画面表示でファイル名を出さず、メニューを枠いっぱいに） ②統一版か通常版か・最終承認 ③見出しの文言 ④上の観察事項を提出前に直すか ⑤第10回からの継続（残り予算の数字の違い・表示用の割り当て・「昨日 03:49」・final-candidate の撮影・AI 生成の被写体・流れの広告）
+> - 検証：`npm run test:store-assets` 103／`npm test` 887／tsc 0／lint 20（baseline）。第10回の2 run は validate OK・変更なし。`profile.json` の第11回の変更（色調・推奨9枚の storeSet）はこの作業の開始時に未commitで既にあった差分を確認して採用し、見出しと注記を追加
 > [!important] 2026-11-24（4件目）**第10回 ストア素材（完成候補・draft）**：ハワイ・USD の撮影を取り込み、実機3枚と統合（同じbranch・撮影は run 45318527972＝ジョブ `tabirate-20261124-025002-5ca3d88`・commit `5ca3d88`）
 > - **Human が開くページ**：`tools/store-assets/out/tabirate/20261124-phase10-hawaii-device/preview.html`（推奨8枚の統一版／通常版 × 6.9″／6.1″・8画面の検収表・第8／9／10回の比較・広告・不採用／未完成・Human の判断）。出典は同じフォルダの `sources.json`
 > - 出力：通常版 `out/tabirate/20261124-phase10-hawaii-device/`・**統一版（推奨）** `…-statusbar/`（`--crop-top 0.06`）。各 **28枚**（ストア 10×2＋広告8）・validate OK・**draft**（ジョブの purpose が draft。`--mode final` は draft のジョブの撮影を使わない）。シミュレーターの撮影がパリ・EUR → ハワイ・USD になり、LP（lp-hero）の換算の画面も USD に揃った。カメラOCR・スマートカメラ・写真翻訳（実機）・Pro・流れの広告・バナーは第9回と sha256 同一
