@@ -4,6 +4,11 @@
 
 > 本節が現在地の正。以下の「現在の開発フェーズ」以降は2026-07-01〜08時点の履歴で、完了済み項目を未完へ戻さない。
 
+> [!important] 2026-11-25 **Build 6（1.0.0 (6)）＝ライブ翻訳の修正だけを Build 5 に足したビルド／EAS FINISHED・ASC 未アップロード（submit は Human）・実機未確認**
+> - ビルド元：branch `integrate/build6-live-text-fix` `af4fba8`（worktree `trc-build6-live-text`・base `d97977e`＝Build 5）へ `17a7c5b`・`7f7b152` を cherry-pick。コード7ファイルは `7f7b152` と同一、package.json・lock・app.json・eas.json・DB は `d97977e` と同一。**Tier基盤・Pro+中核・ネイティブ依存の追加（`feat/proplus-core-and-store-assets` の残り49 commit）は載せていない**
+> - EAS `9f7b6201-ea8a-40d5-9934-a9bc077ea3d0`・production・STORE・fingerprint `c6dd6345…`（Build 4・5 と同一＝ネイティブ同一）。npm test 868（新規29）・tsc 0・lint 20。EAS Free iOS 2/15（今期）
+> - 次（Human）：`npx eas-cli@27.11.0 submit -p ios --id 9f7b6201-ea8a-40d5-9934-a9bc077ea3d0`（対話式・ascAppId 6788988252）→ 内部テスト「旅レートカメラ 内部テスト」へ追加 → iPhone で上書き更新（削除しない）→ 実機確認。手順は Vault ログ `2026-11-25_旅レートカメラ_ライブ翻訳修正版Build6とTestFlight配布準備_開発ログ` §7
+
 > [!important] 2026-11-04 開発方針の更新（Human決定・最新）
 > - **Free・Pro・Pro+の3段階の商品構成を目指す。Humanは3プラン同時の初回リリースを希望している。** 最終的な機能・価格・公開時期の承認はHuman
 > - 既存の良好なOCRは維持する。高性能OCRの採否・Pro+の価格・Freeの制限値・買い物マップの詳細は**未確定**
