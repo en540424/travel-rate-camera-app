@@ -304,6 +304,24 @@ export function visibleRegionInImage(image: Size, view: Size): NormalizedBox {
 }
 
 /** 行の中心が範囲内にあるか */
+/**
+ * プレビュー枠の一部（ビューの座標）が、正立画像のどの範囲に当たるか（`mapBoxToView`の逆）。
+ * 枠の下部が他の表示（価格の帯・タブバー）に隠れている時、利用者に実際に見えている範囲を求めるのに使う。
+ */
+export function viewRectToImageRegion(rect: ViewRect, image: Size, view: Size): NormalizedBox {
+  if (image.width <= 0 || image.height <= 0 || view.width <= 0 || view.height <= 0) {
+    return { x: 0, y: 0, width: 1, height: 1 };
+  }
+  const scale = Math.max(view.width / image.width, view.height / image.height);
+  const offsetX = (view.width - image.width * scale) / 2;
+  const offsetY = (view.height - image.height * scale) / 2;
+  const left = Math.max(0, Math.min(1, (rect.left - offsetX) / (image.width * scale)));
+  const top = Math.max(0, Math.min(1, (rect.top - offsetY) / (image.height * scale)));
+  const right = Math.max(left, Math.min(1, (rect.left + rect.width - offsetX) / (image.width * scale)));
+  const bottom = Math.max(top, Math.min(1, (rect.top + rect.height - offsetY) / (image.height * scale)));
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
 export function isBoxInRegion(box: NormalizedBox, region: NormalizedBox): boolean {
   const center = boxCenter(box);
   return (
@@ -344,9 +362,69 @@ export type TrackerOptions = {
 export const DEFAULT_TRACKER_OPTIONS: TrackerOptions = {
   staleMs: 1500,
   smoothing: 0.6,
-  maxTracked: 40,
+  // native（LiveTextFrameProcessor）が1フレームで返す行数の上限と同じ。これより小さいと、メニュー1枚（40行超）で
+  // 新しく見えた行が毎フレーム切り捨てられ、2フレーム目に届かず一度も表示されない行が出る（2026-11-25）
+  maxTracked: 80,
   minConfidence: 0.3,
 };
+
+/** カメラの動きを推定するのに要る「前後のフレームで1つずつしか無い文字」の組の数 */
+const MIN_MOTION_PAIRS = 2;
+/** 推定に使う組どうしの動きのばらつきの許容（正規化座標）。超えたら動きなしとみなす */
+const MOTION_AGREEMENT = 0.02;
+
+function median(values: readonly number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+/**
+ * 前のフレームからのカメラの動き（画面全体の平行移動）。
+ * 前後のフレームで1つずつしか無い文字（取り違えようがない組）の移動量の中央値。組が少なすぎる・ばらつく時は0。
+ */
+export function estimateFrameMotion(
+  previous: readonly TrackedLine[],
+  lines: readonly { key: string; box: NormalizedBox }[],
+): { dx: number; dy: number } {
+  const previousByKey = new Map<string, TrackedLine[]>();
+  for (const p of previous) {
+    const key = textIdentityKey(p.text);
+    previousByKey.set(key, [...(previousByKey.get(key) ?? []), p]);
+  }
+  const currentCount = new Map<string, number>();
+  for (const line of lines) currentCount.set(line.key, (currentCount.get(line.key) ?? 0) + 1);
+
+  const dxs: number[] = [];
+  const dys: number[] = [];
+  for (const line of lines) {
+    const candidates = previousByKey.get(line.key);
+    if (candidates?.length !== 1 || currentCount.get(line.key) !== 1) continue;
+    const from = boxCenter(candidates[0].box);
+    const to = boxCenter(line.box);
+    dxs.push(to.x - from.x);
+    dys.push(to.y - from.y);
+  }
+  if (dxs.length < MIN_MOTION_PAIRS) return { dx: 0, dy: 0 };
+  const dx = median(dxs);
+  const dy = median(dys);
+  // 3組未満は全組がそろっている時だけ信じる（1組の取り違えで全体を動かさない）
+  if (dxs.length < 3) {
+    const agree = dxs.every((value, index) => Math.abs(value - dx) <= MOTION_AGREEMENT && Math.abs(dys[index] - dy) <= MOTION_AGREEMENT);
+    if (!agree) return { dx: 0, dy: 0 };
+  }
+  return { dx, dy };
+}
+
+function shiftBox(box: NormalizedBox, motion: { dx: number; dy: number }): NormalizedBox {
+  return { ...box, x: box.x + motion.dx, y: box.y + motion.dy };
+}
+
+function centerDistance(a: NormalizedBox, b: NormalizedBox): number {
+  const ca = boxCenter(a);
+  const cb = boxCenter(b);
+  return Math.hypot(ca.x - cb.x, ca.y - cb.y);
+}
 
 /** 表示してよい安定した行か（2フレーム以上で見えた行だけ出す。1フレームだけの誤認識を出さない） */
 export function isStableLine(line: TrackedLine, minHits = 2): boolean {
@@ -356,7 +434,10 @@ export function isStableLine(line: TrackedLine, minHits = 2): boolean {
 /**
  * 新しいフレームの認識結果で追跡中の行を更新する。
  * - 同じ文字列（大文字小文字は無視）または「位置が重なり文字列がほぼ同じ」行は同一行として扱う
+ * - 同じ文字列が複数ある時（同じ値段が2品など）は、位置の近いものどうしを対応させる（取り違えて位置が混ざらないように）
  * - 同一行は識別子・原文を保ったまま位置だけ滑らかに追従させる（OCRの揺れで訳が変わらないように）
+ * - カメラの動き（画面全体の平行移動）を推定し、前回の位置をその分ずらしてから比べ・追従させる。
+ *   今回読めなかった行もその分ずらして残す（古い位置に残った行が隣の行の価格と組になる・訳が1行ずれるのを防ぐ。2026-11-25）
  * - 今回見えなかった行は`staleMs`経過まで残し、それを過ぎたら消す
  */
 export function updateTrackedLines(
@@ -365,61 +446,85 @@ export function updateTrackedLines(
   now: number,
   options: TrackerOptions = DEFAULT_TRACKER_OPTIONS,
 ): TrackedLine[] {
+  const incoming = lines
+    .map((line, lineIndex) => ({ line, lineIndex, text: normalizeRecognizedText(line.text) }))
+    .filter(({ line, text }) => text !== '' && line.confidence >= options.minConfidence)
+    .map((item) => ({ ...item, key: textIdentityKey(item.text), box: item.line.box }));
+
+  const motion = estimateFrameMotion(previous, incoming);
+  const predicted = previous.map((p) => shiftBox(p.box, motion));
+  const previousKeys = previous.map((p) => textIdentityKey(p.text));
+
+  // 1. 同じ文字列どうし：近い組から順に対応させる
   const used = new Set<number>();
-  const next: TrackedLine[] = [];
+  const matchOf = new Map<number, { index: number; exact: boolean }>();
+  const exactPairs: { incomingIndex: number; previousIndex: number; distance: number }[] = [];
+  incoming.forEach((item, incomingIndex) => {
+    previousKeys.forEach((key, previousIndex) => {
+      if (key === item.key) {
+        exactPairs.push({ incomingIndex, previousIndex, distance: centerDistance(predicted[previousIndex], item.box) });
+      }
+    });
+  });
+  exactPairs.sort((a, b) => a.distance - b.distance);
+  for (const pair of exactPairs) {
+    if (matchOf.has(pair.incomingIndex) || used.has(pair.previousIndex)) continue;
+    matchOf.set(pair.incomingIndex, { index: pair.previousIndex, exact: true });
+    used.add(pair.previousIndex);
+  }
 
-  lines.forEach((line, lineIndex) => {
-    const text = normalizeRecognizedText(line.text);
-    if (text === '' || line.confidence < options.minConfidence) return;
-    const key = textIdentityKey(text);
-
-    let matchIndex = previous.findIndex((p, index) => !used.has(index) && textIdentityKey(p.text) === key);
-    const exact = matchIndex >= 0;
-    if (!exact) {
-      let bestScore = 0;
-      previous.forEach((p, index) => {
-        if (used.has(index)) return;
-        const iou = boxIoU(p.box, line.box);
-        if (iou < 0.3) return;
-        const similarity = textSimilarity(textIdentityKey(p.text), key);
-        if (similarity < 0.6) return;
-        const score = iou + similarity;
-        if (score > bestScore) {
-          bestScore = score;
-          matchIndex = index;
-        }
-      });
-    }
-
-    if (matchIndex >= 0) {
-      used.add(matchIndex);
-      const p = previous[matchIndex];
-      // 揺れた読み取りでは原文を差し替えない。明らかに確度が上がった時だけ新しい読みを採る
-      const adoptNewText = exact ? true : line.confidence > p.confidence + 0.15;
-      next.push({
-        id: p.id,
-        text: adoptNewText ? text : p.text,
-        confidence: adoptNewText ? line.confidence : p.confidence,
-        box: smoothBox(p.box, line.box, options.smoothing),
-        hits: p.hits + 1,
-        firstSeenAt: p.firstSeenAt,
-        lastSeenAt: now,
-      });
-    } else {
-      next.push({
-        id: `${key}@${now}#${lineIndex}`,
-        text,
-        confidence: line.confidence,
-        box: line.box,
-        hits: 1,
-        firstSeenAt: now,
-        lastSeenAt: now,
-      });
+  // 2. 読みが1〜2文字揺れた行：（動きを補正した）位置が重なり、文字列がほぼ同じもの
+  incoming.forEach((item, incomingIndex) => {
+    if (matchOf.has(incomingIndex)) return;
+    let bestScore = 0;
+    let bestIndex = -1;
+    previous.forEach((p, index) => {
+      if (used.has(index)) return;
+      const iou = boxIoU(predicted[index], item.box);
+      if (iou < 0.3) return;
+      const similarity = textSimilarity(previousKeys[index], item.key);
+      if (similarity < 0.6) return;
+      const score = iou + similarity;
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = index;
+      }
+    });
+    if (bestIndex >= 0) {
+      matchOf.set(incomingIndex, { index: bestIndex, exact: false });
+      used.add(bestIndex);
     }
   });
 
+  const next: TrackedLine[] = incoming.map((item, incomingIndex) => {
+    const match = matchOf.get(incomingIndex);
+    if (match == null) {
+      return {
+        id: `${item.key}@${now}#${item.lineIndex}`,
+        text: item.text,
+        confidence: item.line.confidence,
+        box: item.box,
+        hits: 1,
+        firstSeenAt: now,
+        lastSeenAt: now,
+      };
+    }
+    const p = previous[match.index];
+    // 揺れた読み取りでは原文を差し替えない。明らかに確度が上がった時だけ新しい読みを採る
+    const adoptNewText = match.exact ? true : item.line.confidence > p.confidence + 0.15;
+    return {
+      id: p.id,
+      text: adoptNewText ? item.text : p.text,
+      confidence: adoptNewText ? item.line.confidence : p.confidence,
+      box: smoothBox(predicted[match.index], item.box, options.smoothing),
+      hits: p.hits + 1,
+      firstSeenAt: p.firstSeenAt,
+      lastSeenAt: now,
+    };
+  });
+
   previous.forEach((p, index) => {
-    if (!used.has(index) && now - p.lastSeenAt <= options.staleMs) next.push(p);
+    if (!used.has(index) && now - p.lastSeenAt <= options.staleMs) next.push({ ...p, box: predicted[index] });
   });
 
   return next
@@ -436,8 +541,10 @@ export type LivePriceEntry = {
   id: string;
   /** 価格（現地通貨。extractPriceCandidatesの値を数値化したもの） */
   amount: number;
-  /** 商品名などのラベル（価格と同じ行の文字、または左隣・直上の行）。見つからなければnull */
+  /** 商品名（価格と同じ行の左端の文字、または直上の行）。見つからない・確かでなければnull */
   label: string | null;
+  /** 説明（同じ行で商品名と価格の間にある文字）。無ければnull */
+  description: string | null;
   box: NormalizedBox;
   centerDistance: number;
 };
@@ -460,6 +567,8 @@ export type SmartCameraEntryOptions = {
   minHits: number;
   /** プレビューに写っている範囲。範囲外の行は使わない */
   visibleRegion: NormalizedBox;
+  /** 認識した画像の大きさ(px)。行の傾きの推定に使う（無ければ縦横同じ比率として扱う） */
+  imageSize?: Size;
 };
 
 export const DEFAULT_SMART_CAMERA_OPTIONS: SmartCameraEntryOptions = {
@@ -489,30 +598,246 @@ function horizontalOverlap(a: NormalizedBox, b: NormalizedBox): number {
   return Math.max(0, right - left);
 }
 
+// MARK: 価格と商品名・説明の対応付け（2026-11-25 改訂）
+//
+// 実機（Build 5）で、円換算カードに別の商品の価格が出た（`Squeezed daily`に$3.20）。原因と対策:
+// - 価格の「左隣で一番近い行」を名前にしていたため、3列のメニュー（商品名｜説明｜価格）では説明が商品名になっていた
+//   → 同じ行の左端を商品名、その間を説明として分けて持つ
+// - 端末を少し回して持つと行が傾き、価格の列が隣の行と重なる → 価格の列のずれから傾きを推定し、傾きに沿って同じ行を探す
+// - 2つの価格が同じ文字を名前に取り合う・同じ行に縦に重なる文字があるなど、確かでない時は名前を付けない
+//   （誤った商品の円換算を出すより、名前なしの方を選ぶ）
+// - 2列に並んだメニューで、左の列の商品名を右の列の価格に付けない（左にある別の価格の所で探すのを止める）
+
+/** 傾きの推定に使う最少の価格の数 */
+const MIN_COLUMN_PRICES = 3;
+/** 推定する傾きの上限（列のずれ dx/dy。約8.5°）。これを超える推定は使わない */
+const MAX_COLUMN_SLOPE = 0.15;
+/** 同じ行とみなす重なりの割合 */
+const ROW_OVERLAP = 0.5;
+/** 「半分ずれて同じ行にかかっている」とみなす重なりの割合（行の続きを取りこぼしている目印） */
+const PARTIAL_ROW_OVERLAP = 0.2;
+/** 価格から左の商品名・説明までの最大の隙間（正規化座標） */
+const MAX_LABEL_GAP = 0.6;
+
+const UNIT_SIZE: Size = { width: 1, height: 1 };
+
 /**
- * 価格の行に対応する商品名の行を探す。
- * 1. 同じ高さで左側にある行（「商品名 …… 価格」型のメニュー）
- * 2. すぐ上にある行（値札の「商品名／価格」型）
+ * 価格の列の傾き（px単位の dx/dy）。端末を回して持つと縦の列が傾き、横の行も同じだけ傾く。
+ * 価格が3つ以上縦に並ぶ列について、左端・右端のどちらかがまっすぐ並ぶ（左揃え・右揃え）時だけ推定し、
+ * 並びが崩れている・価格が少ない時は0（傾きなし）を返す。
  */
-function findLabelLine(price: TrackedLine, candidates: readonly TrackedLine[]): TrackedLine | null {
-  let best: TrackedLine | null = null;
-  let bestGap = Infinity;
-  for (const candidate of candidates) {
-    if (candidate.id === price.id) continue;
-    if (verticalOverlapRatio(candidate.box, price.box) < 0.5) continue;
-    const candidateRight = candidate.box.x + candidate.box.width;
-    if (candidateRight > price.box.x + 0.02) continue;
-    const gap = price.box.x - candidateRight;
-    if (gap <= 0.6 && gap < bestGap) {
-      best = candidate;
-      bestGap = gap;
+export function estimateColumnSlope(boxes: readonly NormalizedBox[], image: Size = UNIT_SIZE): number {
+  if (boxes.length < MIN_COLUMN_PRICES) return 0;
+  const points = boxes
+    .map((box) => ({
+      y: (box.y + box.height / 2) * image.height,
+      left: box.x * image.width,
+      right: (box.x + box.width) * image.width,
+      center: (box.x + box.width / 2) * image.width,
+      height: box.height * image.height,
+    }))
+    .sort((a, b) => a.center - b.center);
+
+  // 横に離れた価格は別の列（2列のメニュー）。いちばん多い列だけで推定する
+  const columns: (typeof points)[] = [[points[0]]];
+  for (let i = 1; i < points.length; i += 1) {
+    if (points[i].center - points[i - 1].center > image.width * 0.12) columns.push([]);
+    columns[columns.length - 1].push(points[i]);
+  }
+  const column = columns.reduce((a, b) => (b.length > a.length ? b : a));
+  if (column.length < MIN_COLUMN_PRICES) return 0;
+
+  const lineHeight = median(column.map((point) => point.height));
+  const ys = column.map((point) => point.y);
+  if (Math.max(...ys) - Math.min(...ys) < lineHeight * 3) return 0;
+
+  const meanY = ys.reduce((sum, y) => sum + y, 0) / ys.length;
+  const varianceY = ys.reduce((sum, y) => sum + (y - meanY) ** 2, 0);
+  let best: { slope: number; rms: number } | null = null;
+  for (const edge of ['left', 'right'] as const) {
+    const xs = column.map((point) => point[edge]);
+    const meanX = xs.reduce((sum, x) => sum + x, 0) / xs.length;
+    const covariance = column.reduce((sum, point, index) => sum + (point.y - meanY) * (xs[index] - meanX), 0);
+    const slope = covariance / varianceY;
+    const rms = Math.sqrt(
+      column.reduce((sum, point, index) => sum + (xs[index] - (meanX + slope * (point.y - meanY))) ** 2, 0) /
+        column.length,
+    );
+    if (best == null || rms < best.rms) best = { slope, rms };
+  }
+  if (best == null || best.rms > Math.max(3, lineHeight * 0.35) || Math.abs(best.slope) > MAX_COLUMN_SLOPE) return 0;
+  return best.slope;
+}
+
+/** 傾きに沿った「行の位置」（px）と、傾きで太った分を除いた文字の高さ */
+function rowSpan(box: NormalizedBox, slope: number, image: Size): { top: number; bottom: number } {
+  const centerX = (box.x + box.width / 2) * image.width;
+  const centerY = (box.y + box.height / 2) * image.height;
+  const height = box.height * image.height;
+  const trueHeight = Math.max(height * 0.5, height - Math.abs(slope) * box.width * image.width);
+  // 列が dx/dy=slope で傾く時、行は dy/dx=-slope で傾く。行の上では y + slope*x が一定
+  const position = centerY + slope * centerX;
+  return { top: position - trueHeight / 2, bottom: position + trueHeight / 2 };
+}
+
+function rowOverlapRatio(a: NormalizedBox, b: NormalizedBox, slope: number, image: Size): number {
+  const spanA = rowSpan(a, slope, image);
+  const spanB = rowSpan(b, slope, image);
+  const overlap = Math.max(0, Math.min(spanA.bottom, spanB.bottom) - Math.max(spanA.top, spanB.top));
+  const minHeight = Math.min(spanA.bottom - spanA.top, spanB.bottom - spanB.top);
+  return minHeight > 0 ? overlap / minHeight : 0;
+}
+
+function boxRight(box: NormalizedBox): number {
+  return box.x + box.width;
+}
+
+type PriceLabelClaim = {
+  nameLine: TrackedLine | null;
+  descriptionLines: TrackedLine[];
+  /** 商品名の行との重なり（取り合いの優先度） */
+  score: number;
+  ambiguous: boolean;
+};
+
+export type PriceLabelAssignment = {
+  /** 商品名。確かでなければnull */
+  label: string | null;
+  /** 説明。無ければnull */
+  description: string | null;
+  /** 価格と、使った商品名・説明を合わせた範囲 */
+  box: NormalizedBox;
+  /** 商品名・説明に使った行の識別子 */
+  usedLineIds: string[];
+};
+
+/**
+ * 価格の行ごとに、商品名・説明を決める（メインカメラ・翻訳ページのカメラで共有）。
+ * 1. 同じ行（傾きを補正）で価格より左にある文字。左端を商品名、それより右（価格まで）を説明にする。
+ *    左に別の価格があれば、そこより右だけを見る（2列のメニュー）
+ * 2. 同じ行に何も無ければ、すぐ上にある行（値札の「商品名／価格」型）
+ * 価格の行自体に文字があれば（"Classic Burger $12.50"）、左に何も無い時はそれを商品名、左に商品名があれば説明にする。
+ * 確かでない時（同じ行で縦に重なる文字がある・複数の価格が同じ文字を取り合う）は商品名を付けない。
+ */
+export function assignPriceLabels(
+  priceLines: readonly TrackedLine[],
+  textLines: readonly TrackedLine[],
+  options: { maxTextLength: number; imageSize?: Size },
+): Map<string, PriceLabelAssignment> {
+  const image = options.imageSize ?? UNIT_SIZE;
+  const slope = estimateColumnSlope(
+    priceLines.map((line) => line.box),
+    image,
+  );
+  const sameRow = (a: NormalizedBox, b: NormalizedBox) => rowOverlapRatio(a, b, slope, image) >= ROW_OVERLAP;
+
+  const claims = new Map<string, PriceLabelClaim>();
+  for (const price of priceLines) {
+    // 左にある別の価格（同じ行）。そこより左は別の品目
+    const boundary = priceLines
+      .filter((other) => other.id !== price.id && sameRow(other.box, price.box) && boxRight(other.box) <= price.box.x + 0.02)
+      .reduce((edge, other) => Math.max(edge, boxRight(other.box)), -Infinity);
+    const row = textLines
+      .filter(
+        (line) =>
+          sameRow(line.box, price.box) && boxRight(line.box) <= price.box.x + 0.02 && line.box.x >= boundary - 0.005,
+      )
+      .sort((a, b) => a.box.x - b.box.x);
+    const nearestGap = row.length > 0 ? price.box.x - Math.max(...row.map((line) => boxRight(line.box))) : Infinity;
+    if (row.length === 0 || nearestGap > MAX_LABEL_GAP) {
+      claims.set(price.id, { nameLine: null, descriptionLines: [], score: 0, ambiguous: false });
+      continue;
+    }
+    // 確かでない組：
+    // - 同じ行の中で横に重なる文字が2つある＝上下の行にまたがっている（行の境目にある価格）
+    // - 隣り合う文字どうし（商品名と説明）が同じ行にない＝傾いて別の行の文字を拾っている（傾きを推定できない時）
+    // - 左端の文字のさらに左に、半分ずれて同じ行にかかる文字がある＝行の続き（商品名）を取りこぼしている
+    const leftmost = row[0];
+    const ambiguous =
+      row.some((a, i) => row.some((b, j) => j > i && horizontalOverlap(a.box, b.box) > 0)) ||
+      row.some((line, i) => i > 0 && !sameRow(row[i - 1].box, line.box)) ||
+      textLines.some(
+        (line) =>
+          !row.includes(line) &&
+          boxRight(line.box) <= leftmost.box.x + 0.005 &&
+          line.box.x >= boundary - 0.005 &&
+          rowOverlapRatio(line.box, leftmost.box, slope, image) >= PARTIAL_ROW_OVERLAP,
+      );
+    claims.set(price.id, {
+      nameLine: row[0],
+      descriptionLines: row.slice(1),
+      score: rowOverlapRatio(row[0].box, price.box, slope, image),
+      ambiguous,
+    });
+  }
+
+  // 同じ文字を複数の価格が商品名・説明に取り合ったら、重なりの大きい方だけに付ける
+  const owner = new Map<string, { priceId: string; score: number }>();
+  for (const [priceId, claim] of claims) {
+    if (claim.ambiguous || claim.nameLine == null) continue;
+    for (const line of [claim.nameLine, ...claim.descriptionLines]) {
+      const current = owner.get(line.id);
+      if (current == null || claim.score > current.score) owner.set(line.id, { priceId, score: claim.score });
     }
   }
-  if (best) return best;
+  const conflicted = new Set<string>();
+  for (const [priceId, claim] of claims) {
+    if (claim.nameLine == null) continue;
+    if ([claim.nameLine, ...claim.descriptionLines].some((line) => owner.get(line.id)?.priceId !== priceId)) {
+      conflicted.add(priceId);
+    }
+  }
+  const usedIds = new Set<string>();
+  for (const [priceId, claim] of claims) {
+    if (claim.nameLine == null || conflicted.has(priceId)) continue;
+    usedIds.add(claim.nameLine.id);
+    for (const line of claim.descriptionLines) usedIds.add(line.id);
+  }
 
+  const result = new Map<string, PriceLabelAssignment>();
+  for (const price of priceLines) {
+    const claim = claims.get(price.id);
+    const ownText = stripPriceTokens(price.text);
+    const ownLabel = isTranslatableText(ownText, options.maxTextLength) ? ownText : null;
+    let nameLine: TrackedLine | null = null;
+    let descriptionLines: TrackedLine[] = [];
+
+    if (claim?.nameLine != null) {
+      // 確かでない時は左の文字を使わない（価格の行自体の文字は同じ行なので、あればそれを使う）
+      if (!claim.ambiguous && !conflicted.has(price.id)) {
+        nameLine = claim.nameLine;
+        descriptionLines = claim.descriptionLines;
+      }
+    } else if (ownLabel == null) {
+      nameLine = findLineAbove(price, textLines, usedIds);
+      if (nameLine != null) usedIds.add(nameLine.id);
+    }
+
+    const descriptions = descriptionLines.map((line) => normalizeRecognizedText(line.text));
+    if (nameLine != null && ownLabel != null) descriptions.push(ownLabel);
+    const label = nameLine != null ? normalizeRecognizedText(nameLine.text) : ownLabel;
+    const used = [...(nameLine ? [nameLine] : []), ...descriptionLines];
+    result.set(price.id, {
+      label,
+      description: label != null && descriptions.length > 0 ? descriptions.join(' ') : null,
+      box: used.reduce((box, line) => unionBox(box, line.box), price.box),
+      usedLineIds: used.map((line) => line.id),
+    });
+  }
+  return result;
+}
+
+/** 値札の「商品名／価格」型：価格のすぐ上にある行（他の価格に使った行は除く） */
+function findLineAbove(
+  price: TrackedLine,
+  candidates: readonly TrackedLine[],
+  usedIds: ReadonlySet<string>,
+): TrackedLine | null {
+  let best: TrackedLine | null = null;
+  let bestGap = Infinity;
   const maxVerticalGap = Math.min(0.12, price.box.height * 3);
   for (const candidate of candidates) {
-    if (candidate.id === price.id) continue;
+    if (candidate.id === price.id || usedIds.has(candidate.id)) continue;
     const candidateBottom = candidate.box.y + candidate.box.height;
     if (candidateBottom > price.box.y + price.box.height * 0.3) continue;
     const gap = price.box.y - candidateBottom;
@@ -556,26 +881,22 @@ export function buildSmartCameraEntries(
     }
   }
 
+  const assignments = assignPriceLabels(
+    priceLines.map(({ line }) => line),
+    textLines,
+    options,
+  );
   const usedLabelIds = new Set<string>();
   const priceEntries: LivePriceEntry[] = priceLines.map(({ line, amount }) => {
-    const ownLabel = stripPriceTokens(line.text);
-    let label: string | null = null;
-    let box = line.box;
-    if (isTranslatableText(ownLabel, options.maxTextLength)) {
-      label = ownLabel;
-    } else {
-      const labelLine = findLabelLine(line, textLines);
-      if (labelLine) {
-        label = normalizeRecognizedText(labelLine.text);
-        usedLabelIds.add(labelLine.id);
-        box = unionBox(line.box, labelLine.box);
-      }
-    }
+    const assignment = assignments.get(line.id);
+    for (const id of assignment?.usedLineIds ?? []) usedLabelIds.add(id);
+    const box = assignment?.box ?? line.box;
     return {
       kind: 'price',
       id: line.id,
       amount,
-      label,
+      label: assignment?.label ?? null,
+      description: assignment?.description ?? null,
       box,
       centerDistance: distanceFromRegionCenter(box, options.visibleRegion),
     };
@@ -753,8 +1074,10 @@ export type TranslationPriceEntry = {
   id: string;
   /** 価格（現地通貨）。1行に複数の価格（S/M/L等）があれば出現順に全て */
   amounts: number[];
-  /** 商品名（価格と同じ行の文字、または左隣・直上の行）。見つからなければnull */
+  /** 商品名（同じ行の左端の文字、または直上の行）。見つからない・確かでなければnull */
   label: string | null;
+  /** 説明（同じ行で商品名と価格の間の文字）。無ければnull */
+  description: string | null;
   box: NormalizedBox;
   centerDistance: number;
 };
@@ -782,21 +1105,23 @@ export function buildTranslationPriceEntries(
     }
   }
 
+  const assignments = assignPriceLabels(
+    priceLines.map(({ line }) => line),
+    textLines,
+    options,
+  );
   return priceLines
     .map(({ line, amounts }) => {
-      const ownLabel = stripPriceTokens(line.text);
-      let label: string | null = null;
-      let box = line.box;
-      if (isTranslatableText(ownLabel, options.maxTextLength)) {
-        label = ownLabel;
-      } else {
-        const labelLine = findLabelLine(line, textLines);
-        if (labelLine) {
-          label = normalizeRecognizedText(labelLine.text);
-          box = unionBox(line.box, labelLine.box);
-        }
-      }
-      return { id: line.id, amounts, label, box, centerDistance: distanceFromRegionCenter(box, options.visibleRegion) };
+      const assignment = assignments.get(line.id);
+      const box = assignment?.box ?? line.box;
+      return {
+        id: line.id,
+        amounts,
+        label: assignment?.label ?? null,
+        description: assignment?.description ?? null,
+        box,
+        centerDistance: distanceFromRegionCenter(box, options.visibleRegion),
+      };
     })
     .sort((a, b) => a.centerDistance - b.centerDistance)
     .slice(0, options.maxEntries);

@@ -78,6 +78,7 @@ export function SmartCameraLayer({
     return buildSmartCameraEntries(tracked, (text) => extractConfidentPriceCandidates(text, currency), {
       ...DEFAULT_SMART_CAMERA_OPTIONS,
       visibleRegion: visibleRegionInImage(frameSize, viewSize),
+      imageSize: frameSize,
     });
   }, [active, tracked, frameSize, viewSize, currency]);
 
