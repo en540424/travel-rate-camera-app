@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { buildFixtureDb, FIXTURE, FIXTURE_HAWAII, fixtureDates, pastTripDate } from './build-fixture-db.mjs';
+import { anchoredToday, buildFixtureDb, FIXTURE, FIXTURE_HAWAII, fixtureDates, HAWAII_PRICE_TAG, pastTripDate } from './build-fixture-db.mjs';
 import { openExpoSqliteCompat } from '../../engine/fixtures/expo-sqlite-node.mjs';
 import { loadProfile } from '../../engine/profile.mjs';
 import { interactHash } from '../../engine/drivers/interact.mjs';
@@ -137,7 +137,16 @@ test('fixture（ハワイ）: ハワイ旅行・USD 163・予算 ¥50,000。パ�
   }
 });
 
+test('fixture（ハワイ）: 基準日（11/24）と同じ月で以後なら日付は 11/19〜23 のまま、月が違えば撮影する日の月', () => {
+  const range = (d) => { const a = fixtureDates(d, FIXTURE_HAWAII); return [a[0], a.at(-1)]; };
+  for (const day of [24, 25, 30]) assert.deepEqual(range(new Date(2026, 10, day)), ['2026-11-19', '2026-11-23'], `11/${day}`);
+  assert.deepEqual(range(new Date(2026, 11, 3)), ['2026-12-01', '2026-12-05'], '12月はカレンダーの月に合わせる');
+  assert.equal(anchoredToday(new Date(2026, 10, 20), FIXTURE_HAWAII).getDate(), 20, '基準日より前は撮影する日');
+  assert.equal(anchoredToday(new Date(2026, 10, 28), FIXTURE).getDate(), 28, 'パリの見本は基準日を持たない（従来どおり）');
+});
+
 test('fixture（ハワイ）: 金額は価格表の値・名前は実機の表示だけ（Beach Sandals・コストコの品目は入れない）', () => {
+  for (const r of FIXTURE_HAWAII.records) assert.ok(Object.values(HAWAII_PRICE_TAG).includes(r.foreign), `${r.memo} は価格表の金額`);
   const priceTag = { 'コナコーヒー': 4.5, 'マカダミアナッツチョコレート': 6.2, 'アロハTシャツ': 29.9, 'ボトルウォーター': 1.8, 'パイナップルジュース': 5.4 };
   assert.deepEqual(Object.fromEntries(FIXTURE_HAWAII.records.map((r) => [r.memo, r.foreign])), priceTag);
   // 実機の記録（03_買い物一覧.png）で候補だった2品
@@ -164,7 +173,8 @@ test('profile-hawaii: 見出し・広告・並びは profile.json と同じで�
   assert.ok(scr(hawaii, 'calendar').expectVisible.includes(formatJpy(t.purchasedTotalJpy)), `月合計の購入済み ${formatJpy(t.purchasedTotalJpy)}`);
   const conv = scr(hawaii, 'converter').interact;
   const typed = Number(conv.steps.find((s) => s.inputText).inputText);
-  assert.ok(records.some((r) => r.foreign === typed), '換算に入れる金額は見本（価格表）の金額');
+  assert.ok(Object.values(HAWAII_PRICE_TAG).includes(typed), '換算に入れる金額は価格表の金額');
+  assert.ok(Number.isInteger(typed), '換算の入力は整数（第9回の1回目は小数の入力の後の確認が通らなかった）');
   assert.deepEqual(conv.expectVisible, [formatJpy(convert(typed, trip.manual_rate, 'TO_JPY'))]);
   assert.ok(scr(hawaii, 'history').expectVisible.every((x) => typeof x === 'string'));
   assert.ok(records.some((r) => scr(hawaii, 'history').expectVisible.includes(r.memo)), '履歴の確認に見本の品目名');

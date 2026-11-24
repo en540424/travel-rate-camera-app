@@ -66,10 +66,14 @@ export const FIXTURE = {
 //   画面の表示用に割り当てた（コナコーヒー・マカダミアナッツチョコレート＝購入済み、アロハTシャツ＝候補）
 // - 実機の記録にあるコストコの品目（被写体が価格表と別・商標）と内容の読めない記録は入れない
 // - 円の金額は保存の時と同じアプリの換算（src/utils/currency.ts の convert。丸めない値を保存し、表示・合計で1件ずつ丸める）
-// - 日付：撮影する日の5〜1日前（2026-11-24 に作ると 11/19〜23。第6〜8回の撮影の記録日と同じ範囲）
+// - 日付：基準日（anchorDate＝2026-11-24）の5〜1日前＝11/19〜23（第6〜8回の撮影の記録日と同じ範囲）。
+//   撮影する日が基準日と同じ月で基準日以後なら基準日で数える（11/24〜30 のどの日に撮っても 11/19〜23）。
+//   月が違えば撮影する日から数える（カレンダーは撮影する日の月を開くため。空のカレンダーを撮らない）
+export const HAWAII_PRICE_TAG = Object.freeze({ 'Bottled Water': 1.8, 'Kona Coffee': 4.5, 'Aloha T-Shirt': 29.9, 'Macadamia Chocolate': 6.2, 'Beach Sandals': 18, 'Pineapple Juice': 5.4 });
 export const FIXTURE_HAWAII = {
   trip: { name: 'ハワイ旅行', budget_jpy: 50000, base_currency: 'USD', manual_rate: 163 },
   jpy: 'app-convert',
+  anchorDate: '2026-11-24',
   records: [
     { foreign: 4.5, memo: 'コナコーヒー', category: 'food', purchased: true, daysAgo: 5 },
     { foreign: 6.2, memo: 'マカダミアナッツチョコレート', category: 'souvenir', purchased: true, daysAgo: 4 },
@@ -89,6 +93,7 @@ const pad = (n) => String(n).padStart(2, '0');
  * （その場合は今日より後の日付の記録になる。カレンダーが空になるよりよい）。
  */
 export function fixtureDates(today = new Date(), fixture = FIXTURE) {
+  today = anchoredToday(today, fixture);
   const span = Math.max(...fixture.records.map((r) => r.daysAgo));
   const y = today.getFullYear();
   const m = today.getMonth();
@@ -97,6 +102,15 @@ export function fixtureDates(today = new Date(), fixture = FIXTURE) {
     const d = new Date(y, m, anchor - r.daysAgo);
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   });
+}
+
+/** 基準日（fixture.anchorDate）があり、撮影する日が同じ月で基準日以後なら基準日を、そうでなければ撮影する日を返す。 */
+export function anchoredToday(today, fixture = FIXTURE) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fixture.anchorDate ?? '');
+  if (!m) return today;
+  const anchor = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const sameMonth = today.getFullYear() === anchor.getFullYear() && today.getMonth() === anchor.getMonth();
+  return sameMonth && today.getDate() >= anchor.getDate() ? anchor : today;
 }
 
 /** 終了した旅行の日付（YYYY-MM-DD）。today の monthsAgo か月前の day 日。 */
