@@ -8,7 +8,8 @@
 > - 状況の判定（A〜F）・残工程・Work に任せる ASC/RevenueCat の作業・実機確認の準備・Build 9 との統合：Vault `旅レートカメラ_ProPlus実装状況再統合と3プラン同時公開の残工程_2026-11-25`。開発ログ `2026-11-25_旅レートカメラ_ProPlus開発再開_実装状況再統合と課金判定_開発ログ`
 > - 要点：地図・予定・AI のアプリ側は**実装済み・実機未確認**（Pro+ の実機確認は0件）／音声の取り込み・実物の中継（外部入口・RevenueCat 照会）・Pro+ の購入画面は**未実装**／原価上限は `tabirate-ai-gateway` `feat/cost-cap` に**模擬の上で実装済み**（deploy なし）／Pro+ の商品は ASC・RevenueCat に**未作成**
 > - 今回の commit：`a18afb9` Build 9（`c83e392`）の live-text 4ファイルを取り込み Build 9 と同一に（docs は入れない・Build 9 の branch は不変）／`1e82b41` 購入判定を目標のプランで一般化（Pro の判定は従来と全組み合わせで同じ）・Pro+ 専用 Offering（`pro_plus`・暫定）・Pro+ の商品 ID を Pro の候補から除外・プラン変更（Upgrade 即時／Downgrade・Crossgrade 次回）・`useProPlanDetails` が Pro+ を読む・検証用ビルド `testflight-proplus-qa`（`EXPO_PUBLIC_PRO_PLUS_QA=1`・入口は出すが契約を装わない・審査に出さない）
-> - テスト：npm test 987・tsc 0・lint 20（baseline）。TEST_CHECKLIST #94〜#97 追加。**購入の判定を触ったので、Build に入れる前に Sandbox で #30・#32・#33・#36 を再確認**
+> - `82443d6` 独立検収（Fable 5.2・blocker なし・should-fix 3件）を反映：購入の目標を商品から決める・Pro+ の期間を「Proの月額」と出さない・検証用ビルドを画面に常時表示
+> - テスト：npm test 991・tsc 0・lint 20（baseline）。TEST_CHECKLIST #94〜#97 追加。**購入の判定を触ったので、Build に入れる前に Sandbox で #30・#32・#33・#36 を再確認**
 > - Human 判断待ち：H-P1 価格／H-P2 事業者（音声 PoC は判断保留）／H-P3 枠／H-P5 DB v8／H-P9 音声の操作方式／H-P12 中継の本番／H-7 体験／Pro+ の Product ID の確定（ASC で作ると変更不可）
 
 > [!important] 2026-11-25（Build 7 の実機確認から）**ライブ翻訳の表示安定化（止めれば落ち着く・動かせば替わる）／実装・テスト済み・未Build・実機未確認**
