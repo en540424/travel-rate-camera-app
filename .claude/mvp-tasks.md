@@ -4,6 +4,13 @@
 
 > 本節が現在地の正。以下の「現在の開発フェーズ」以降は2026-07-01〜08時点の履歴で、完了済み項目を未完へ戻さない。
 
+> [!important] 2026-11-25（続き）**Pro+ のプラン画面（購入・アップグレード・復元）と、AI 中継の外部入口・サーバー側の RevenueCat 照会・原価制御 L3〜L5／実装・自動テスト済み・未Build・実機・Sandbox・本物の外部サービスは未確認**
+> - アプリ（このbranch）：`/proplus/plans`（設定 → Pro+ → Pro+のプラン）。3プランの比較・StoreKit の価格だけ・月額／年額・アップグレード（即時）／期間の変更（次回の更新日）・下位への変更は App Store の管理画面・購入・復元（Pro+／Pro だけ／無し）・現在の契約（本物の `planTier`）。Pro+ の商品が無い間は「準備中」でボタン無効。判定 `src/lib/proplus/proplus-purchase-core.ts`。Pro+ 専用 Offering は画面を開いた時だけ読む（`default`・Pro の画面は不変）。AI は中継の URL 未設定・音声の部品未導入（`AI_VOICE_CAPTURE_READY=false`）の間「準備中」
+> - 中継（`tabirate-ai-gateway` `feat/cost-cap`）：`POST /v1/text/translate`・`GET /v1/quota`・`GET /v1/voice`（WebSocket）、RevenueCat v2（subscriptions の `lookup_key`＝`pro_plus`）、L3（単価の下限・値下げの確認）・L4（止めた後の使用量）・L5（トークン上限を事業者層へ）・M4（単価の経過の検出）。Secret・事業者層が無い間は `unconfigured`。事業者層・本番は無い
+> - テスト：アプリ npm test 1002・tsc 0・lint 20（baseline）／中継 370・check:workerd 27/27・check:entry 8/8・変異（変更した規則）全件 KILLED。TEST_CHECKLIST #98・#99。Vault ログ `2026-11-25_旅レートカメラ_ProPlus購入画面とAI中継の入口・原価制御L3-L5_開発ログ`
+> - 独立検収（Fable 5.2）：fail-open・上限を超える経路なし。**公開前の blocker B1（中継が RevenueCat の Webhook を受けないので、入口だけで解決した利用者はずっと暫定の枠）は未対応**。B2（失敗の後の冪等キー）・S1〜S8 は対応、S9（音声の1秒の区画）は音声の工程で
+> - 次：音声の取り込み・再生（ネイティブ依存・Build）と事業者層（H-P2 の後）。Human・Work：Pro+ の価格・Product ID の確定 → ASC・RevenueCat（W-3〜W-6）→ `testflight-proplus-qa` を1本（Human GO）
+
 > [!important] 2026-11-25（Pro+ 開発の正式再開）**Human 正式決定：Free・Pro・Pro+ の3プラン同時の初回リリース。Build 9（Free＋Pro）は初回提出 Build ではない**（Free・Pro とライブ翻訳の実機基準版として保護）
 > - 状況の判定（A〜F）・残工程・Work に任せる ASC/RevenueCat の作業・実機確認の準備・Build 9 との統合：Vault `旅レートカメラ_ProPlus実装状況再統合と3プラン同時公開の残工程_2026-11-25`。開発ログ `2026-11-25_旅レートカメラ_ProPlus開発再開_実装状況再統合と課金判定_開発ログ`
 > - 要点：地図・予定・AI のアプリ側は**実装済み・実機未確認**（Pro+ の実機確認は0件）／音声の取り込み・実物の中継（外部入口・RevenueCat 照会）・Pro+ の購入画面は**未実装**／原価上限は `tabirate-ai-gateway` `feat/cost-cap` に**模擬の上で実装済み**（deploy なし）／Pro+ の商品は ASC・RevenueCat に**未作成**
