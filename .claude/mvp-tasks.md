@@ -4,6 +4,12 @@
 
 > 本節が現在地の正。以下の「現在の開発フェーズ」以降は2026-07-01〜08時点の履歴で、完了済み項目を未完へ戻さない。
 
+> [!important] 2026-11-25（Build 7 の実機確認から）**ライブ翻訳の表示安定化（止めれば落ち着く・動かせば替わる）／実装・テスト済み・未Build・実機未確認**
+> - Build 7（1.0.0 (7)・EAS `f31fbf3a-ccef-442e-a420-7ce750c0cc7d`・build branch `4d9ac8a`）：ASC VALID・IN_BETA_TESTING。EAS Free iOS 3/15
+> - コード commit：本 branch `bd33424`＝ `integrate/build6-live-text-fix` `cdba4a3`（cherry-pick・同一。次のビルド元は build branch 側）
+> - 原因・対策・実測は build branch の同じ節と Vault ログ `2026-11-25_旅レートカメラ_ライブ翻訳の表示安定化_開発ログ` を参照（追跡 `updateTrackedLines` はメインカメラと共有）
+> - テスト：新規 `src/lib/live-text-stability.test.mjs` 23件。本 branch 956・tsc 0・lint 20（baseline）。build branch 908。**Human：次のビルド（Human GO）で実機確認**
+
 > [!important] 2026-11-25（Build 6 の実機確認から）**ライブ翻訳の左右の偏りと価格の一時的な読み違いを修正／実装・テスト済み・未Build・実機未確認**
 > - コード commit：`integrate/build6-live-text-fix` `dc39861`＋`23fb1c3`（次のビルド元・Tier/Pro+ なし）＝ `feat/proplus-core-and-store-assets` `54d7126`＋`30e1e2c`（cherry-pick・同一）
 > - 左右：OCR は読めていて選び方の問題（正規化座標で横が約1.8倍遠い扱い＋中央の列の説明が14枠を占有＝3列16行で商品名0・説明14）→ 画面上の距離・同じ行の2番目以降（説明）を後回し・見出しと前回の選択を少し優先・札の右端を同じ行の右の文字の手前まで（`selectOverlayLines`・`placeOverlayLabels`）→ 商品名6・説明8
