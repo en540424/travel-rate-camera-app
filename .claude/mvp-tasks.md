@@ -4,6 +4,12 @@
 
 > 本節が現在地の正。以下の「現在の開発フェーズ」以降は2026-07-01〜08時点の履歴で、完了済み項目を未完へ戻さない。
 
+> [!important] 2026-11-26（続き）**Pro+ 本人認証 B1 の根本修正・独立セキュリティ検収（Fable 5.2・3回）／設計として成立・ローカル実装済み・モックテスト合格・独立検収で blocker 0（コード上）・外部サービスでの実証0件・本番公開は不可（Human の採用と Sandbox の実測が前提）**
+> - B1 の根本原因：加入者（台帳・枠の持ち主）を x-app-user-id と RevenueCat の顧客の繋がり（他人のIDで書き換え得る）から決め、Apple の取引IDは門にだけ使っていた。**主体を Apple が署名した取引ID（環境ごと）に逆にした**（中継 `3c71ac8`）。再検収の BL-1（権利・期間・区分を申告IDの顧客から取っていた）は、**JWS の transactionId で RevenueCat v2 の購読そのものを引き**、申告IDがその購読の持ち主かを確かめる形で解消（`eb1a7f1`）。RS-1・RS-2・RS-4（音声の利用中の取り直し）・NX-1・NX-3・NX-4 も対応（`3beb73a`・`174a5a2`）。S4（猶予期間：更新情報の JWS）・S5（交換の回数の窓2本）も対応。S1（漏れた JWS と持ち主のIDの両方を持つ者は共有できる）は残るリスク（端末の区別は Human）
+> - アプリ：`e49ab5e`（証拠に購読の更新情報の JWS を足す・交換の本文 `proofBody`）・`599a5a0`（ad81002 の再確認 Sonnet 5.5：blocker なし。N1 正常な拒否でトークンを捨てない・N2 古い取り込みの失敗を新しい開始の失敗にしない）
+> - テスト：アプリ npm test 1033・tsc 0・lint 20（baseline）／中継 449・check:entry 21/21・check:workerd 27/27・変異：前回未実行の23件・今回追加の約45件・置換先を直した既存分は KILLED。旧来の経路の1件（N6 entitlement null・入口からは requirePrincipal で到達しない）だけ SURVIVED（記録）。変異は対象の試験ファイルに絞り並列数1で実行（`MUTANT_TEST_FILES`・`MUTANT_CONCURRENCY`）。Vault ログ `2026-11-26_旅レートカメラ_ProPlus本人認証B1根本修正と独立セキュリティ検収_開発ログ`
+> - **有効化の前に要る（Human・Sandbox）**：方式（StoreKit の JWS・`AUTH_PROOF_KINDS`）の採用／Sandbox の実測（購読の検索の応答の `customer_id`・別ID一覧の中身＝持ち主の確認が正当な復元を締め出さないか、返金の後の購読の状態、猶予期間の値、更新の後に古い取引IDで引けること、`originalTransactionId` の継続、実機の JWS の形と長さ）／RS-5（返金の取り消しの順序）・RS-6（権利の切れたトークンの照会の保存・WAF）・NX-2（持ち主の記録の期限）／アプリの案内（`not_owner`・Apple ID の食い違い）
+
 > [!important] 2026-11-26 **Pro+ リアルタイム音声の端末の入出力・中継との手順・中継の本人認証・S9／ローカル実装済み・モックテスト合格・未Build・実機・Sandbox・外部サービスは0件**
 > - アプリ（このbranch）：取り込み・再生は `react-native-audio-api` 1.0.1（版固定・ネイティブ依存・config plugin で `UIBackgroundModes` を足さない）。PCM の変換・区画化・送信の歩調 `src/lib/ai/voice-pcm-core.ts`、中継との手順 `voice-protocol-core.ts`、入出力 `voice-audio.native.ts`、配線 `src/hooks/use-voice-session.ts`。本人認証の端末側 `ai-auth-core.ts`・`ai-auth-client.ts`・`modules/storekit-proof`（StoreKit 2 の JWS を読むだけ）。**release は `AI_VOICE_CAPTURE_READY=false` の間「準備中」・`AI_GATEWAY_URL=null`**。半二重 `AI_VOICE_HALF_DUPLEX=true` は暫定（H-P9）。**fingerprint が変わる（OTA 不可・次の Build が要る）**。TEST_CHECKLIST #100〜#105
 > - 中継（`tabirate-ai-gateway` `feat/cost-cap`）：S9（1秒の区画・受信の時刻で判定）、本人認証（中継のトークン HS256・`POST /v1/auth/session`・StoreKit の JWS の候補の検証器・x-app-user-id だけでは通らない）。**本人認証は公開できる水準ではない**：独立検収の B1（結び付けの根が RevenueCat の顧客の繋がり）に入れた「最初の取引IDだけ」の規則は、再検収で不十分と判定（逆の順序で攻撃者が通り被害者が締め出される・Apple ID の変更や TestFlight の後の本番の購入で正当な利用者も締め出される）。**この規則のままでは有効にしない**。身元の根を取引IDにする作り直しか最小の変更かは Human の判断（中継の README「独立検収（2026-11-26）」）
