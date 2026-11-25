@@ -145,7 +145,8 @@ function createHttpGateway(base: string): AiGateway {
         // session を受ける前に閉じた：upgrade で断られた（トークンの期限・失効）かもしれない。続いたらトークンを取り直す
         if (!sawSession && !closedByUs) {
           sessionlessCloses += 1;
-          if (sessionlessCloses >= 2) forgetGatewayToken();
+          // 新規の開始なら1回で捨てる（期限切れ・鍵の切り替えの直後に2回「通信不可」にしない）。再開は2回続いた時だけ
+          if (!opts.resume || sessionlessCloses >= 2) forgetGatewayToken();
         }
         if (closedByUs) return;
         if (closeEvent(sawFinal) === 'socket_lost') h.onSocketLost();

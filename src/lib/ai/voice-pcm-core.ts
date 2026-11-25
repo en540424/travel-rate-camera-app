@@ -234,37 +234,39 @@ export class PlaybackClock {
 }
 
 /**
- * 送信の歩調：送った音声の長さが、送り始めてからの経過時間×比率＋余裕を超える区画は捨てる（2026-11-26 検収）。
+ * 送信の歩調（トークンの桶）：経過時間×比率の分だけ送れる量が増え、貯められるのは余裕（300ms）まで。送れる量を超える区画は捨てる。
  * JS の停滞・録音の事象の溜まりで区画がまとめて届いても、実時間より速く送らない（中継は10秒で実時間の1.1倍を超える受信を
- * 切断する）。比率と余裕は中継の絞りより小さくする（1.05倍・300ms）
+ * 切断する。この桶なら10秒の窓で 10秒×1.05＋300ms＝10,800ms 以下）。使わなかった分を上限なく貯めない（長く話した後や、
+ * 半二重・inactive で送らなかった後のまとめ送りも通さない。2026-11-26 再確認 A）
  */
 export class UplinkPacer {
-  private startedAt: number | null = null;
-  private sentMs = 0;
+  private last: number | null = null;
+  private tokens: number;
   private readonly ratio: number;
-  private readonly slackMs: number;
+  private readonly capMs: number;
   dropped = 0;
-  constructor(ratio = 1.05, slackMs = 300) {
+  constructor(ratio = 1.05, capMs = 300) {
     this.ratio = ratio;
-    this.slackMs = slackMs;
+    this.capMs = capMs;
+    this.tokens = capMs;
   }
 
   /** `frameMs` の区画を `now` に送ってよいか。送るなら数える */
   allow(frameMs: number, now: number): boolean {
-    if (this.startedAt === null) this.startedAt = now;
-    const budget = (now - this.startedAt) * this.ratio + this.slackMs;
-    if (this.sentMs + frameMs > budget) {
+    if (this.last !== null && now > this.last) this.tokens = Math.min(this.capMs, this.tokens + (now - this.last) * this.ratio);
+    this.last = this.last === null ? now : Math.max(this.last, now);
+    if (frameMs > this.tokens) {
       this.dropped += 1;
       return false;
     }
-    this.sentMs += frameMs;
+    this.tokens -= frameMs;
     return true;
   }
 
   /** 新しい接続（再開を含む）で数え直す。中継の絞りは接続ごと（世代ごと）なので、端末も接続ごとに歩調を取る */
   reset() {
-    this.startedAt = null;
-    this.sentMs = 0;
+    this.last = null;
+    this.tokens = this.capMs;
   }
 }
 

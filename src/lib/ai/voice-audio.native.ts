@@ -118,19 +118,19 @@ export function createVoiceAudio(): VoiceAudio | null {
           old.clearOnAudioReady();
           await old.stop().catch(() => undefined);
         }
-        recorder = new api.AudioRecorder({ iosVoiceProcessing: true, androidInputPreset: 'voiceCommunication' });
-        const r = recorder.onAudioReady({ sampleRate: 16_000, bufferLength: 1_600, channelCount: 1 }, ({ buffer, numFrames }) => {
+        const rec = new api.AudioRecorder({ iosVoiceProcessing: true, androidInputPreset: 'voiceCommunication' });
+        recorder = rec;
+        const r = rec.onAudioReady({ sampleRate: 16_000, bufferLength: 1_600, channelCount: 1 }, ({ buffer, numFrames }) => {
           const samples = buffer.getChannelData(0).subarray(0, numFrames);
           for (const frame of encoder.encode(samples, buffer.sampleRate)) onFrame(frame);
         });
         if (r.status !== 'success') return false;
-        const started = await recorder.start();
+        const started = await rec.start();
         if (my !== captureGen) {
-          // 録音を始める間に止められた
-          const late = recorder;
-          recorder = null;
-          late.clearOnAudioReady();
-          await late.stop().catch(() => undefined);
+          // 録音を始める間に止められた：この開始が作った録音だけを止める（別の開始の録音には触れない。失敗ではない）
+          if (recorder === rec) recorder = null;
+          rec.clearOnAudioReady();
+          await rec.stop().catch(() => undefined);
           return true;
         }
         return started.status === 'success';

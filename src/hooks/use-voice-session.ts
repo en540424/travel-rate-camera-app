@@ -95,6 +95,11 @@ export function useVoiceSession({ gateway, direction, partnerLang, onQuota }: {
       if (!('error' in c)) c.close();
       return;
     }
+    if ('error' in c && !wanted.current) {
+      // 開く途中に終了・バックグラウンド：エラーではなく、終了中を終える
+      dispatch({ type: 'socket_lost' });
+      return;
+    }
     if ('error' in c) {
       // 再開の途中で通信が無い：再開の1回として数える（待ちの後にもう一度。上限で終わる）
       if (resume && c.error === 'offline') dispatch({ type: 'socket_lost' });
@@ -157,7 +162,8 @@ export function useVoiceSession({ gateway, direction, partnerLang, onQuota }: {
     if (voice.phase === 'active' && !capturing.current && audio.current) {
       capturing.current = true;
       void audio.current.startCapture(onFrame).then((ok) => {
-        if (!ok) {
+        // 止められた後（capturing が偽）の失敗は部品の問題として扱わない
+        if (!ok && capturing.current) {
           capturing.current = false;
           dispatch({ type: 'local_issue', issue: 'audio_unavailable' });
           closeConn();
@@ -178,10 +184,8 @@ export function useVoiceSession({ gateway, direction, partnerLang, onQuota }: {
   const waitingKey = voice.phase === 'connecting' || voice.phase === 'draining' || voice.phase === 'reconnecting' ? `${voice.phase}:${voice.resumeCount}` : null;
   useEffect(() => {
     if (!waitingKey) return;
-    const t = setTimeout(() => {
-      closeConn();
-      dispatch({ type: 'timeout' });
-    }, PHASE_TIMEOUT_MS);
+    // 事象を送るだけ。接続を閉じるのは状態の配線（closed・error）と次の open に任せる（期限の直前に通訳中へ進んだ時に閉じない）
+    const t = setTimeout(() => dispatch({ type: 'timeout' }), PHASE_TIMEOUT_MS);
     return () => clearTimeout(t);
   }, [waitingKey, closeConn]);
 

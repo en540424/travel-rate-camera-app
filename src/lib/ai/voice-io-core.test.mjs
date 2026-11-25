@@ -266,3 +266,32 @@ describe('2026-11-26 独立検収の反映', () => {
     }
   });
 });
+
+describe('2026-11-26 再確認の反映', () => {
+  test('送信の歩調：長く実時間どおりに送った後の停滞のまとめ送りも通さない（貯められるのは300msまで）', () => {
+    const p = new P.UplinkPacer();
+    let t = 0;
+    for (let i = 0; i < 600; i += 1) { t += 100; assert.equal(p.allow(100, t), true, `実時間どおり i=${i}`); }
+    // JS が1.5秒止まり、15区画がまとめて届く
+    t += 1_500;
+    let sent = 0;
+    for (let i = 0; i < 15; i += 1) if (p.allow(100, t)) sent += 1;
+    assert.ok(sent <= 3, `まとめ送りは貯めた分まで（${sent}）`);
+  });
+
+  test('送信の歩調：どの10秒の窓でも 10,800ms を超えない（中継の絞り 11,000ms の内側）', () => {
+    const p = new P.UplinkPacer();
+    const sent = [];
+    let t = 0;
+    // 不規則な停滞とまとめ送りを繰り返す
+    for (let k = 0; k < 400; k += 1) {
+      t += (k % 7 === 0) ? 1_700 : 60;
+      const burst = (k % 7 === 0) ? 20 : 1;
+      for (let i = 0; i < burst; i += 1) if (p.allow(100, t)) sent.push(t);
+    }
+    for (const start of sent) {
+      const inWindow = sent.filter((x) => x >= start && x < start + 10_000).length * 100;
+      assert.ok(inWindow <= 10_800, `窓 ${start}: ${inWindow}ms`);
+    }
+  });
+});
