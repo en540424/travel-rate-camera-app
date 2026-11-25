@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   DEFAULT_TRACKER_OPTIONS,
   canAutoTranslate,
+  isSameLanguage,
   nextPairStatus,
   planTranslationRequests,
   updateTrackedLines,
@@ -29,6 +30,7 @@ import {
   isSceneTranslationSupported,
   translateSceneTexts,
 } from '@/lib/scene-translation-service';
+import type { TranslationAvailabilityStatus } from '../../modules/translation';
 
 // MARK: - フレームの追跡
 
@@ -87,15 +89,21 @@ export type SceneTranslationNotice = {
  * - 未導入（翻訳データDLが必要）・失敗した言語ペアには自動で送らない（DL案内の繰り返し防止）。
  *   `activate(source)`（利用者のボタン操作）で1回だけ送り直す
  * - 結果はcache（`scene-translation-service.ts`）に入り、`lookup`で描画時に引く
+ * - `prewarmSourceLanguage`を渡すと、表示前（カメラの準備中）にその言語ペアの導入状態を確かめておく。
+ *   初めての言語ペアは翻訳の前に導入状態を確かめるため、最初の翻訳がその分だけ遅れていた（2026-11-25）。
+ *   確かめるだけで翻訳データのDL案内は出さない。確認中に翻訳が必要になった時は、同じ確認の結果を待つ
  */
 export function useSceneTranslationQueue({
   enabled,
   targetLanguage,
   items,
+  prewarmSourceLanguage = null,
 }: {
   enabled: boolean;
   targetLanguage: string;
   items: readonly TranslationPlanItem[];
+  /** 先に導入状態を確かめておく翻訳元の言語（翻訳ページのカメラ翻訳だけ。メインカメラは渡さない＝従来どおり） */
+  prewarmSourceLanguage?: string | null;
 }) {
   const [pairStatus, setPairStatus] = useState<Record<string, PairStatus>>({});
   const [version, setVersion] = useState(0);
@@ -104,6 +112,8 @@ export function useSceneTranslationQueue({
   const inFlightRef = useRef(false);
   const mountedRef = useRef(true);
   const checkingPairsRef = useRef(new Set<string>());
+  // 言語ペアごとの導入状態の確認（1回だけ。先に確かめた結果と翻訳前の確認で同じ結果を使う）
+  const availabilityRef = useRef(new Map<string, Promise<TranslationAvailabilityStatus>>());
   const latestRef = useRef({ enabled, targetLanguage, items, pairStatus, supported });
 
   useEffect(() => {
@@ -133,6 +143,19 @@ export function useSceneTranslationQueue({
     [pairKey],
   );
 
+  const checkAvailability = useCallback(
+    (source: string, target: string): Promise<TranslationAvailabilityStatus> => {
+      const key = pairKey(source, target);
+      let pending = availabilityRef.current.get(key);
+      if (pending == null) {
+        pending = getScenePairAvailability(source, target);
+        availabilityRef.current.set(key, pending);
+      }
+      return pending;
+    },
+    [pairKey],
+  );
+
   const pump = useCallback(async () => {
     if (inFlightRef.current) return;
     const { enabled: isEnabled, targetLanguage: target, items: currentItems, pairStatus: statuses, supported: isSupported } =
@@ -156,7 +179,7 @@ export function useSceneTranslationQueue({
       // 初めての言語ペアは導入状態を先に確認する（未導入なら自動送信せずボタンを出す）
       if ((statuses[key] ?? 'unknown') === 'unknown' && !checkingPairsRef.current.has(key)) {
         checkingPairsRef.current.add(key);
-        const availability = await getScenePairAvailability(plan.sourceLanguage, target);
+        const availability = await checkAvailability(plan.sourceLanguage, target);
         if (availability === 'supported') {
           applyPairEvent(plan.sourceLanguage, target, 'availability_supported');
           return;
@@ -206,7 +229,36 @@ export function useSceneTranslationQueue({
       inFlightRef.current = false;
       if (replanImmediately && mountedRef.current) setVersion((value) => value + 1);
     }
-  }, [applyPairEvent, pairKey]);
+  }, [applyPairEvent, checkAvailability, pairKey]);
+
+  // 表示前に導入状態を確かめておく（結果の反映は、まだ確かめていない＝unknownの時だけ）
+  useEffect(() => {
+    const source = prewarmSourceLanguage;
+    if (supported !== true || source == null || isSameLanguage(source, targetLanguage)) return;
+    const key = pairKey(source, targetLanguage);
+    let cancelled = false;
+    void checkAvailability(source, targetLanguage).then((availability) => {
+      if (cancelled || !mountedRef.current) return;
+      const event: PairEvent | null =
+        availability === 'installed'
+          ? 'availability_installed'
+          : availability === 'supported'
+            ? 'availability_supported'
+            : availability === 'unsupported'
+              ? 'availability_unsupported'
+              : null;
+      if (event == null) return;
+      // `checkingPairsRef`には印を付けない：翻訳前の確認（pump）は従来どおり、まだ確かめていないペアの確認結果を
+      // （同じPromiseで）待ってから送る。ここで印を付けると、この状態が反映される前のpumpが確認を飛ばして送り、
+      // 未導入のペアでDL案内が自動で出うる
+      setPairStatus((prev) =>
+        (prev[key] ?? 'unknown') === 'unknown' ? { ...prev, [key]: nextPairStatus('unknown', event) } : prev,
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [supported, prewarmSourceLanguage, targetLanguage, pairKey, checkAvailability]);
 
   const itemsKey = JSON.stringify(items);
 

@@ -20,6 +20,11 @@
 //     同じ場面を読み続けている間は読み落とした行を数フレーム残す・同じ値段の別の行へ付け替わった行を2行の途中に置かない・
 //     1行にまとめて読んだ文字を新しい行にしない。別の所へ向けた時は従来と同じか早く替わる。重なって省いた札は次のフレームも
 //     後に回す（重なる2つの札が交代し続けない）
+//   - （Build 8 の実機確認から）最初の訳が出るまで待つ・下部の価格の商品名が日本語になるまで遅れる → 表示の条件は変えず、
+//     翻訳を送る順（帯の商品名を先頭）と時期（1フレーム目に読めた中央寄りの行を先に訳しておく）、言語ペアの導入状態の確認を
+//     カメラの準備中に済ませる。読みにくい所で止めていると訳が出ない → まだ表示していない行は読めなくなっても少し覚えておき、
+//     同じ所でまた読めたら2回目として数える（表示した行の残し方・消し方は変えない）
+//     （`orderLiveTranslationTexts`・`selectPrefetchLines`・追跡の`dormant`）
 // - ピンチで拡大・縮小、ダブルタップで2×⇄元の倍率（2026-10-24）。映像を引き伸ばさず、カメラそのものの倍率を
 //   変える（認識する映像・撮影する写真も同じように拡大されるので、訳を重ねる位置の計算はそのまま使える）。
 //   倍率を変えた直後は、変える前の映像で読んだ結果を誤った位置に出さないよう、追跡中の文字をいったん捨てて
@@ -60,10 +65,12 @@ import {
   buildTranslationPriceEntries,
   extractTranslationPrices,
   getVisionLanguagesForSource,
+  orderLiveTranslationTexts,
   placeOverlayLabels,
   resolveSourceLanguageForText,
   hiddenFrameBottom,
   selectOverlayLines,
+  selectPrefetchLines,
   unobstructedRegionInImage,
   type LiveTextFrame,
   type Size,
@@ -92,6 +99,11 @@ const MAX_LIVE_TEXT_LENGTH = 80;
 const MAX_PRICE_ENTRIES = 6;
 /** 枠の中の帯に出す価格の件数（映像を隠しすぎない） */
 const MAX_FRAME_PRICE_ROWS = 3;
+/**
+ * 1フレーム目に読めた行のうち、先に訳しておく件数（翻訳の1要求の上限と同じ）。
+ * 他に送るものが無い時だけ送る（`orderLiveTranslationTexts`で最後）。札にするのは従来どおり2フレーム目から
+ */
+const MAX_PREFETCH_TEXTS = 8;
 /**
  * 倍率を変えてから読み取りを再開するまで(ms)。倍率の反映を待ち、変わる途中の訳を出さない。
  * 変える前に撮った映像の結果（認識に時間がかかると、この時間より後に届く）は、別に「変えた後の最初の1フレーム」として捨てる
@@ -243,32 +255,35 @@ export function LiveTranslationCamera({
     setPreviousOverlayIds(new Set(overlayEntries.map((entry) => entry.id)));
   }
 
-  // 訳を重ねる行を先に、価格の商品名・説明を後ろに足す（同じ文字は1回だけ）
-  const translationItems = useMemo(() => {
-    const items = overlayEntries.map((entry) => ({
-      text: entry.text,
-      sourceLanguage: resolveSourceLanguageForText(entry.text, sourceLanguage, targetLanguage),
-    }));
-    const seen = new Set(items.map((item) => item.text));
-    for (const entry of priceEntries) {
-      for (const text of [entry.label, entry.description]) {
-        if (text == null || seen.has(text)) continue;
-        seen.add(text);
-        items.push({ text, sourceLanguage: resolveSourceLanguageForText(text, sourceLanguage, targetLanguage) });
-      }
-    }
-    return items;
-  }, [overlayEntries, priceEntries, sourceLanguage, targetLanguage]);
+  // 先に訳しておく行（1フレーム目に読めた中央寄りの行。表示には使わない）。価格の商品名も含むよう、帯の下も含めて選ぶ
+  const prefetchEntries = useMemo(() => {
+    if (onScreenRegion == null || frameSize == null) return [];
+    return selectPrefetchLines(tracked, {
+      maxEntries: MAX_PREFETCH_TEXTS,
+      maxTextLength: MAX_LIVE_TEXT_LENGTH,
+      minHits: 2,
+      visibleRegion: onScreenRegion,
+      imageSize: frameSize,
+    });
+  }, [tracked, onScreenRegion, frameSize]);
+
+  // 翻訳を送る順：帯の商品名 → 訳を重ねる行 → 残りの価格の商品名・説明 → 先に訳しておく行（同じ文字は1回だけ）
+  const translationItems = useMemo(
+    () =>
+      orderLiveTranslationTexts({
+        overlayTexts: overlayEntries.map((entry) => entry.text),
+        priceEntries,
+        prefetchTexts: prefetchEntries.map((entry) => entry.text),
+        stripRows: MAX_FRAME_PRICE_ROWS,
+      }).map((text) => ({ text, sourceLanguage: resolveSourceLanguageForText(text, sourceLanguage, targetLanguage) })),
+    [overlayEntries, priceEntries, prefetchEntries, sourceLanguage, targetLanguage],
+  );
 
   const { lookup, notice, activate, translationSupported } = useSceneTranslationQueue({
     enabled: active && !isCapturing,
     targetLanguage,
     items: translationItems,
-  });
-
-  const rows = overlayEntries.map((entry, index) => {
-    const translated = lookup(translationItems[index]?.sourceLanguage ?? null, entry.text);
-    return { entry, translated: translated != null && translated !== '' ? translated : null };
+    prewarmSourceLanguage: sourceLanguage,
   });
 
   const translate = (text: string | null): string | null => {
@@ -276,6 +291,9 @@ export function LiveTranslationCamera({
     const translated = lookup(resolveSourceLanguageForText(text, sourceLanguage, targetLanguage), text);
     return translated != null && translated !== '' ? translated : null;
   };
+
+  // 訳は原文から直接引く（送る順は札の順と同じではない）
+  const rows = overlayEntries.map((entry) => ({ entry, translated: translate(entry.text) }));
 
   const priceRows: PriceRow[] =
     priceConversion == null
