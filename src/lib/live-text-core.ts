@@ -374,7 +374,53 @@ export type TrackedLine = {
   hits: number;
   firstSeenAt: number;
   lastSeenAt: number;
+  /**
+   * 直近の読み（新しいものが後ろ・最大`MAX_READINGS`件）。原文は多数決で決める（2026-11-25）。
+   * 無い時（テスト等で直接組み立てた行）は、`text`を`hits`回読んだものとして扱う
+   */
+  readings?: string[];
 };
+
+/** 原文の多数決に使う直近の読みの数 */
+const MAX_READINGS = 5;
+
+/**
+ * 直近の読みの多数決（大文字小文字・空白の揺れは同じ読み）。同数なら今の読みを保ち、今の読みが負けていれば
+ * 多い読みのうち最も新しいもの。返す文字は、その読みの最も新しい書き方
+ */
+function majorityReading(readings: readonly string[], currentKey: string): { text: string; key: string; count: number } {
+  const counts = new Map<string, number>();
+  for (const reading of readings) {
+    const key = textIdentityKey(reading);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const top = Math.max(...counts.values());
+  let key = currentKey;
+  if (counts.get(currentKey) !== top) {
+    for (let i = readings.length - 1; i >= 0; i -= 1) {
+      const candidate = textIdentityKey(readings[i]);
+      if (counts.get(candidate) === top) {
+        key = candidate;
+        break;
+      }
+    }
+  }
+  let text = readings[readings.length - 1];
+  for (let i = readings.length - 1; i >= 0; i -= 1) {
+    if (textIdentityKey(readings[i]) === key) {
+      text = readings[i];
+      break;
+    }
+  }
+  return { text, key, count: counts.get(key) ?? 0 };
+}
+
+/** 今の原文と同じ読みが直近で何回あったか（読みの記録が無い行は`hits`） */
+function readingSupport(line: TrackedLine): number {
+  if (line.readings == null) return line.hits;
+  const key = textIdentityKey(line.text);
+  return line.readings.filter((reading) => textIdentityKey(reading) === key).length;
+}
 
 export type TrackerOptions = {
   /** 見えなくなってから消すまでの時間(ms)。カメラが一瞬ぶれても表示がチカチカしないようにする */
@@ -454,9 +500,15 @@ function centerDistance(a: NormalizedBox, b: NormalizedBox): number {
   return Math.hypot(ca.x - cb.x, ca.y - cb.y);
 }
 
-/** 表示してよい安定した行か（2フレーム以上で見えた行だけ出す。1フレームだけの誤認識を出さない） */
+/**
+ * 表示してよい安定した行か（2フレーム以上で見えた行だけ出す。1フレームだけの誤認識を出さない）。
+ * 数字を含む行（価格）は、今の読みそのものが`minHits`回以上読めている時だけ（読みが割れている間は出さない。
+ * `$5.60`を1回`$5.00`と読んだ直後に、どちらとも決まらない価格で円換算を出さない。2026-11-25）。
+ * 同じ読みが続く時は従来と同じ（2回目で出る）
+ */
 export function isStableLine(line: TrackedLine, minHits = 2): boolean {
-  return line.hits >= minHits;
+  if (line.hits < minHits) return false;
+  return !/\d/.test(line.text) || readingSupport(line) >= minHits;
 }
 
 /**
@@ -467,6 +519,9 @@ export function isStableLine(line: TrackedLine, minHits = 2): boolean {
  * - カメラの動き（画面全体の平行移動）を推定し、前回の位置をその分ずらしてから比べ・追従させる。
  *   今回読めなかった行もその分ずらして残す（古い位置に残った行が隣の行の価格と組になる・訳が1行ずれるのを防ぐ。2026-11-25）
  * - 今回見えなかった行は`staleMs`経過まで残し、それを過ぎたら消す
+ * - 原文は直近の読みの多数決（2026-11-25）。以前は「揺れた読みは確度が0.15以上上がった時だけ採る」だったため、
+ *   最初の1フレームの読み違い（`$5.60`→`$5.00`）が、確度の同じ正しい読みが続いても残り続けた
+ *   （Visionの`.accurate`の確度は1.0になりやすく、1.0より0.15高い確度は無い）
  */
 export function updateTrackedLines(
   previous: readonly TrackedLine[],
@@ -535,19 +590,23 @@ export function updateTrackedLines(
         hits: 1,
         firstSeenAt: now,
         lastSeenAt: now,
+        readings: [item.text],
       };
     }
     const p = previous[match.index];
-    // 揺れた読み取りでは原文を差し替えない。明らかに確度が上がった時だけ新しい読みを採る
-    const adoptNewText = match.exact ? true : item.line.confidence > p.confidence + 0.15;
+    // 原文は直近の読みの多数決。1回だけ揺れた読みでは差し替えない（訳が変わらない）・同数なら今の原文を保つ
+    const priorReadings = p.readings ?? Array.from({ length: Math.min(p.hits, MAX_READINGS) }, () => p.text);
+    const readings = [...priorReadings, item.text].slice(-MAX_READINGS);
+    const winner = majorityReading(readings, textIdentityKey(p.text));
     return {
       id: p.id,
-      text: adoptNewText ? item.text : p.text,
-      confidence: adoptNewText ? item.line.confidence : p.confidence,
+      text: winner.text,
+      confidence: winner.key === item.key ? item.line.confidence : p.confidence,
       box: smoothBox(predicted[match.index], item.box, options.smoothing),
       hits: p.hits + 1,
       firstSeenAt: p.firstSeenAt,
       lastSeenAt: now,
+      readings,
     };
   });
 
@@ -962,30 +1021,184 @@ export function buildSmartCameraEntries(
   return entries;
 }
 
+// MARK: 訳を重ねる行の選び方（2026-11-25 改訂・Build 6 の実機確認から）
+//
+// 実機（3列のカフェメニューを固定して写す）で、中央の列（説明）ばかり訳され、左の列の商品名が英語のまま残った。
+// 下の価格一覧には商品名の訳が出ていた＝OCRは読めていて、選び方の問題。原因と対策:
+// - 中央からの距離を正規化座標（幅・高さとも0〜1）で測っていた。縦長の映像（1080×1920）では横の0.1が縦の0.18と
+//   同じ扱いになり、左右の文字が画面上の見た目より遠い扱いだった → 映像の大きさが分かる時は画面上の距離（px）で測る
+// - 中央の列の説明は横の距離がほぼ0なので、上下に離れた行の説明でも、同じ行の左の商品名より先に選ばれた
+//   → 同じ行で左に別の文字がある文字（説明・続き）は、距離に一定の値を足す。中央の行の説明は残しつつ、
+//     左右の行の先頭（商品名・見出し）も入る。価格だけの行・大きな隙間の向こうは別の品目として扱う（2列のメニュー）
+// - 周りより大きい文字（見出し）は少し優先する
+// - 前回選んだ行は少し優先する（静止中に札が入れ替わり続けない）
+// 1行に1つの文字しか無い看板・案内板で横位置が揃っていれば、選び方は従来と同じ（上下の中央に近い順）。
+
+/** 同じ行で左に別の文字がある文字（説明・行の続き）に足す距離（映像の高さに対する割合） */
+const FOLLOWER_PENALTY = 0.1;
+/** これより大きい隙間（映像の幅に対する割合）の向こうは別の品目（左右に並んだ看板・2列のメニュー） */
+const MAX_SEGMENT_GAP = 0.2;
 /**
- * 翻訳ページのカメラで、元の文字付近に訳を出す行を選ぶ。
- * 価格・数字だけの行は除き、中央に近い順に`maxEntries`件まで。
+ * 周りの文字より大きい（高さが中央値のこの倍以上）文字＝見出しを優先する。大きいほど強く（高さの比−1 に比例）、
+ * 上限あり（中央の文字より常に先にはしない）
  */
-export function selectOverlayLines(
+const HEADING_RATIO = 1.4;
+const HEADING_BONUS_PER_RATIO = 0.075;
+const MAX_HEADING_BONUS = 0.15;
+/** 前回選んだ行を優先する量（位置の揺れで札が入れ替わり続けない） */
+const SELECTION_HYSTERESIS = 0.02;
+
+export type OverlaySelectionOptions = {
+  maxEntries: number;
+  maxTextLength: number;
+  minHits: number;
+  visibleRegion: NormalizedBox;
+  /** 認識した画像の大きさ(px)。あれば画面上の距離で測る（無ければ正規化座標のまま＝従来） */
+  imageSize?: Size;
+  /** 前回選んだ行の識別子 */
+  previousIds?: ReadonlySet<string>;
+};
+
+/** 中央からの距離。映像の大きさが分かる時は、横を画面上の比率に直す（縦は従来と同じ値） */
+function overlayDistance(box: NormalizedBox, region: NormalizedBox, image: Size | undefined): number {
+  const center = boxCenter(box);
+  const regionCenter = boxCenter(region);
+  const xScale = image != null && image.height > 0 ? image.width / image.height : 1;
+  return Math.hypot((center.x - regionCenter.x) * xScale, center.y - regionCenter.y);
+}
+
+/** 価格・数字だけの行（訳さない。品目の区切りに使う） */
+function isPriceOnlyLine(line: TrackedLine): boolean {
+  return /\d/.test(line.text) && stripPriceTokens(line.text) === '';
+}
+
+/**
+ * 同じ行の左に、同じ品目の別の文字があるか（＝この文字は説明・行の続き）。
+ * 間に価格だけの行がある・隙間が大きい時は別の品目なので、先頭として扱う
+ */
+function isRowFollower(line: TrackedLine, candidates: readonly TrackedLine[], priceLines: readonly TrackedLine[]): boolean {
+  return candidates.some((left) => {
+    if (left.id === line.id) return false;
+    if (verticalOverlapRatio(left.box, line.box) < ROW_OVERLAP) return false;
+    const leftRight = boxRight(left.box);
+    if (leftRight > line.box.x + 0.01 || line.box.x - leftRight > MAX_SEGMENT_GAP) return false;
+    return !priceLines.some(
+      (price) =>
+        verticalOverlapRatio(price.box, line.box) >= ROW_OVERLAP &&
+        price.box.x >= leftRight - 0.005 &&
+        boxRight(price.box) <= line.box.x + 0.01,
+    );
+  });
+}
+
+/**
+ * 翻訳ページのカメラで、元の文字付近に訳を出す行を選ぶ（中央に近い順を基本に、上の調整を加えて`maxEntries`件まで）。
+ * 価格・数字だけの行は除く。
+ */
+export function selectOverlayLines(tracked: readonly TrackedLine[], options: OverlaySelectionOptions): LiveTextEntry[] {
+  const visible = tracked.filter(
+    (line) => isStableLine(line, options.minHits) && isBoxInRegion(line.box, options.visibleRegion),
+  );
+  const priceLines = visible.filter(isPriceOnlyLine);
+  const candidates = visible.filter((line) => isTranslatableText(stripPriceTokens(line.text), options.maxTextLength));
+  const medianHeight = candidates.length >= 3 ? median(candidates.map((line) => line.box.height)) : null;
+
+  return candidates
+    .map((line) => {
+      const distance = overlayDistance(line.box, options.visibleRegion, options.imageSize);
+      let score = distance;
+      if (isRowFollower(line, candidates, priceLines)) score += FOLLOWER_PENALTY;
+      if (medianHeight != null && medianHeight > 0 && line.box.height >= medianHeight * HEADING_RATIO) {
+        score -= Math.min(MAX_HEADING_BONUS, HEADING_BONUS_PER_RATIO * (line.box.height / medianHeight - 1));
+      }
+      if (options.previousIds?.has(line.id)) score -= SELECTION_HYSTERESIS;
+      return {
+        entry: {
+          kind: 'text' as const,
+          id: line.id,
+          text: normalizeRecognizedText(line.text),
+          box: line.box,
+          centerDistance: distance,
+        },
+        score,
+      };
+    })
+    .sort((a, b) => a.score - b.score || (a.entry.id < b.entry.id ? -1 : a.entry.id > b.entry.id ? 1 : 0))
+    .slice(0, options.maxEntries)
+    .map(({ entry }) => entry);
+}
+
+// MARK: 訳の札の置き方（2026-11-25 にコンポーネントから切り出し）
+
+export type OverlayLabelInput = { id: string; box: NormalizedBox; translated: string | null };
+
+export type PlacedOverlayLabel = {
+  id: string;
+  left: number;
+  top: number;
+  /** 重なり判定に使った札の大きさ（見積もり） */
+  width: number;
+  height: number;
+  /** 札の最大幅（同じ行の右の文字の手前まで）。入りきらない訳は文字を縮める */
+  maxWidth: number;
+  fontSize: number;
+  text: string;
+};
+
+/** 訳の札の幅の見積もり（日本語は1文字≒文字の大きさ、英数字はその約0.6倍）。重なり判定にだけ使う */
+export function estimateLabelWidth(text: string, fontSize: number): number {
+  let width = 0;
+  for (const char of text) width += /[\u0000-ɏ]/.test(char) ? fontSize * 0.6 : fontSize;
+  return width + 10;
+}
+
+/**
+ * 元の文字の位置へ訳の札を置く（1行・元の文字の高さに合わせる）。
+ * - 渡された順（選んだ順＝優先度の高い順）に置き、先に置いた札と重なる札は省く（下の一覧には全件出る）
+ * - 訳が届くまでは出さない（原文の上に同じ原文を重ねて隠さない）
+ * - 札の右端は同じ行で右にある文字（説明・価格）の手前まで。和訳は英語より横に長くなりがちで、商品名の札が
+ *   説明の札にかかって省かれていた（2026-11-25）。入りきらない訳は折り返さず文字を縮める（呼び出し側）
+ */
+export function placeOverlayLabels(
+  rows: readonly OverlayLabelInput[],
   tracked: readonly TrackedLine[],
-  options: { maxEntries: number; maxTextLength: number; minHits: number; visibleRegion: NormalizedBox },
-): LiveTextEntry[] {
-  return tracked
-    .filter(
-      (line) =>
-        isStableLine(line, options.minHits) &&
-        isBoxInRegion(line.box, options.visibleRegion) &&
-        isTranslatableText(stripPriceTokens(line.text), options.maxTextLength),
-    )
-    .map((line) => ({
-      kind: 'text' as const,
-      id: line.id,
-      text: normalizeRecognizedText(line.text),
-      box: line.box,
-      centerDistance: distanceFromRegionCenter(line.box, options.visibleRegion),
-    }))
-    .sort((a, b) => a.centerDistance - b.centerDistance)
-    .slice(0, options.maxEntries);
+  layout: { frameSize: Size; viewSize: Size; occludedBottom: number; minHits: number },
+): PlacedOverlayLabel[] {
+  const { frameSize, viewSize, occludedBottom } = layout;
+  const neighbors = tracked
+    .filter((line) => line.hits >= layout.minHits)
+    .map((line) => ({ id: line.id, rect: mapBoxToView(line.box, frameSize, viewSize) }));
+  const placed: PlacedOverlayLabel[] = [];
+  for (const row of rows) {
+    if (row.translated == null) continue;
+    const rect = mapBoxToView(row.box, frameSize, viewSize);
+    const fontSize = Math.min(16, Math.max(10, rect.height * 0.85));
+    const labelHeight = fontSize * 1.3 + 2;
+    const left = Math.min(Math.max(rect.left - 2, 4), Math.max(4, viewSize.width - 64));
+    const top = Math.min(
+      Math.max(rect.top + rect.height / 2 - labelHeight / 2, 4),
+      Math.max(4, viewSize.height - occludedBottom - labelHeight),
+    );
+    const centerY = rect.top + rect.height / 2;
+    const rightLimit = neighbors
+      .filter(
+        (other) =>
+          other.id !== row.id &&
+          other.rect.left >= rect.left + rect.width - 2 &&
+          centerY >= other.rect.top &&
+          centerY <= other.rect.top + other.rect.height,
+      )
+      .reduce((limit, other) => Math.min(limit, other.rect.left - 4), viewSize.width - 4);
+    const maxWidth = Math.max(64, rightLimit - left);
+    const width = Math.min(maxWidth, estimateLabelWidth(row.translated, fontSize));
+    const height = labelHeight - 2;
+    const overlaps = placed.some(
+      (other) => left < other.left + other.width && left + width > other.left && top < other.top + other.height && top + height > other.top,
+    );
+    if (overlaps) continue;
+    placed.push({ id: row.id, left, top, width, height, maxWidth, fontSize, text: row.translated });
+  }
+  return placed;
 }
 
 // MARK: - 翻訳ページの価格・円換算（2026-10-24）
@@ -1076,6 +1289,17 @@ function sameAmount(a: number, b: number): boolean {
 }
 
 /**
+ * 小数部が崩れた読み（2026-11-25）。`$5.60`を`$5. 60`・`$5 .60`・`$5.G0`と読むと、抽出は整数部だけの5を返し、
+ * 翻訳ページに`$5.00`の円換算が出る。こう読めた行の価格は出さない（誤った円換算より、出さない方を選ぶ）。
+ * `$5.6O`（英字のO）は抽出が0と読むので対象外。
+ * 普通の文の「1, 2」を弾かないよう、通貨記号の直後か、行が数字だけの時に限る
+ */
+const BROKEN_DECIMAL_TAIL = String.raw`\d+(?:[.,]\s+\d|\s+[.,]\d|[.,][A-NP-Za-np-z]\d)`;
+const BROKEN_DECIMAL = new RegExp(
+  String.raw`(?:NT\$|US\$|[$€£¥￥₩￦฿])\s*${BROKEN_DECIMAL_TAIL}|^\s*${BROKEN_DECIMAL_TAIL}[\d\s]*$`,
+);
+
+/**
  * 翻訳ページで円換算を添えてよい価格（現地通貨の数値・出現順・重複なし）。
  * `extractPrices`には既存の`extractPriceCandidates`を旅行の通貨で部分適用して渡す。
  */
@@ -1085,7 +1309,7 @@ export function extractTranslationPrices(text: string, tripCurrency: string, ext
     if (marker !== tripCurrency) return [];
   }
   const masked = maskNonPriceNumbers(text);
-  if (!/\d/.test(masked)) return [];
+  if (!/\d/.test(masked) || BROKEN_DECIMAL.test(masked)) return [];
   const tokenValues = numericTokenValues(masked);
   const amounts: number[] = [];
   for (const candidate of extractPrices(masked)) {
