@@ -4,6 +4,13 @@
 
 > 本節が現在地の正。以下の「現在の開発フェーズ」以降は2026-07-01〜08時点の履歴で、完了済み項目を未完へ戻さない。
 
+> [!important] 2026-11-26 **Pro+ リアルタイム音声の端末の入出力・中継との手順・中継の本人認証・S9／ローカル実装済み・モックテスト合格・未Build・実機・Sandbox・外部サービスは0件**
+> - アプリ（このbranch）：取り込み・再生は `react-native-audio-api` 1.0.1（版固定・ネイティブ依存・config plugin で `UIBackgroundModes` を足さない）。PCM の変換・区画化・送信の歩調 `src/lib/ai/voice-pcm-core.ts`、中継との手順 `voice-protocol-core.ts`、入出力 `voice-audio.native.ts`、配線 `src/hooks/use-voice-session.ts`。本人認証の端末側 `ai-auth-core.ts`・`ai-auth-client.ts`・`modules/storekit-proof`（StoreKit 2 の JWS を読むだけ）。**release は `AI_VOICE_CAPTURE_READY=false` の間「準備中」・`AI_GATEWAY_URL=null`**。半二重 `AI_VOICE_HALF_DUPLEX=true` は暫定（H-P9）。**fingerprint が変わる（OTA 不可・次の Build が要る）**。TEST_CHECKLIST #100〜#105
+> - 中継（`tabirate-ai-gateway` `feat/cost-cap`）：S9（1秒の区画・受信の時刻で判定）、本人認証（中継のトークン HS256・`POST /v1/auth/session`・StoreKit の JWS の候補の検証器・x-app-user-id だけでは通らない）。**本人認証は独立検収の B1（結び付けの根が RevenueCat の顧客の繋がり）を緩和しただけで、公開できる水準と判定していない**。方式の採用・残るリスクは Human
+> - テスト：アプリ npm test 1029・tsc 0・lint 20（baseline）／中継 434・check:workerd 27/27・check:entry 21/21・変異（今回の分）すべて KILLED。Vault ログ `2026-11-26_旅レートカメラ_ProPlus音声の入出力・本人認証・S9_開発ログ`
+> - commit：アプリ `98174e4`・`27faffe`／中継 `e98171b`・`fcdf7e2`・検収の反映
+> - 次：Human の判断（H-P2 事業者・H-P9 操作方式・本人認証の方式と B1 の残るリスク・H-P12 中継の本番）→ 事業者層 → `testflight-proplus-qa` を1本（Human GO）で #100〜#105
+
 > [!important] 2026-11-25（続き）**Pro+ のプラン画面（購入・アップグレード・復元）と、AI 中継の外部入口・サーバー側の RevenueCat 照会・原価制御 L3〜L5／実装・自動テスト済み・未Build・実機・Sandbox・本物の外部サービスは未確認**
 > - アプリ（このbranch）：`/proplus/plans`（設定 → Pro+ → Pro+のプラン）。3プランの比較・StoreKit の価格だけ・月額／年額・アップグレード（即時）／期間の変更（次回の更新日）・下位への変更は App Store の管理画面・購入・復元（Pro+／Pro だけ／無し）・現在の契約（本物の `planTier`）。Pro+ の商品が無い間は「準備中」でボタン無効。判定 `src/lib/proplus/proplus-purchase-core.ts`。Pro+ 専用 Offering は画面を開いた時だけ読む（`default`・Pro の画面は不変）。AI は中継の URL 未設定・音声の部品未導入（`AI_VOICE_CAPTURE_READY=false`）の間「準備中」
 > - 中継（`tabirate-ai-gateway` `feat/cost-cap`）：`POST /v1/text/translate`・`GET /v1/quota`・`GET /v1/voice`（WebSocket）、RevenueCat v2（subscriptions の `lookup_key`＝`pro_plus`）、L3（単価の下限・値下げの確認）・L4（止めた後の使用量）・L5（トークン上限を事業者層へ）・M4（単価の経過の検出）。Secret・事業者層が無い間は `unconfigured`。事業者層・本番は無い
