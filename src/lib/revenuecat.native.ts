@@ -8,10 +8,10 @@ import type {
   PurchasesPackage,
 } from 'react-native-purchases';
 
-import { getRevenueCatIosApiKey, REVENUECAT_OFFERING_ID } from '@/config/revenuecat';
+import { getRevenueCatIosApiKey, REVENUECAT_OFFERING_ID, REVENUECAT_PRO_PLUS_OFFERING_ID } from '@/config/revenuecat';
 import { getPlanTier } from '@/lib/plan-tier';
-import { hasProAccess } from '@/lib/plan-tier-core';
-import { resolvePurchaseOutcome } from '@/lib/revenuecat-purchase-core';
+import { hasProAccess, isTierAtLeast, type PlanTier } from '@/lib/plan-tier-core';
+import { resolveTierPurchaseOutcome } from '@/lib/revenuecat-purchase-core';
 
 let configured = false;
 
@@ -87,6 +87,16 @@ export async function fetchDefaultOffering(): Promise<PurchasesOffering | null> 
   return offerings.all[REVENUECAT_OFFERING_ID] ?? offerings.current ?? null;
 }
 
+/**
+ * Pro+の商品を置くOffering（`default`とは別）。未作成の間はnull。
+ * `default`にPro+のPackageを入れると、配布済みBuild（Build 9等）がPro+をProの月額・年額として表示し得るため、
+ * Pro+は専用のOfferingに置く（`config/revenuecat.ts`）。`offerings.current`へは落とさない（Proの商品を拾わないため）。
+ */
+export async function fetchProPlusOffering(): Promise<PurchasesOffering | null> {
+  const offerings = await Purchases.getOfferings();
+  return offerings.all[REVENUECAT_PRO_PLUS_OFFERING_ID] ?? null;
+}
+
 export function addCustomerInfoListener(listener: CustomerInfoUpdateListener): void {
   Purchases.addCustomerInfoUpdateListener(listener);
 }
@@ -104,10 +114,12 @@ export type PurchaseOutcome =
 
 export type PurchaseOptions = {
   /**
-   * 購入呼び出し前の時点でpro Entitlementが有効だったか（呼び出し側のstoreの`isPro`を渡す）。
-   * 例外後の救済で「既存Proを今回の購入成功と誤認しない」ために使う（revenuecat-purchase-core.ts）。
+   * 購入呼び出し前の契約プラン（呼び出し側のstoreの`planTier`を渡す）。
+   * 例外後の救済で「既存の契約を今回の購入成功と誤認しない」ために使う（revenuecat-purchase-core.ts）。
    */
-  wasProBefore: boolean;
+  tierBefore: PlanTier;
+  /** 今回買う商品のプラン。Proの商品は'pro'、Pro+の商品は'pro_plus' */
+  targetTier: PlanTier;
 };
 
 export type RestoreOutcome =
@@ -162,8 +174,10 @@ export async function purchasePackage(
     cancelled = isUserCancelledError(error);
   }
 
-  // 正常終了でproが見えない／例外（キャンセル以外）のときだけ、CustomerInfoをもう1回だけ見る
-  const needsRecheck = threw ? !cancelled : customerInfo == null || !hasProEntitlement(customerInfo);
+  // 正常終了で目標のプランが見えない／例外（キャンセル以外）のときだけ、CustomerInfoをもう1回だけ見る
+  const needsRecheck = threw
+    ? !cancelled
+    : customerInfo == null || !isTierAtLeast(getPlanTier(customerInfo), options.targetTier);
   if (needsRecheck) {
     try {
       customerInfo = await Purchases.getCustomerInfo();
@@ -172,15 +186,16 @@ export async function purchasePackage(
     }
   }
 
-  const status = resolvePurchaseOutcome({
+  const status = resolveTierPurchaseOutcome({
     threw,
     cancelled,
-    wasProBefore: options.wasProBefore,
-    proActiveAfter: customerInfo ? hasProEntitlement(customerInfo) : null,
+    tierBefore: options.tierBefore,
+    tierAfter: customerInfo ? getPlanTier(customerInfo) : null,
+    targetTier: options.targetTier,
   });
   switch (status) {
     case 'success':
-      // resolvePurchaseOutcomeがsuccessを返すのはproActiveAfter=true（＝customerInfo非null）の時だけ
+      // resolveTierPurchaseOutcomeがsuccessを返すのはtierAfterが目標以上（＝customerInfo非null）の時だけ
       return { status: 'success', customerInfo: customerInfo as CustomerInfo };
     case 'cancelled':
       return { status: 'cancelled' };

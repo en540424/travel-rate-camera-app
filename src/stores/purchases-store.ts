@@ -1,10 +1,18 @@
 import { create } from 'zustand';
 import type { CustomerInfo, PurchasesOffering, PurchasesPackage } from 'react-native-purchases';
 
-import { REVENUECAT_ANNUAL_PRODUCT_ID, REVENUECAT_MONTHLY_PRODUCT_ID } from '@/config/revenuecat';
+import {
+  REVENUECAT_ANNUAL_PRODUCT_ID,
+  REVENUECAT_MONTHLY_PRODUCT_ID,
+  REVENUECAT_PRO_PLUS_ANNUAL_PRODUCT_ID,
+  REVENUECAT_PRO_PLUS_MONTHLY_PRODUCT_ID,
+} from '@/config/revenuecat';
 import { getPlanTier } from '@/lib/plan-tier';
 import { hasProAccess, type PlanTier } from '@/lib/plan-tier-core';
 import { resolveAnnualPackage, resolveMonthlyPackage } from '@/lib/revenuecat-package-core';
+
+// Pro+の商品が誤って`default`へ入っても、Proの月額・年額として拾わない（Pro+の商品はPro+専用のOfferingに置く運用）
+const PRO_PLUS_PRODUCT_IDS: readonly string[] = [REVENUECAT_PRO_PLUS_MONTHLY_PRODUCT_ID, REVENUECAT_PRO_PLUS_ANNUAL_PRODUCT_ID];
 
 interface PurchasesStore {
   /** Purchases.configure が完了しているか（非対応環境/Key未設定ならfalseのまま） */
@@ -57,8 +65,8 @@ export const usePurchasesStore = create<PurchasesStore>((set) => ({
   setOffering: (offering) =>
     set({
       offering,
-      monthlyPackage: resolveMonthlyPackage(offering, REVENUECAT_MONTHLY_PRODUCT_ID),
-      annualPackage: resolveAnnualPackage(offering, REVENUECAT_ANNUAL_PRODUCT_ID),
+      monthlyPackage: resolveMonthlyPackage(offering, REVENUECAT_MONTHLY_PRODUCT_ID, PRO_PLUS_PRODUCT_IDS),
+      annualPackage: resolveAnnualPackage(offering, REVENUECAT_ANNUAL_PRODUCT_ID, PRO_PLUS_PRODUCT_IDS),
     }),
 
   setError: (error) => set({ error }),

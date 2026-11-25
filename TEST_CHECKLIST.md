@@ -1101,6 +1101,33 @@
 - 期待：本番相当のBuildでは「準備中」で送信しない（`AI_GATEWAY_URL`未設定）
 - 実機：必須（実翻訳の品質・音声は中継・鍵・音声取り込みの実装後に別途）
 
+### V. Pro+ の課金（2026-11-25追加・同branch・**未Build**・**前提：ASCでPro+の商品・RevenueCatで`pro_plus`とPro+専用Offering `pro_plus`が作成済み**）
+
+> 購入の判定を「目標のプラン」で見る形に変えた（`resolveTierPurchaseOutcome`）。Proの購入の判定は従来と全組み合わせで同じことを自動テストで固定したが、**StoreKit・RevenueCatの実通信は未確認**。このbranchをBuildに入れる時は、#30 purchase／#32 restore／#33 Pro失効／#36 purchase完了後のentitlement反映を Sandbox で再確認する。
+> Pro+ の本物の権利で確かめるBuildは eas.json の `testflight-proplus-qa`（`EXPO_PUBLIC_PRO_PLUS_QA=1`・入口は出すが契約を装わない）。**このBuildは審査に出さない**。development build は `DEV_PRO_PLUS_PREVIEW` が契約を装うので、課金の確認には使わない。
+> 既存のアプリは削除・再インストールしない（上書き更新）。Sandboxのアカウントの操作は Human（または Work の補助）。
+
+### 94. 検証用Buildで Pro+ の入口は出るが、契約は本物で判定される
+- [ ] 操作：`testflight-proplus-qa` のBuildで設定タブ→Pro+（Pro+未契約の Sandbox アカウント）
+- 期待：入口が出る。「開発用ビルドのため…契約中として表示」の注記は**出ない**。未契約なので案内（準備中）になり、場所・予定を新しく作れない
+- 実機：必須／Sandbox：必須
+
+### 95. Free → Pro+ の購入・復元・失効（Pro+ の購入画面の実装後）
+- [ ] 期待：購入後に Pro+ の機能と、Pro の機能（保存無制限・複数旅行・分析・CSV）が両方使える。復元で同じ状態に戻る。失効後は Pro+ のデータが**閲覧のみ**で残り、Free の制限（1旅行・10件）へ戻る（データは消えない）
+- 実機：必須／Sandbox：必須
+
+### 96. Pro → Pro+（Upgrade）／Pro+ → Pro（Downgrade）／月額⇔年額（Crossgrade）
+- [ ] 期待：Upgrade は即時に Pro+ になる。Downgrade・Crossgrade は次回の更新日まで今のプランのまま（Level：Pro+＝1・Pro＝2・同じプランの月額・年額は同じLevel の前提。ASCの並びが違えば判定 `plan-change-core.ts` を直す）
+- [ ] 期待：Pro の利用者が Pro+ を買い、`pro_plus` が付かなかった時に「完了」にならない（`entitlement_missing`＝復元の案内）
+- [ ] 期待：プランの表示（期間・期限・自動更新）が Pro+ の契約中も欠けない（`useProPlanDetails` が `pro_plus` を読む）
+- [ ] 確認：保留中のダウングレードが CustomerInfo でどう見えるか（未確認・記録する）
+- 実機：必須／Sandbox：必須
+
+### 97. 配布済み Build（Build 9）で Pro+ の商品が見えない
+- [ ] 操作：Pro+ の商品を作成した後、Build 9（`c83e392`）で Pro の購入画面を開く
+- 期待：Pro の月額 ¥500・年額 ¥4,000 だけが出る（Pro+ を Pro+ 専用の Offering に置き、`default` へ入れていない場合）。Pro+ が出たら Offering の設定を見直す
+- 実機：必須／Sandbox：必須
+
 ## 問題発見時の優先順位
 
 - 🔴 **P0**：クラッシュ／データ消失（migration・全削除・写真）／保存不可／課金してもProにならない／失効でデータが消える

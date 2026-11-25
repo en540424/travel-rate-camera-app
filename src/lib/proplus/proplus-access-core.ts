@@ -17,6 +17,21 @@ export function getProPlusAccess(input: { flagEnabled: boolean; hasProPlus: bool
   return input.hasExistingData ? 'read_only' : 'upsell';
 }
 
+/**
+ * 3つのフラグから「入口を出すか」と「契約を装うか」を決める。
+ * - 入口：公開フラグ・開発ビルド・検証用ビルドのどれかが有効なら出す
+ * - 契約を装う：開発ビルドで、かつ検証用ビルドでない時だけ（検証用ビルドは本物の権利で判定する）
+ */
+export function resolveProPlusFlags(input: { showProPlus: boolean; devPreview: boolean; qa: boolean }): {
+  flagEnabled: boolean;
+  simulateEntitlement: boolean;
+} {
+  return {
+    flagEnabled: input.showProPlus || input.devPreview || input.qa,
+    simulateEntitlement: input.devPreview && !input.qa,
+  };
+}
+
 export function canEditProPlusData(access: ProPlusAccess): boolean {
   return access === 'full';
 }

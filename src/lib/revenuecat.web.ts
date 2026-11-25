@@ -31,6 +31,10 @@ export async function fetchDefaultOffering(): Promise<PurchasesOffering | null> 
   return null;
 }
 
+export async function fetchProPlusOffering(): Promise<PurchasesOffering | null> {
+  return null;
+}
+
 export function addCustomerInfoListener(_listener: CustomerInfoUpdateListener): void {}
 
 export function removeCustomerInfoListener(_listener: CustomerInfoUpdateListener): void {}
@@ -41,7 +45,10 @@ export type PurchaseOutcome =
   | { status: 'entitlement_missing'; customerInfo: CustomerInfo | null }
   | { status: 'error' };
 
-export type PurchaseOptions = { wasProBefore: boolean };
+export type PurchaseOptions = {
+  tierBefore: 'free' | 'pro' | 'pro_plus';
+  targetTier: 'free' | 'pro' | 'pro_plus';
+};
 
 export type RestoreOutcome =
   | { status: 'success'; customerInfo: CustomerInfo; hasEntitlement: boolean }

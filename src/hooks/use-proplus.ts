@@ -4,18 +4,23 @@
  */
 import { useEffect } from 'react';
 
-import { DEV_PRO_PLUS_PREVIEW, SHOW_PRO_PLUS } from '@/config/feature-flags';
+import { DEV_PRO_PLUS_PREVIEW, PRO_PLUS_QA, SHOW_PRO_PLUS } from '@/config/feature-flags';
 import { useHasTier } from '@/hooks/use-purchases';
-import { getProPlusAccess, type ProPlusAccess } from '@/lib/proplus/proplus-access-core';
+import { getProPlusAccess, resolveProPlusFlags, type ProPlusAccess } from '@/lib/proplus/proplus-access-core';
 import { hasAnyProPlusData } from '@/lib/proplus/proplus-store-core';
 import { useProPlusStore } from '@/stores/proplus-store';
+
+const FLAGS = resolveProPlusFlags({ showProPlus: SHOW_PRO_PLUS, devPreview: DEV_PRO_PLUS_PREVIEW, qa: PRO_PLUS_QA });
+
+/** 開発ビルドで契約を装っているか（画面の注意書き用） */
+export const PRO_PLUS_SIMULATED = FLAGS.simulateEntitlement;
 
 export function useProPlusAccess(): ProPlusAccess {
   const hasProPlus = useHasTier('pro_plus');
   const data = useProPlusStore((s) => s.data);
   return getProPlusAccess({
-    flagEnabled: SHOW_PRO_PLUS || DEV_PRO_PLUS_PREVIEW,
-    hasProPlus: hasProPlus || DEV_PRO_PLUS_PREVIEW,
+    flagEnabled: FLAGS.flagEnabled,
+    hasProPlus: hasProPlus || FLAGS.simulateEntitlement,
     hasExistingData: hasAnyProPlusData(data),
   });
 }

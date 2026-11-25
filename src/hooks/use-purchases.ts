@@ -2,7 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import type { CustomerInfo, PurchasesPackage } from 'react-native-purchases';
 
-import { REVENUECAT_ANNUAL_PRODUCT_ID, REVENUECAT_ENTITLEMENT_ID, REVENUECAT_MONTHLY_PRODUCT_ID } from '@/config/revenuecat';
+import {
+  REVENUECAT_ANNUAL_PRODUCT_ID,
+  REVENUECAT_ENTITLEMENT_ID,
+  REVENUECAT_MONTHLY_PRODUCT_ID,
+  REVENUECAT_PRO_PLUS_ANNUAL_PRODUCT_ID,
+  REVENUECAT_PRO_PLUS_ENTITLEMENT_ID,
+  REVENUECAT_PRO_PLUS_MONTHLY_PRODUCT_ID,
+} from '@/config/revenuecat';
+import { identifyPlanProduct, type PlanProductCatalog } from '@/lib/plan-change-core';
 import {
   addCustomerInfoListener,
   configureRevenueCat,
@@ -17,6 +25,14 @@ import type { PurchaseOutcome, RestoreOutcome } from '@/lib/revenuecat';
 import { isTierAtLeast, type PlanTier } from '@/lib/plan-tier-core';
 import { diagnosePurchaseSetup } from '@/lib/revenuecat-package-core';
 import { usePurchasesStore } from '@/stores/purchases-store';
+
+/** 4つの商品のProduct ID（Pro+は暫定・未登録。`config/revenuecat.ts`） */
+const PLAN_PRODUCT_CATALOG: PlanProductCatalog = {
+  proMonthly: REVENUECAT_MONTHLY_PRODUCT_ID,
+  proAnnual: REVENUECAT_ANNUAL_PRODUCT_ID,
+  proPlusMonthly: REVENUECAT_PRO_PLUS_MONTHLY_PRODUCT_ID,
+  proPlusAnnual: REVENUECAT_PRO_PLUS_ANNUAL_PRODUCT_ID,
+};
 
 /**
  * 価格が出ない原因を次回Buildで切り分けるための診断ログ。
@@ -198,8 +214,12 @@ export function usePurchases() {
     purchasingRef.current = true;
     setIsPurchasing(true);
     try {
-      // 購入前のPro状態を渡す（例外後の救済で既存Proを今回の成功と誤認しないため）
-      const outcome = await purchasePackageOnDevice(pkg, { wasProBefore: usePurchasesStore.getState().isPro });
+      // 購入前の契約プランと、この商品のプランを渡す（例外後の救済で既存の契約を今回の成功と誤認しないため）。
+      // 購入画面の対象はProの2商品だけなので目標は'pro'。Pro+の購入画面を作る時に商品から目標を決める
+      const outcome = await purchasePackageOnDevice(pkg, {
+        tierBefore: usePurchasesStore.getState().planTier,
+        targetTier: 'pro',
+      });
       if (outcome.status === 'success') {
         usePurchasesStore.getState().setCustomerInfo(outcome.customerInfo);
         usePurchasesStore.getState().setError(null);
@@ -256,6 +276,8 @@ export function useHasTier(required: PlanTier): boolean {
 export interface ProPlanDetails {
   /** Product IDから確実に判定できた場合のみ 'monthly' / 'annual'。判定できなければnull（推測しない）。 */
   planPeriod: 'monthly' | 'annual' | null;
+  /** 契約中の商品のプラン（'pro' / 'pro_plus'）。Product IDから確実に判定できた場合のみ。判定できなければnull */
+  productTier: 'pro' | 'pro_plus' | null;
   /** pro Entitlementの有効期限（ISO8601）。買い切り等でnullの場合あり。 */
   expirationDate: string | null;
   /** 自動更新されるか。CustomerInfoから取得できない場合はnull。 */
@@ -270,15 +292,19 @@ export interface ProPlanDetails {
  */
 export function useProPlanDetails(): ProPlanDetails {
   const customerInfo = usePurchasesStore((s) => s.customerInfo);
-  const entitlement = customerInfo?.entitlements.active[REVENUECAT_ENTITLEMENT_ID] ?? null;
-  const productIdentifier = entitlement?.productIdentifier ?? null;
-
-  let planPeriod: 'monthly' | 'annual' | null = null;
-  if (productIdentifier === REVENUECAT_MONTHLY_PRODUCT_ID) planPeriod = 'monthly';
-  else if (productIdentifier === REVENUECAT_ANNUAL_PRODUCT_ID) planPeriod = 'annual';
+  const planTier = usePurchasesStore((s) => s.planTier);
+  const active = customerInfo?.entitlements.active;
+  // Pro+の契約中はPro+のEntitlementを読む（Pro+の商品が`pro_plus`だけに紐付いていても期限・自動更新が欠けないように）。
+  // `pro_plus`がどの商品にも紐付いていない現時点では、従来どおり`pro`だけを読むのと同じ結果になる
+  const entitlement =
+    (planTier === 'pro_plus' ? active?.[REVENUECAT_PRO_PLUS_ENTITLEMENT_ID] : undefined) ??
+    active?.[REVENUECAT_ENTITLEMENT_ID] ??
+    null;
+  const product = identifyPlanProduct(entitlement?.productIdentifier ?? null, PLAN_PRODUCT_CATALOG);
 
   return {
-    planPeriod,
+    planPeriod: product?.period ?? null,
+    productTier: product?.tier ?? null,
     expirationDate: entitlement?.expirationDate ?? null,
     willRenew: entitlement?.willRenew ?? null,
     managementURL: customerInfo?.managementURL ?? null,

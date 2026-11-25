@@ -49,38 +49,61 @@ function findByProductId<P extends PackageLike>(
   return packages.find((pkg) => pkg.product?.identifier === productId) ?? null;
 }
 
+/** 除外するProduct IDの商品か（上位プランの商品をProの候補として拾わないため） */
+function isExcluded(pkg: PackageLike, excludeProductIds: readonly string[]): boolean {
+  return excludeProductIds.includes(pkg.product?.identifier);
+}
+
+function resolveByPeriod<P extends PackageLike>(
+  offering: OfferingLike<P> | null | undefined,
+  preset: P | null | undefined,
+  packageType: string,
+  productId: string,
+  excludeProductIds: readonly string[],
+): P | null {
+  if (offering == null) return null;
+  const packages = offering.availablePackages ?? [];
+  const allowed = packages.filter((pkg) => !isExcluded(pkg, excludeProductIds));
+  const presetAllowed = preset != null && !isExcluded(preset, excludeProductIds) ? preset : null;
+  return presetAllowed ?? findByPackageType(allowed, packageType) ?? findByProductId(packages, productId);
+}
+
 /**
  * 月額Packageを解決する。見つからなければ`null`。
  * `monthlyProductId`にはApp Store Connect側のProduct IDを渡す。
+ * `excludeProductIds`（Pro+の商品ID）に当たるPackageは、1・2段目（`offering.monthly`・`packageType`）で拾わない。
+ * Proの商品だけのOffering（現行の`default`）では、除外の有無で結果は変わらない（テストで固定）。
  */
 export function resolveMonthlyPackage<P extends PackageLike>(
   offering: OfferingLike<P> | null | undefined,
   monthlyProductId: string,
+  excludeProductIds: readonly string[] = [],
 ): P | null {
-  if (offering == null) return null;
-  const packages = offering.availablePackages ?? [];
-  return (
-    offering.monthly ??
-    findByPackageType(packages, 'MONTHLY') ??
-    findByProductId(packages, monthlyProductId)
-  );
+  return resolveByPeriod(offering, offering?.monthly, 'MONTHLY', monthlyProductId, excludeProductIds);
 }
 
 /**
  * 年額Packageを解決する。見つからなければ`null`。
- * `annualProductId`にはApp Store Connect側のProduct IDを渡す。
+ * `annualProductId`にはApp Store Connect側のProduct IDを渡す。除外の扱いは`resolveMonthlyPackage`と同じ。
  */
 export function resolveAnnualPackage<P extends PackageLike>(
   offering: OfferingLike<P> | null | undefined,
   annualProductId: string,
+  excludeProductIds: readonly string[] = [],
+): P | null {
+  return resolveByPeriod(offering, offering?.annual, 'ANNUAL', annualProductId, excludeProductIds);
+}
+
+/**
+ * Product IDが完全に一致するPackageだけを返す（Pro+の商品向け）。
+ * Pro+は`offering.monthly`・`packageType`を見ない：Dashboardのpackageの付け方に関わらず、Proの商品を取り違えないため。
+ */
+export function resolvePackageByProductId<P extends PackageLike>(
+  offering: OfferingLike<P> | null | undefined,
+  productId: string,
 ): P | null {
   if (offering == null) return null;
-  const packages = offering.availablePackages ?? [];
-  return (
-    offering.annual ??
-    findByPackageType(packages, 'ANNUAL') ??
-    findByProductId(packages, annualProductId)
-  );
+  return findByProductId(offering.availablePackages ?? [], productId);
 }
 
 /**

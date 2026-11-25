@@ -31,3 +31,12 @@ export const SHOW_PRO_PLUS = false;
  * RevenueCatの判定（planTier・isPro）・購入・復元には一切影響しない。
  */
 export const DEV_PRO_PLUS_PREVIEW = __DEV__;
+
+/**
+ * PRO_PLUS_QA: Pro+の検証用ビルドだけで、Pro+の入口を出し、**権利は本物（RevenueCatのCustomerInfo）で判定する**。
+ * Sandbox購入でPro+の購入・復元・失効・閲覧のみを確かめるためのもの（`SHOW_PRO_PLUS=false`のTestFlightでは入口が無く、
+ * development buildは`DEV_PRO_PLUS_PREVIEW`が契約を装うため、どちらでも本物の権利を確かめられない）。
+ * ビルド時の環境変数`EXPO_PUBLIC_PRO_PLUS_QA=1`の時だけtrue。`eas.json`の`production`には設定しない（本番の既定はfalse）。
+ * trueの時は`DEV_PRO_PLUS_PREVIEW`の「契約を装う」を止める（判定は`lib/proplus/proplus-access-core.ts`の`resolveProPlusFlags`）。
+ */
+export const PRO_PLUS_QA = process.env.EXPO_PUBLIC_PRO_PLUS_QA === '1';

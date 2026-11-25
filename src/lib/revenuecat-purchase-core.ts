@@ -41,17 +41,71 @@ export type PurchaseObservation = {
 };
 
 /**
- * 観測結果から購入の最終判定を導く。
+ * 観測結果から購入の最終判定を導く（Proの商品を買う場合）。
  *
  * - 正常終了: proActiveAfter=true → success / それ以外 → entitlement_missing
  * - キャンセル: cancelled
  * - 例外: 購入前が非Proかつ今はPro → success（Apple側で成立していた）／それ以外 → error
+ *
+ * 規則は `resolveTierPurchaseOutcome`（目標＝pro）と同じで、真理値表は従来と同一（テストで固定）。
  */
 export function resolvePurchaseOutcome(o: PurchaseObservation): PurchaseResolution {
+  return resolveTierPurchaseOutcome({
+    threw: o.threw,
+    cancelled: o.cancelled,
+    tierBefore: o.wasProBefore ? 'pro' : 'free',
+    tierAfter: o.proActiveAfter == null ? null : o.proActiveAfter ? 'pro' : 'free',
+    targetTier: 'pro',
+  });
+}
+
+/**
+ * 契約プラン。`plan-tier-core.ts` の `PlanTier` と同じ値・同じ順序（free < pro < pro_plus）。
+ * このファイルを自己完結に保つため、ここで値を持つ（`proplus-access-core.ts` と同じ扱い）。
+ */
+export type PurchaseTier = 'free' | 'pro' | 'pro_plus';
+const PURCHASE_TIER_RANK: ReadonlyMap<string, number> = new Map([
+  ['free', 0],
+  ['pro', 1],
+  ['pro_plus', 2],
+]);
+
+/** 序列に無い値・null（不明）は false＝権利を与えない側 */
+function atLeast(tier: PurchaseTier | null, required: PurchaseTier): boolean {
+  if (tier == null) return false;
+  const have = PURCHASE_TIER_RANK.get(tier);
+  const need = PURCHASE_TIER_RANK.get(required);
+  if (have === undefined || need === undefined) return false;
+  return have >= need;
+}
+
+export type TierPurchaseObservation = {
+  /** purchasePackageが例外を投げたか */
+  threw: boolean;
+  /** 例外が利用者キャンセルを示すか（threw=falseなら無視） */
+  cancelled: boolean;
+  /** 購入呼び出し前の契約プラン（storeの`planTier`） */
+  tierBefore: PurchaseTier;
+  /** 購入呼び出し後（例外時は再取得後）の契約プラン。CustomerInfoを取得できなければnull */
+  tierAfter: PurchaseTier | null;
+  /** 今回買う商品のプラン（Proの商品なら'pro'、Pro+の商品なら'pro_plus'） */
+  targetTier: PurchaseTier;
+};
+
+/**
+ * 目標のプランを指定して購入の最終判定を導く（Pro・Pro+の両方の購入で使う）。
+ *
+ * - 正常終了: 購入後のプランが目標以上 → success／それ以外 → entitlement_missing
+ *   （ProからPro+を買って`pro_plus`が付かなかった時に、残っている`pro`を成功と誤認しない）
+ * - キャンセル: cancelled
+ * - 例外: 購入前は目標未満かつ今は目標以上 → success（Apple側で成立していた救済）／それ以外 → error
+ *   （ProからPro+への購入では`pro`が既に有効なこと自体は今回の成立の証明にならない。見るのは目標への昇格）
+ */
+export function resolveTierPurchaseOutcome(o: TierPurchaseObservation): PurchaseResolution {
   if (!o.threw) {
-    return o.proActiveAfter === true ? 'success' : 'entitlement_missing';
+    return atLeast(o.tierAfter, o.targetTier) ? 'success' : 'entitlement_missing';
   }
   if (o.cancelled) return 'cancelled';
-  if (!o.wasProBefore && o.proActiveAfter === true) return 'success';
+  if (!atLeast(o.tierBefore, o.targetTier) && atLeast(o.tierAfter, o.targetTier)) return 'success';
   return 'error';
 }
