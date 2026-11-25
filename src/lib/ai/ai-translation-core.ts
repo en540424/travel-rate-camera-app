@@ -123,11 +123,20 @@ export function normalizeErrorCode(code: unknown): AiErrorCode {
 }
 
 /**
- * テキスト翻訳の再試行の方針。同じ `Idempotency-Key` で送り直すので、サーバー側で二重に消費されない（§7）。
- * 再試行するのは通信の揺れ（offline・provider_error）だけで、回数は最大2回。
+ * テキスト翻訳の再試行の方針。再試行するのは通信の揺れ（offline・provider_error）だけで、回数は最大2回。
+ * 送り直すキーは `keepIdempotencyKey` で決める（offline は同じキー＝サーバーで二重に消費されない、provider_error は新しいキー）。
  */
 export function shouldRetryText(code: AiErrorCode, attempt: number): boolean {
   return attempt < 2 && (code === 'offline' || code === 'provider_error');
+}
+
+/**
+ * 次の送信で同じ `Idempotency-Key` を使い続けるか。**届いたか分からない時（offline）だけ**同じキーを使う（§7）。
+ * 中継から答えが返った後（成功・失敗のどれでも）は新しいキーにする：中継は同じキーの再送を事業者へ送らず 409 を返すので、
+ * 失敗の後や同じ文の2回目を同じキーで送ると二度と通らない（2026-11-25 独立検収 B2）。失敗は回数に数えない（中継の台帳）。
+ */
+export function keepIdempotencyKey(outcome: AiErrorCode | 'success'): boolean {
+  return outcome === 'offline';
 }
 
 // ── 音声セッション（端末⇔中継の状態。§6-11のメッセージ） ──

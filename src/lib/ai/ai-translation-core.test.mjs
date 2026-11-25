@@ -112,3 +112,12 @@ test('模擬の中継：音声は1秒ごとに残量を送り、停止でdrainin
   conn.stop();
   assert.deepEqual(g.openVoice({ direction: 'from_ja', partnerLang: 'en' }, { onMessage: () => {}, onSocketLost: () => {} }), { error: 'quota_exceeded' });
 });
+
+test('冪等キー：届いたか分からない時（offline）だけ同じキーを使い、答えが返った後は新しいキー（2026-11-25 検収 B2）', () => {
+  assert.equal(C.keepIdempotencyKey('offline'), true);
+  for (const outcome of ['success', 'provider_error', 'unknown', 'busy', 'quota_exceeded', 'budget_stop', 'not_entitled']) {
+    assert.equal(C.keepIdempotencyKey(outcome), false, outcome);
+  }
+  // provider_error は再試行するが新しいキーで送る（中継は同じキーの再送に 409 を返す）
+  assert.equal(C.shouldRetryText('provider_error', 0), true);
+});

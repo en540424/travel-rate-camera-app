@@ -22,7 +22,7 @@ import { getAiGateway } from '@/lib/ai/ai-gateway-client';
 import type { VoiceConnection } from '@/lib/ai/ai-gateway-types';
 import {
   countChars, DEFAULT_TEXT_MAX_CHARS, describeAiError, formatDurationMs, formatQuota, languagePair, mergeQuota,
-  shouldRetryText, UNKNOWN_QUOTA, validateTextRequest, VOICE_IDLE, voiceReducer, type AiDirection, type AiErrorCode,
+  keepIdempotencyKey, shouldRetryText, UNKNOWN_QUOTA, validateTextRequest, VOICE_IDLE, voiceReducer, type AiDirection, type AiErrorCode,
 } from '@/lib/ai/ai-translation-core';
 import { canEditProPlusData } from '@/lib/proplus/proplus-access-core';
 import { newLocalId } from '@/lib/proplus/proplus-store-core';
@@ -52,10 +52,11 @@ export default function AiTranslateScreen() {
     return () => { conn.current?.close(); void stopSpeaking(); };
   }, []);
 
-  // 残量の照会も利用者のIDを中継へ送るため、同意の後だけ行う
+  // 残量の照会も利用者のIDを中継へ送るため、同意の後で、Pro+ を使える時だけ行う
+  // （契約の無い利用者が照会すると、中継に「Pro+ でない」と覚えさせる経路になる。2026-11-25 検収 S4）
   useEffect(() => {
-    if (consent) void gateway.getQuota().then((r) => { if (r.ok) setQuota((q) => mergeQuota(q, r.quota)); });
-  }, [consent, gateway]);
+    if (consent && usable) void gateway.getQuota().then((r) => { if (r.ok) setQuota((q) => mergeQuota(q, r.quota)); });
+  }, [consent, usable, gateway]);
 
   async function agree() {
     if (await saveAiConsent()) setConsent(true);
@@ -75,6 +76,9 @@ export default function AiTranslateScreen() {
     for (;;) {
       const r = await gateway.translateText(req, keyRef.current.key);
       if (r.quota) setQuota((q) => mergeQuota(q, r.quota!));
+      // 同じキーを使い続けるのは、届いたか分からない時（offline）だけ。答えが返った後は新しいキーにする
+      // （中継は同じキーの再送に 409 を返すので、失敗の後に同じキーでは二度と通らない。2026-11-25 検収 B2）
+      if (!keepIdempotencyKey(r.ok ? 'success' : r.code)) keyRef.current = { body, key: newLocalId() };
       if (r.ok) { setResult(r.translation); break; }
       if (!shouldRetryText(r.code, attempt)) { setError(r.code); break; }
       attempt += 1;

@@ -60,6 +60,8 @@ export default function ProPlusPlansScreen() {
   const [selected, setSelected] = useState<PeriodLike>('annual');
   const [result, setResult] = useState<ResultMessage | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  // 期間の変更を受け付けた後は、次回の更新日まで同じ変更を重ねて押させない
+  const [changeRequested, setChangeRequested] = useState(false);
 
   const availability = resolveProPlusAvailability({
     isConfigured: offering.isConfigured,
@@ -77,7 +79,8 @@ export default function ProPlusPlansScreen() {
   const currentProduct: PlanProduct | null =
     details.productTier && details.productPeriod ? { tier: details.productTier, period: details.productPeriod } : null;
   const change = classifyPlanChange(planTier, currentProduct, { tier: 'pro_plus', period });
-  const action = planActionFor({ change, availability, priceLabel, purchasing: isPurchasing });
+  // 購入と復元を同時に走らせない
+  const action = planActionFor({ change, availability, priceLabel, purchasing: isPurchasing || isRestoring || changeRequested });
   const intro = pkg && planTier === 'free' ? describeIntroOffer(pkg.product.introPrice) : null;
   const message = availabilityMessage(availability);
   const manageUrl = details.managementURL ?? EXTERNAL_LINKS.appleSubscriptionManagement;
@@ -96,10 +99,12 @@ export default function ProPlusPlansScreen() {
       ]);
       return;
     }
+    if (changeAtPurchase.kind === 'crossgrade' && outcome.status === 'success') setChangeRequested(true);
     setResult(shown);
   }
 
   async function handleRestore() {
+    if (isPurchasing || isRestoring) return;
     const outcome = await restore();
     const shown = describeRestoreResult(outcome.status, outcome.status === 'success' ? getPlanTier(outcome.customerInfo) : null);
     if (shown.tone === 'complete') setResult(shown);
@@ -237,7 +242,7 @@ export default function ProPlusPlansScreen() {
           {planTier === 'pro_plus' && (
             <GhostButton title="Proへ変更する（次回の更新日から）" onPress={() => openUrl('サブスクリプションの管理画面', manageUrl)} />
           )}
-          <GhostButton title={isRestoring ? '確認中…' : '購入を復元'} onPress={() => void handleRestore()} />
+          <GhostButton title={isRestoring ? '確認中…' : '購入を復元'} onPress={() => void handleRestore()} disabled={isPurchasing || isRestoring} />
         </View>
 
         <View style={styles.noteCard}>

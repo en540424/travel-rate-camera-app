@@ -144,9 +144,11 @@ test('復元：Pro+ だけを Pro+ の復元とし、Pro だけ・無し・失�
 test('無料体験の文言は StoreKit の introPrice がある時だけ', () => {
   equal(describeIntroOffer(null), null);
   equal(describeIntroOffer(undefined), null);
-  ok(describeIntroOffer({ price: 0, priceString: '¥0', periodUnit: 'DAY', periodNumberOfUnits: 7, cycles: 1 }).startsWith('最初の7日は無料'));
-  ok(describeIntroOffer({ price: 0, priceString: '¥0', periodUnit: 'WEEK', periodNumberOfUnits: 1, cycles: 1 }).startsWith('最初の1週間は無料'));
-  ok(describeIntroOffer({ price: 120, priceString: '¥120', periodUnit: 'MONTH', periodNumberOfUnits: 1, cycles: 3 }).includes('3か月は¥120'));
+  const free7 = describeIntroOffer({ price: 0, priceString: '¥0', periodUnit: 'DAY', periodNumberOfUnits: 7, cycles: 1 });
+  ok(free7.includes('最初の7日が無料'));
+  ok(free7.includes('対象外') && free7.includes('購入確認画面'), '対象かどうかを確かめずに「必ず無料」と書かない（S8）');
+  ok(describeIntroOffer({ price: 0, priceString: '¥0', periodUnit: 'WEEK', periodNumberOfUnits: 1, cycles: 1 }).includes('最初の1週間が無料'));
+  ok(describeIntroOffer({ price: 120, priceString: '¥120', periodUnit: 'MONTH', periodNumberOfUnits: 1, cycles: 3 }).includes('3か月が¥120'));
   equal(describeIntroOffer({ price: 0, priceString: '¥0', periodUnit: 'FORTNIGHT', periodNumberOfUnits: 1, cycles: 1 }), null);
   equal(describeIntroOffer({ price: 0, priceString: '¥0', periodUnit: 'DAY', periodNumberOfUnits: 0, cycles: 1 }), null);
 });

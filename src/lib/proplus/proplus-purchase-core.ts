@@ -181,7 +181,11 @@ export function periodLabel(period: PeriodLike | null): string | null {
   return period === 'monthly' ? '月額' : period === 'annual' ? '年額' : null;
 }
 
-/** StoreKit の introPrice（無料体験・お試し価格）。無ければ null。体験の有無は ASC の設定で決まり、コードでは決めない */
+/**
+ * StoreKit の introPrice（無料体験・お試し価格）。無ければ null。体験の有無は ASC の設定で決まり、コードでは決めない。
+ * 体験は1グループ1人1回で、以前に使った人は対象外になる。ここでは対象かどうかを確かめないので、「必ず無料」とは書かず、
+ * 対象かどうかは App Store の購入確認画面に出ると書く（2026-11-25 独立検収 S8）
+ */
 export type IntroPriceLike = { price: number; priceString: string; periodUnit: string; periodNumberOfUnits: number; cycles: number } | null | undefined;
 
 const UNIT: Record<string, string> = { DAY: '日', WEEK: '週間', MONTH: 'か月', YEAR: '年' };
@@ -191,8 +195,9 @@ export function describeIntroOffer(intro: IntroPriceLike): string | null {
   const unit = UNIT[intro.periodUnit];
   if (!unit) return null;
   const span = `${intro.periodNumberOfUnits * Math.max(1, intro.cycles || 1)}${unit}`;
-  if (intro.price === 0) return `最初の${span}は無料。終了後は自動で有料の期間に切り替わります（解約はいつでも可能）。`;
-  return `最初の${span}は${intro.priceString}。終了後は通常の価格で自動更新されます。`;
+  const note = '対象かどうかは、App Storeの購入確認画面に表示されます。';
+  if (intro.price === 0) return `初めての方は最初の${span}が無料です（以前に体験した方は対象外）。終了後は自動で有料の期間に切り替わります。${note}`;
+  return `初めての方は最初の${span}が${intro.priceString}です（以前に利用した方は対象外）。終了後は通常の価格で自動更新されます。${note}`;
 }
 
 export type ComparisonRow = { label: string; free: string; pro: string; proPlus: string };
