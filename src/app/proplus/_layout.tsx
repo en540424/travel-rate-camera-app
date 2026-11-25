@@ -16,6 +16,7 @@ export default function ProPlusLayout() {
       <Stack.Screen name="schedule" options={{ title: '旅行の予定' }} />
       <Stack.Screen name="event-edit" options={{ title: '予定' }} />
       <Stack.Screen name="ai-translate" options={{ title: 'AI翻訳' }} />
+      <Stack.Screen name="plans" options={{ title: 'Pro+のプラン' }} />
     </Stack>
   );
 }

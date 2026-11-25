@@ -15,7 +15,7 @@ export function AccessNotice({ access, blocked }: { access: ProPlusAccess; block
     );
   }
   if (access === 'read_only') return <Notice>Pro+の契約が無いため閲覧のみです。保存した場所・予定は消えません。</Notice>;
-  if (access === 'upsell') return <Notice>Pro+の機能です。提供開始まで準備中です。</Notice>;
+  if (access === 'upsell') return <Notice>Pro+の機能です。Pro+のプランは「Pro+のプラン」から確認できます。</Notice>;
   return null;
 }
 

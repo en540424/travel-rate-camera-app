@@ -16,6 +16,7 @@ import {
   configureRevenueCat,
   fetchCustomerInfo,
   fetchDefaultOffering,
+  fetchProPlusOffering,
   isRevenueCatConfigured,
   purchasePackage as purchasePackageOnDevice,
   removeCustomerInfoListener,
@@ -92,6 +93,55 @@ function loadOfferingsOnce(): Promise<void> {
     }
   })();
   return offeringsRequest;
+}
+
+/**
+ * Pro+専用のOffering（`pro_plus`）の取得を1本に束ねる。Pro+の購入画面を開いた時と、再取得の操作でだけ呼ぶ
+ * （起動時・フォアグラウンド復帰では呼ばない＝Free・Proの利用者の通信と挙動を増やさない）。
+ * 取得の失敗（`failed`）とOffering未作成（`loaded`でnull＝準備中）を分ける。無限retryはしない。
+ */
+let proPlusOfferingRequest: Promise<void> | null = null;
+
+function loadProPlusOfferingOnce(): Promise<void> {
+  if (proPlusOfferingRequest) return proPlusOfferingRequest;
+  usePurchasesStore.getState().setProPlusOfferingState('loading');
+  proPlusOfferingRequest = (async () => {
+    try {
+      const offering = await fetchProPlusOffering();
+      usePurchasesStore.getState().setProPlusOffering(offering);
+    } catch {
+      usePurchasesStore.getState().setProPlusOfferingState('failed');
+    } finally {
+      proPlusOfferingRequest = null;
+    }
+  })();
+  return proPlusOfferingRequest;
+}
+
+/**
+ * Pro+の購入画面用：Pro+の商品の取得状態と、Pro+の月額・年額のPackage。画面のmountごとに1回だけ読み、
+ * 以後は利用者の「再取得」でだけ読み直す。
+ */
+export function useProPlusOffering() {
+  const isConfigured = usePurchasesStore((s) => s.isConfigured);
+  const isInitialized = usePurchasesStore((s) => s.isInitialized);
+  const state = usePurchasesStore((s) => s.proPlusOfferingState);
+  const monthly = usePurchasesStore((s) => s.proPlusMonthlyPackage);
+  const annual = usePurchasesStore((s) => s.proPlusAnnualPackage);
+  const attemptedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isConfigured || !isInitialized || attemptedRef.current) return;
+    attemptedRef.current = true;
+    void loadProPlusOfferingOnce();
+  }, [isConfigured, isInitialized]);
+
+  const refresh = useCallback(async () => {
+    if (!usePurchasesStore.getState().isConfigured) return;
+    await loadProPlusOfferingOnce();
+  }, []);
+
+  return { isConfigured, isInitialized, state, monthly, annual, refresh };
 }
 
 /**

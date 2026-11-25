@@ -9,7 +9,8 @@ import {
 } from '@/config/revenuecat';
 import { getPlanTier } from '@/lib/plan-tier';
 import { hasProAccess, type PlanTier } from '@/lib/plan-tier-core';
-import { resolveAnnualPackage, resolveMonthlyPackage } from '@/lib/revenuecat-package-core';
+import type { OfferingLoadState } from '@/lib/proplus/proplus-purchase-core';
+import { resolveAnnualPackage, resolveMonthlyPackage, resolvePackageByProductId } from '@/lib/revenuecat-package-core';
 
 // Pro+の商品が誤って`default`へ入っても、Proの月額・年額として拾わない（Pro+の商品はPro+専用のOfferingに置く運用）
 const PRO_PLUS_PRODUCT_IDS: readonly string[] = [REVENUECAT_PRO_PLUS_MONTHLY_PRODUCT_ID, REVENUECAT_PRO_PLUS_ANNUAL_PRODUCT_ID];
@@ -29,6 +30,14 @@ interface PurchasesStore {
   monthlyPackage: PurchasesPackage | null;
   annualPackage: PurchasesPackage | null;
   error: string | null;
+  /**
+   * Pro+専用のOffering（`pro_plus`）と、その中のPro+の商品（Product IDの完全一致だけ）。Pro+の購入画面を開いた時だけ読む。
+   * `default`（Proの2商品）の読み込み・解決には一切関わらない（Free・Proの購入画面の挙動を変えない）
+   */
+  proPlusOfferingState: OfferingLoadState;
+  proPlusOffering: PurchasesOffering | null;
+  proPlusMonthlyPackage: PurchasesPackage | null;
+  proPlusAnnualPackage: PurchasesPackage | null;
 
   setConfigured: (isConfigured: boolean) => void;
   setLoading: (isLoading: boolean) => void;
@@ -36,6 +45,8 @@ interface PurchasesStore {
   setCustomerInfo: (customerInfo: CustomerInfo | null) => void;
   setOffering: (offering: PurchasesOffering | null) => void;
   setError: (error: string | null) => void;
+  setProPlusOfferingState: (state: OfferingLoadState) => void;
+  setProPlusOffering: (offering: PurchasesOffering | null) => void;
 }
 
 export const usePurchasesStore = create<PurchasesStore>((set) => ({
@@ -49,6 +60,10 @@ export const usePurchasesStore = create<PurchasesStore>((set) => ({
   monthlyPackage: null,
   annualPackage: null,
   error: null,
+  proPlusOfferingState: 'idle',
+  proPlusOffering: null,
+  proPlusMonthlyPackage: null,
+  proPlusAnnualPackage: null,
 
   setConfigured: (isConfigured) => set({ isConfigured }),
   setLoading: (isLoading) => set({ isLoading }),
@@ -70,4 +85,14 @@ export const usePurchasesStore = create<PurchasesStore>((set) => ({
     }),
 
   setError: (error) => set({ error }),
+
+  setProPlusOfferingState: (proPlusOfferingState) => set({ proPlusOfferingState }),
+  // Pro+の商品はProduct IDの完全一致だけで拾う（`offering.monthly`・packageTypeは見ない。Proの商品を取り違えないため）
+  setProPlusOffering: (offering) =>
+    set({
+      proPlusOffering: offering,
+      proPlusOfferingState: 'loaded',
+      proPlusMonthlyPackage: resolvePackageByProductId(offering, REVENUECAT_PRO_PLUS_MONTHLY_PRODUCT_ID),
+      proPlusAnnualPackage: resolvePackageByProductId(offering, REVENUECAT_PRO_PLUS_ANNUAL_PRODUCT_ID),
+    }),
 }));
