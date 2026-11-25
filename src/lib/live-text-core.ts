@@ -385,41 +385,38 @@ export type TrackedLine = {
 const MAX_READINGS = 5;
 
 /**
- * 直近の読みの多数決（大文字小文字・空白の揺れは同じ読み）。同数なら今の読みを保ち、今の読みが負けていれば
- * 多い読みのうち最も新しいもの。返す文字は、その読みの最も新しい書き方
+ * 直近の読みの多数決で、原文を替えるべき別の読み（大文字小文字・空白の揺れは同じ読み）。
+ * 別の読みが2回以上あり、今の原文より多い時だけ返す（同数なら最も新しいもの）。返す文字はその読みの最も新しい書き方。
+ * どの読みも2回に届かない（手持ちで1文字ずつ揺れ続ける長い行など）時は替えない（訳を取り直して札が消えない）
  */
-function majorityReading(readings: readonly string[], currentKey: string): { text: string; key: string; count: number } {
+function outvotingReading(readings: readonly string[], currentKey: string): { text: string; key: string } | null {
   const counts = new Map<string, number>();
   for (const reading of readings) {
     const key = textIdentityKey(reading);
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
-  const top = Math.max(...counts.values());
-  let key = currentKey;
-  if (counts.get(currentKey) !== top) {
-    for (let i = readings.length - 1; i >= 0; i -= 1) {
-      const candidate = textIdentityKey(readings[i]);
-      if (counts.get(candidate) === top) {
-        key = candidate;
-        break;
-      }
-    }
-  }
-  let text = readings[readings.length - 1];
+  const currentCount = counts.get(currentKey) ?? 0;
   for (let i = readings.length - 1; i >= 0; i -= 1) {
-    if (textIdentityKey(readings[i]) === key) {
-      text = readings[i];
-      break;
-    }
+    const key = textIdentityKey(readings[i]);
+    if (key === currentKey) continue;
+    const count = counts.get(key) ?? 0;
+    if (count < 2 || count <= currentCount) continue;
+    if ([...counts.entries()].some(([other, n]) => other !== currentKey && n > count)) continue;
+    return { text: readings[i], key };
   }
-  return { text, key, count: counts.get(key) ?? 0 };
+  return null;
 }
 
-/** 今の原文と同じ読みが直近で何回あったか（読みの記録が無い行は`hits`） */
+/** 行の中の数字の並び（"$5.60"→"5.60"）。価格の読みが割れているかは、英字の揺れではなくこれで比べる */
+function digitSignature(text: string): string {
+  return (text.match(/\d[\d.,]*/g) ?? []).join(' ');
+}
+
+/** 今の原文と数字の並びが同じ読みが直近で何回あったか（読みの記録が無い行は`hits`） */
 function readingSupport(line: TrackedLine): number {
   if (line.readings == null) return line.hits;
-  const key = textIdentityKey(line.text);
-  return line.readings.filter((reading) => textIdentityKey(reading) === key).length;
+  const signature = digitSignature(line.text);
+  return line.readings.filter((reading) => digitSignature(reading) === signature).length;
 }
 
 export type TrackerOptions = {
@@ -502,7 +499,8 @@ function centerDistance(a: NormalizedBox, b: NormalizedBox): number {
 
 /**
  * 表示してよい安定した行か（2フレーム以上で見えた行だけ出す。1フレームだけの誤認識を出さない）。
- * 数字を含む行（価格）は、今の読みそのものが`minHits`回以上読めている時だけ（読みが割れている間は出さない。
+ * 数字を含む行（価格）は、今の読みと数字の並びが同じ読みが`minHits`回以上ある時だけ（読みが割れている間は出さない。
+ * 英字だけの揺れ〔"12 hours"・"12 houre"〕は数えない。
  * `$5.60`を1回`$5.00`と読んだ直後に、どちらとも決まらない価格で円換算を出さない。2026-11-25）。
  * 同じ読みが続く時は従来と同じ（2回目で出る）
  */
@@ -519,7 +517,7 @@ export function isStableLine(line: TrackedLine, minHits = 2): boolean {
  * - カメラの動き（画面全体の平行移動）を推定し、前回の位置をその分ずらしてから比べ・追従させる。
  *   今回読めなかった行もその分ずらして残す（古い位置に残った行が隣の行の価格と組になる・訳が1行ずれるのを防ぐ。2026-11-25）
  * - 今回見えなかった行は`staleMs`経過まで残し、それを過ぎたら消す
- * - 原文は直近の読みの多数決（2026-11-25）。以前は「揺れた読みは確度が0.15以上上がった時だけ採る」だったため、
+ * - 原文は直近の読みの多数決も使う（2026-11-25）。以前は「揺れた読みは確度が0.15以上上がった時だけ採る」だけだったため、
  *   最初の1フレームの読み違い（`$5.60`→`$5.00`）が、確度の同じ正しい読みが続いても残り続けた
  *   （Visionの`.accurate`の確度は1.0になりやすく、1.0より0.15高い確度は無い）
  */
@@ -594,14 +592,25 @@ export function updateTrackedLines(
       };
     }
     const p = previous[match.index];
-    // 原文は直近の読みの多数決。1回だけ揺れた読みでは差し替えない（訳が変わらない）・同数なら今の原文を保つ
+    // 原文：別の読みが2回以上・今の原文より多くなった時だけ替える（1回だけ揺れた読みでは差し替えない＝訳が変わらない）。
+    // 同じ読みなら最新の書き方、明らかに確度が上がった読みは従来どおりすぐ採る
     const priorReadings = p.readings ?? Array.from({ length: Math.min(p.hits, MAX_READINGS) }, () => p.text);
     const readings = [...priorReadings, item.text].slice(-MAX_READINGS);
-    const winner = majorityReading(readings, textIdentityKey(p.text));
+    const currentKey = textIdentityKey(p.text);
+    const outvoting = outvotingReading(readings, currentKey);
+    let text = p.text;
+    let confidence = p.confidence;
+    if (outvoting != null) {
+      text = outvoting.text;
+      confidence = outvoting.key === item.key ? item.line.confidence : p.confidence;
+    } else if (item.key === currentKey || item.line.confidence > p.confidence + 0.15) {
+      text = item.text;
+      confidence = item.line.confidence;
+    }
     return {
       id: p.id,
-      text: winner.text,
-      confidence: winner.key === item.key ? item.line.confidence : p.confidence,
+      text,
+      confidence,
       box: smoothBox(predicted[match.index], item.box, options.smoothing),
       hits: p.hits + 1,
       firstSeenAt: p.firstSeenAt,
