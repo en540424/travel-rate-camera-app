@@ -4,6 +4,13 @@
 
 > 本節が現在地の正。以下の「現在の開発フェーズ」以降は2026-07-01〜08時点の履歴で、完了済み項目を未完へ戻さない。
 
+> [!important] 2026-11-26（続き2）**Pro+ 本人認証の残課題の修正・購読の更新の整合性・Sandbox の準備／ローカル実装済み・モックテスト合格・独立検収（Fable 5.2・2回）blocker 0・外部サービスでの実証0件・本番公開は不可**
+> - 中継 `2d63c43`：RS-2 の残り（署名日時ごとの窓＋外側の上限）・RS-5（返金と取り消しを事象の時刻で・Directory version 3・旧い版へ戻しても同じ判定）・RS-6（権利なしを60秒覚える・同時の照会は3本）・NX-2・NY-1（持ち主の記録の期限・件数・not_owner で消す）・Webhook の HMAC 署名（RevenueCat 公式の機能・任意で必須）・RS-3（S1 の記述）。検収の RV-1〜6・NV-1〜2 の should-fix は修正、nit の一部は記録のみ（中継 README）
+> - アプリ `dc3fb72`：403 `not_entitled` の後、トークンにつき1回だけ新しい証拠で交換し直す（商品の変更で RevenueCat が別の購読を作るため）。TEST_CHECKLIST #104 の更新と X-1〜X-7（Sandbox の実測項目）
+> - 購読の更新・月額↔年額・Sandbox/本番で利用枠は増えない（主体は環境＋originalTransactionId）。月額・年額は ASC で同じ Level にする前提（違うと即時の変更で窓が1回開く）。originalTransactionId の継続（失効後の再購読・Pro→Pro+）は Apple 公式に明記なし＝Sandbox で実測
+> - テスト：アプリ 1035・tsc 0・lint 20／中継 492。check:workerd 27/27・check:entry 21/21・directory-upgrade 9/9 は NV の修正の前の時点。**NV の修正の後の workerd の確認と、変異の残り（session.mjs の一部・NV の10件）は端末のメモリ不足で未実行**
+> - 次：Human の判断（方式の採用・S1・Restore Behavior・Level・Grace Period）→ Work の設定（Vault ログ §12）→ 中継の検証用環境（Human）→ `testflight-proplus-qa`（Human GO）。Vault ログ `2026-11-26_旅レートカメラ_ProPlus本人認証の残課題修正とSandbox検証準備_開発ログ`
+
 > [!important] 2026-11-26（続き）**Pro+ 本人認証 B1 の根本修正・独立セキュリティ検収（Fable 5.2・3回）／設計として成立・ローカル実装済み・モックテスト合格・独立検収で blocker 0（コード上）・外部サービスでの実証0件・本番公開は不可（Human の採用と Sandbox の実測が前提）**
 > - B1 の根本原因：加入者（台帳・枠の持ち主）を x-app-user-id と RevenueCat の顧客の繋がり（他人のIDで書き換え得る）から決め、Apple の取引IDは門にだけ使っていた。**主体を Apple が署名した取引ID（環境ごと）に逆にした**（中継 `3c71ac8`）。再検収の BL-1（権利・期間・区分を申告IDの顧客から取っていた）は、**JWS の transactionId で RevenueCat v2 の購読そのものを引き**、申告IDがその購読の持ち主かを確かめる形で解消（`eb1a7f1`）。RS-1・RS-2・RS-4（音声の利用中の取り直し）・NX-1・NX-3・NX-4 も対応（`3beb73a`・`174a5a2`）。S4（猶予期間：更新情報の JWS）・S5（交換の回数の窓2本）も対応。S1（漏れた JWS と持ち主のIDの両方を持つ者は共有できる）は残るリスク（端末の区別は Human）
 > - アプリ：`e49ab5e`（証拠に購読の更新情報の JWS を足す・交換の本文 `proofBody`）・`599a5a0`（ad81002 の再確認 Sonnet 5.5：blocker なし。N1 正常な拒否でトークンを捨てない・N2 古い取り込みの失敗を新しい開始の失敗にしない）
