@@ -76,7 +76,7 @@ export default function AiTranslateScreen() {
     for (;;) {
       const r = await gateway.translateText(req, keyRef.current.key);
       if (r.quota) setQuota((q) => mergeQuota(q, r.quota!));
-      // 同じキーを使い続けるのは、届いたか分からない時（offline）だけ。答えが返った後は新しいキーにする
+      // 同じキーを使い続けるのは、届いたか分からない時（offline）と中継で処理中の時（busy）だけ。答えが返った後は新しいキーにする
       // （中継は同じキーの再送に 409 を返すので、失敗の後に同じキーでは二度と通らない。2026-11-25 検収 B2）
       if (!keepIdempotencyKey(r.ok ? 'success' : r.code)) keyRef.current = { body, key: newLocalId() };
       if (r.ok) { setResult(r.translation); break; }
