@@ -458,6 +458,12 @@ test('表示したことのある行は覚えない（読めなくなった時�
   tracked = updateTrackedLines(tracked, [line], 1900);
   assert.ok(isStableLine(tracked[0]));
   assert.equal(updateTrackedLines(updateTrackedLines(tracked, [], 2900), [], 3500).length, 0);
+  // 2回以上読めた価格の行は、読みが割れて表示の条件から外れていても覚えない
+  const price = (text) => ({ text, confidence: 1, box: { x: 0.6, y: 0.1, width: 0.1, height: 0.02 } });
+  let split = updateTrackedLines([], [price('$5.60')], 1000);
+  split = updateTrackedLines(split, [price('$5.00')], 1900);
+  assert.ok(split[0].hits === 2 && !isStableLine(split[0]));
+  assert.equal(updateTrackedLines(updateTrackedLines(split, [], 2900), [], 3500).length, 0);
 });
 
 test('止めた時の札・帯の落ち着きは Build 8 と同じ（翻訳の遅れも入れて、同じシードで比べる）', () => {

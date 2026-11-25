@@ -798,8 +798,9 @@ export function updateTrackedLines(
       ((p.misses ?? 0) === 0 || p.held === true);
     if (p.dormant !== true && (held || now - p.lastSeenAt <= options.staleMs)) {
       next.push({ ...p, box: predicted[index], misses, held });
-    } else if (inFrame && !replaced && misses <= MAX_DORMANT_MISSES && !isStableLine(p)) {
-      // まだ表示していない行だけ、同じ所でまた読めた時に引き継ぐために覚えておく（従来はここで消していた）
+    } else if (inFrame && !replaced && misses <= MAX_DORMANT_MISSES && p.hits < 2) {
+      // 1回だけ読めた（まだ一度も表示の条件を満たしていない）行だけ、同じ所でまた読めた時に引き継ぐために覚えておく
+      // （従来はここで消していた）。2回以上読めた行は、数字の読みが割れて表示から外れていても覚えない（価格の行を延長しない）
       next.push({ ...p, box: predicted[index], misses, held: false, dormant: true });
     }
   });
