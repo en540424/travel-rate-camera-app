@@ -7,6 +7,12 @@
  * 利用枠もその購読ごとに数える（2026-11-26 B1 の根本修正。x-app-user-id からは決めない）。権利は中継が要求ごとに確かめる。
  * - トークンは端末のメモリにだけ置く（保存しない）。期限の少し前に取り直す
  * - 中継が 401 を返したら、トークンを捨てて1回だけ取り直して送り直す
+ * - 中継が 403 `not_entitled` を返したら、**そのトークンにつき1回だけ**新しい証拠で交換し直して送り直す（2026-11-26）。トークンは
+ *   交換の時の取引に結び付く。月額→年額などの商品の変更・失効後の再購読で RevenueCat が別の購読を作ると、古い取引のトークンは
+ *   権利なしのままになる。端末の StoreKit に今の Pro+ の取引が無ければ交換は通信せずに not_entitled で終わる。交換が断られても
+ *   古いトークンを残す。交換が not_entitled で**確定して**断られたトークンでは2回目の交換をしない。圏外・503・429 の一時的な失敗は
+ *   間隔（REEXCHANGE_MIN_INTERVAL_MS）の後にもう一度だけ許す。交換し直しは端末全体で間隔に1回まで（交換の回数の上限 429 に当てない）。
+ *   同時に 403 を受けた要求は、進行中の交換し直しを共有する（検収 RV-3・RV-4・RV-12）
  * - **証拠の方式（StoreKit の JWS を使うか）の採用は Human の判断**（2026-11-25 時点で未決定）。中継が方式を登録していなければ
  *   交換は unconfigured になり、AI 翻訳は「準備中」のまま動かない
  */
@@ -41,6 +47,22 @@ export function proofBody(proof: { jws: string; renewalJws?: string }): string {
 /** 要求が 401 で返った時、トークンを取り直して1回だけ送り直すか */
 export function shouldRefreshAfter(status: number, attempt: number): boolean {
   return status === 401 && attempt === 0;
+}
+
+/** 要求が 403 `not_entitled` で返った時、新しい証拠で交換し直して1回だけ送り直すか（同じトークンでの2回目は呼び出し側が止める） */
+export function shouldReexchangeAfterDenied(status: number, error: unknown, attempt: number): boolean {
+  return status === 403 && normalizeErrorCode(error) === 'not_entitled' && attempt === 0;
+}
+
+/** 403 の後の交換し直しの最小の間隔（端末全体）。正当な交換は10分のトークンの期限ごとに1回なので、これで窓の上限に当たらない */
+export const REEXCHANGE_MIN_INTERVAL_MS = 60_000;
+
+/**
+ * 403 の後に交換し直してよいか。`deniedFor` は交換が not_entitled で確定して断られたトークン、`lastAt` は前の交換し直しの時刻
+ */
+export function reexchangeAllowed(p: { deniedToken: string; deniedFor: string | null; lastAt: number | null; now: number; minIntervalMs?: number }): boolean {
+  if (p.deniedFor !== null && p.deniedFor === p.deniedToken) return false;
+  return p.lastAt === null || p.now - p.lastAt >= (p.minIntervalMs ?? REEXCHANGE_MIN_INTERVAL_MS);
 }
 
 /** 証拠が取れない時の扱い（端末に Pro+ の取引が無い・StoreKit が使えない）：Pro+ ではないものとして案内する */

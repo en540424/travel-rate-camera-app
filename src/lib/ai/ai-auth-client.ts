@@ -12,7 +12,7 @@ import { Platform } from 'react-native';
 
 import { REVENUECAT_PRO_PLUS_ANNUAL_PRODUCT_ID, REVENUECAT_PRO_PLUS_MONTHLY_PRODUCT_ID } from '@/config/revenuecat';
 
-import { exchangeOutcome, proofBody, proofUnavailableCode, tokenUsable, type GatewayToken } from './ai-auth-core';
+import { exchangeOutcome, proofBody, proofUnavailableCode, reexchangeAllowed, tokenUsable, type GatewayToken } from './ai-auth-core';
 import type { StoreKitProof } from '../../../modules/storekit-proof';
 import type { AiErrorCode } from './ai-translation-core';
 
@@ -70,6 +70,37 @@ export async function getGatewayToken(base: string, appUserId: string, { force =
     inflight = { appUserId, promise };
   }
   return inflight.promise;
+}
+
+// 403 not_entitled の後の交換し直し（ai-auth-core の reexchangeAllowed）。確定して断られたトークン・前の時刻・進行中の交換
+let deniedFor: string | null = null;
+let lastReexchange: { appUserId: string; at: number } | null = null;
+let reinflight: { appUserId: string; promise: Promise<{ ok: true; token: string } | null> } | null = null;
+
+/**
+ * 中継が 403 `not_entitled` を返したトークンについて、新しい証拠で交換し直す（ai-auth-core の shouldReexchangeAfterDenied）。
+ * 成功すれば新しいトークン、交換しない・断られた時は null（古いトークンを残す）。同時の呼び出しは進行中の交換を共有する
+ */
+export async function reexchangeAfterDenied(base: string, appUserId: string, deniedToken: string): Promise<{ ok: true; token: string } | null> {
+  if (reinflight && reinflight.appUserId === appUserId) return reinflight.promise;
+  const now = Date.now();
+  // 断られたトークンの後に、別の要求の交換し直しで新しいトークンが既にあれば、それで送り直す（交換しない。再検収 NV-2）
+  if (cached && cached.appUserId === appUserId && cached.token.token !== deniedToken && tokenUsable(cached.token, now)) return { ok: true, token: cached.token.token };
+  // 間隔は利用者ごと（利用者を切り替えた直後に前の利用者の間隔で止めない。再検収 NV-5）
+  const lastAt = lastReexchange && lastReexchange.appUserId === appUserId ? lastReexchange.at : null;
+  if (!reexchangeAllowed({ deniedToken, deniedFor, lastAt, now })) return null;
+  lastReexchange = { appUserId, at: now };
+  const promise = exchange(base, appUserId)
+    .then((r) => {
+      if (r.ok) return r;
+      if (r.code === 'not_entitled') deniedFor = deniedToken; // 確定した拒否だけ。圏外・503・429 は間隔の後にもう一度許す
+      return null;
+    })
+    .finally(() => {
+      if (reinflight?.promise === promise) reinflight = null;
+    });
+  reinflight = { appUserId, promise };
+  return promise;
 }
 
 /** トークンを捨てる（中継が 401 を返した時・利用者が変わった時） */

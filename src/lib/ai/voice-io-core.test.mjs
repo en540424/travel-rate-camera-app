@@ -185,6 +185,23 @@ describe('本人認証のトークン（端末）', () => {
     assert.equal(A.proofUnavailableCode('no_transaction'), 'not_entitled');
     assert.equal(A.proofUnavailableCode('unsupported'), 'unconfigured');
   });
+
+  test('403 not_entitled の後は、そのトークンにつき1回だけ交換し直す（商品の変更・再購読で古い取引のトークンが権利なしになる。2026-11-26）', () => {
+    assert.equal(A.shouldReexchangeAfterDenied(403, 'not_entitled', 0), true);
+    assert.equal(A.shouldReexchangeAfterDenied(403, 'not_entitled', 1), false, '送り直しの後は交換しない');
+    for (const e of ['quota_exceeded', 'budget_stop', 'unknown', undefined]) assert.equal(A.shouldReexchangeAfterDenied(403, e, 0), false, String(e));
+    assert.equal(A.shouldReexchangeAfterDenied(401, 'not_entitled', 0), false, '401 は取り直しの側（shouldRefreshAfter）');
+    assert.equal(A.shouldReexchangeAfterDenied(429, 'rate_limited', 0), false, '交換の回数の上限で交換を重ねない');
+  });
+
+  test('交換し直しの許可：確定して断られたトークンでは2回目なし、一時的な失敗は間隔の後にもう1回、端末全体で間隔に1回（検収 RV-3・RV-12）', () => {
+    const base = { deniedToken: 't1', deniedFor: null, lastAt: null, now: 1_000_000 };
+    assert.equal(A.reexchangeAllowed(base), true);
+    assert.equal(A.reexchangeAllowed({ ...base, deniedFor: 't1' }), false, '確定して断られたトークン');
+    assert.equal(A.reexchangeAllowed({ ...base, deniedFor: 't0', lastAt: base.now - A.REEXCHANGE_MIN_INTERVAL_MS }), true, '別のトークン・間隔の後');
+    assert.equal(A.reexchangeAllowed({ ...base, lastAt: base.now - A.REEXCHANGE_MIN_INTERVAL_MS + 1 }), false, '間隔の内（一時的な失敗の直後・交換が通っても 403 が続く時）');
+    assert.equal(A.REEXCHANGE_MIN_INTERVAL_MS, 60_000);
+  });
 });
 
 describe('音声の状態遷移（追加分）', () => {

@@ -1196,14 +1196,67 @@
 - 期待：落ちない。終了・再開の挙動を記録する（未確認）
 - 実機：必須
 
-### 104. 本人認証（中継のトークン）
+### 104. 本人認証（中継のトークン）（2026-11-26 B1 の根本修正の後の形に更新）
 - [ ] 操作：Pro+ を購入した直後（Sandbox）に AI 翻訳を開く
-- 期待：残量が出る。購入の直後に「契約の確認に少し時間がかかっています」（pending_link）が出ても、しばらくして使える（RevenueCat の Webhook の到着の後）
+- 期待：Webhook を待たずに残量が出る（交換は Apple の署名した取引と、その取引の RevenueCat の購読で確かめる）
 - [ ] 操作：Pro+ を復元した別の端末・再インストールの後
-- 期待：同じ利用枠で使える（取引IDで同じ利用者へ束ねられる）
+- 期待：同じ利用枠で使える（同じ originalTransactionId なら同じ利用者）。`not_owner` で断られたら X-3 を記録する
 - [ ] 確認：StoreKit の署名付き取引が取り出せる（`modules/storekit-proof`）。取り出せない時は「Pro+ の契約を確認できませんでした…購入の復元」
-- [ ] 確認：中継のログに 401 の理由（`token_*`・`proof:*`・`binding_mismatch`）が想定外に出ていない
+- [ ] 確認：中継のログに `auth_rejected` の理由（`proof:*`・`not_owner`・`refunded`・`environment_mismatch`・`token_*`）が想定外に出ていない
 - 実機：必須／Sandbox：必須／中継：必須
+
+### X. Pro+ 本人認証の Sandbox 実測（2026-11-26追加・同branch・**未Build**・Build のプロファイルは `testflight-proplus-qa`）
+
+> 中継の本人認証は模擬の試験と本物の workerd では確かめたが、**Apple・RevenueCat の本物の応答では未確認**。下の項目は、模擬で決め打ちしている前提（取引IDの継続・RevenueCat の購読の形・持ち主の確認・Webhook の順序）を実測で確かめるためのもの。中継のログ（`auth_rejected`・`webhook_applied`）と RevenueCat のダッシュボードの購読・事象の画面を一緒に記録する。
+> **Sandbox で合格でも本番の合格にしない**項目には「本番：必須」を付けた（TestFlight・審査は Sandbox の環境。本番は公開の後に限られた形でしか確かめられない）。
+> 前提（未設定なら実施しない）：中継の検証用環境・Secret・`AUTH_PROOF_KINDS=storekit_jws`・`APPLE_ENVIRONMENTS=Sandbox`・`APPLE_PRO_PLUS_PRODUCT_IDS`（ASC の値）・RevenueCat の Webhook（Authorization・できれば HMAC）。Vault の当日の開発ログの「Sandbox 前の設定の一覧」を参照。
+
+### X-1. 取引の JWS と RevenueCat の購読の形
+- [ ] 確認：購入の後の JWS の `environment`＝`Sandbox`（TestFlight）、`transactionId`＝`originalTransactionId`（初回）、長さが 12,000 文字未満、`signedDate` の値
+- [ ] 確認：同じ端末で時間を空けて2回取り出した JWS の `signedDate` が同じか違うか。2台目の端末・再インストールの後の `signedDate` が1台目と違うか（交換の回数の窓の分け方の前提・RS-2）
+- [ ] 確認：中継の照会（`subscriptions?store_subscription_identifier=<transactionId>`）で購読が1件引け、`customer_id`・`entitlements` に `pro_plus` が入る（ダッシュボードの購読の画面と照合）
+- 実機：必須／Sandbox：必須／中継：必須
+
+### X-2. 更新・期間の変更・Pro → Pro+
+- [ ] 操作：Sandbox の短い更新周期で2〜3回更新させる
+- 期待：更新ごとに `transactionId` が変わり、`originalTransactionId` は同じ。AI の残量は更新で新しい期間の値になり、同じ期間の中では増えない
+- [ ] 操作：Pro+ 月額 → 年額へ変更（ASC の Level が同じなら次の更新から、違えば即時）
+- 期待：変更が効いた後、AI 翻訳が「Pro+ではありません」にならない（RevenueCat は商品の変更を新しい購読にする。アプリは 403 の後に1回だけ交換し直す）。`originalTransactionId` が同じか記録する。即時に変わった時は、AI の残量が新しい期間の値になる（1回だけ増える。Level の並びで避けられる）ことを記録する
+- [ ] 操作：Pro（月額）→ Pro+ へアップグレード
+- 期待：即時に AI 翻訳が使える。Pro+ の取引の `originalTransactionId` が Pro の購読と同じか（同じグループか）記録する
+- 実機：必須／Sandbox：必須
+
+### X-3. 復元・複数端末・Apple ID
+- [ ] 操作：同じ Apple ID の2台目の端末（別の匿名ID）で、アプリを入れて AI 翻訳を開く（購入の復元をする前・した後）
+- 期待：復元の後は同じ利用枠で使える。復元の前に `not_owner` になるかを記録する（RevenueCat の別ID一覧・`customer_id` の形と、Restore Behavior の設定に依存）
+- [ ] 操作：再インストール（同じ Apple ID）→ 復元
+- 期待：同じ利用枠。`not_owner` にならない
+- [ ] 操作：端末の App Store の Apple ID を別の Sandbox アカウントへ切り替える
+- 期待：前の購読の利用枠は使えない（Pro+ の取引が端末に無い＝案内）。アプリが落ちない。案内の文言を記録する（SF-7）
+- 実機：必須／Sandbox：必須
+
+### X-4. 解約・失効・再購読・返金
+- [ ] 操作：自動更新を切って期限まで待つ
+- 期待：期限の後に AI 翻訳が「Pro+ではありません」系の案内になる。利用中の音声は約10秒で止まる
+- [ ] 操作：失効の後に同じ商品を買い直す
+- 期待：すぐに使える（Webhook の到着の前でも、アプリの交換し直しで）。`originalTransactionId` が前と同じか記録する（違えば別の利用枠になる＝残るリスク。Human の判断）
+- [ ] 操作：Sandbox で返金を起こす（方法は Sandbox で使える範囲で確認する）→ 返金の取り消しがあれば、それも
+- 期待：返金の後は使えない。中継が受けた `CANCELLATION`（`cancel_reason=CUSTOMER_SUPPORT`）・`REFUND_REVERSED` の `event_timestamp_ms`・`purchased_at_ms` と、届いた順を記録する
+- 実機：必須／Sandbox：必須／本番：必須（返金の実際の流れは本番の事象で確かめる）
+
+### X-5. 猶予期間・請求の再試行
+- [ ] 操作：Sandbox のアカウントで請求の失敗（Billing Retry・Grace Period）を起こす（ASC の Billing Grace Period を有効にした場合）
+- 期待：猶予中は AI 翻訳が使える。RevenueCat の `status`＝`in_grace_period` と `current_period_ends_at`、更新情報の `isInBillingRetryPeriod`・`gracePeriodExpiresDate` を記録する
+- 実機：必須／Sandbox：必須
+
+### X-6. Webhook
+- [ ] 確認：中継が受けた Webhook が 200 で、ログの `webhook_applied` に事象の種類が出る。HMAC を有効にした時、`X-RevenueCat-Webhook-Signature` の形が `t=<秒>,v1=<16進>` で検証に通る（通らなければ 401 になり、RevenueCat の画面で失敗が見える）
+- [ ] 確認：Authorization の値を変えた時に 401（RevenueCat の画面で失敗・再送）
+- 実機：不要／Sandbox：必須／中継：必須
+
+### X-7. 本番とSandboxの分離・本番への移行
+- [ ] 確認：TestFlight（Sandbox）で使った後、同じ端末で App Store 版（本番）を買うと、本番の利用枠が別に始まる（Sandbox の利用量を持ち越さない・締め出されない）
+- 実機：必須／Sandbox：必須／本番：必須（公開の後）
 
 ### 105. 既存の機能を壊していない（Pro+ の音声の Build）
 - [ ] 確認：#57〜#65（スマートカメラ・ライブ翻訳・写真翻訳）と翻訳タブの音声入力・読み上げが、音声の部品を足した Build で従来どおり（音声セッションの共存は未確認）

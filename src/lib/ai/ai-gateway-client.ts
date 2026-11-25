@@ -14,8 +14,8 @@ import { DEV_PRO_PLUS_PREVIEW } from '@/config/feature-flags';
 import { normalizeErrorCode, type AiErrorCode, type AiQuota } from '@/lib/ai/ai-translation-core';
 import { usePurchasesStore } from '@/stores/purchases-store';
 
-import { shouldRefreshAfter } from './ai-auth-core';
-import { forgetGatewayToken, getGatewayToken } from './ai-auth-client';
+import { shouldReexchangeAfterDenied, shouldRefreshAfter } from './ai-auth-core';
+import { forgetGatewayToken, getGatewayToken, reexchangeAfterDenied } from './ai-auth-client';
 import type { AiGateway, TextTranslateResult, VoiceConnection } from './ai-gateway-types';
 import { createMockGateway } from './ai-gateway-mock';
 import { closeEvent, helloMessage, parseServerMessage, STOP_MESSAGE, voiceSocketUrl } from './voice-protocol-core';
@@ -73,6 +73,17 @@ function createHttpGateway(base: string): AiGateway {
       if (r && shouldRefreshAfter(r.status, attempt)) {
         forgetGatewayToken();
         continue;
+      }
+      // 403 not_entitled：商品の変更・再購読の後の古い取引のトークンかもしれない。そのトークンにつき1回だけ交換し直して送り直す
+      if (r && shouldReexchangeAfterDenied(r.status, r.body?.error, attempt)) {
+        const fresh = await reexchangeAfterDenied(base, id, tok.token);
+        if (fresh) {
+          const again = await fetchJson(`${base}${path}`, {
+            ...init,
+            headers: { 'content-type': 'application/json', ...(init.headers ?? {}), 'x-app-user-id': id, authorization: `Bearer ${fresh.token}` },
+          });
+          return { response: again };
+        }
       }
       return { response: r };
     }
