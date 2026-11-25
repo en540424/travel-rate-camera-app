@@ -4,7 +4,14 @@
 
 > 本節が現在地の正。以下の「現在の開発フェーズ」以降は2026-07-01〜08時点の履歴で、完了済み項目を未完へ戻さない。
 
-> [!important] 2026-11-25 **Build 9（ライブ翻訳の応答性改善 `59ebc39`・`c83e392` を含む）作成済み（FINISHED）・Submit は Human 待ち・実機未確認**
+> [!important] 2026-11-25 **Build 9 を正式採用（Human 決定）・ライブ翻訳は現行仕様で完成・追加改善は終了 → App Store 公開準備へ**
+> - Apple 側（`eas submit:status` 読み取り）：1.0.0 (9)・VALID・IN_BETA_TESTING・submission `a29d274c-8231-4765-a4e0-8bfb70bba033`・upload 17:59 JST。内部テストグループへの所属は CLI で見えない（Human の ASC 画面で確認）
+> - Human 実機確認（iPhone・Build 9）：ライブ翻訳の表示・中央/左右/上下・斜め・認識後の安定・商品名/USD/円を確認。軽微なラグは許容。重大な問題なし
+> - **合格はライブ翻訳だけ**。P0（未確認7・部分確認9）・#78・#86・#87・S節（#81〜#85）・#32 の成功経路は Build 9 で別途確認する（合格にしていない）。審査提出・一般公開は未承認
+> - 既知の制約（公開後の改善候補）：読みにくい文字では最初の訳まで時間がかかる／大きな傾き・密集で不安定／商品名と価格の対応違いはゼロではない／翻訳は端末内の翻訳と OCR に依存（直訳あり）。ライブ翻訳のコードは追加改修しない
+> - 記録：Vault ログ `2026-11-25_旅レートカメラ_ライブ翻訳応答性改善版Build9とTestFlight配布_開発ログ` §11。Product Hub `tsk_tabirate-live-translation-fix` は done
+
+> [!note] 2026-11-25（記録時点）Build 9（ライブ翻訳の応答性改善 `59ebc39`・`c83e392` を含む）作成済み（FINISHED）・Submit は Human 待ち・実機未確認 → 上の節で解消
 > - Build 9：1.0.0 (9)・EAS `3215c5ab-370a-447a-8a21-0eaafbc60c24`・ビルド元 `integrate/build6-live-text-fix` `c83e392171a322ca5a28cc9d2b51ec45b7a5fc3d`・production・STORE・fingerprint `c6dd6345…`（Build 4〜8 と同一。`eas fingerprint:compare --build-id e32435b1… --environment production` でローカルと Build 8 が一致を確認）・FINISHED（2026-11-25T08:53Z・`--freeze-credentials` 付き・1回のみ）
 > - ビルド前：Build 8（`7445f79`）からの差分は応答性改善の4ファイル＋本ファイルのみ（package.json・app.json・eas.json・DB・課金・Tier・ネイティブの差分なし）・npm test 925・tsc 0・lint 20（変更ファイルの指摘0）。EAS Free iOS 5/15（残り10）・超過0円
 > - **Human：** `cd C:\Users\envie\trc-build6-live-text` → `npx eas-cli@27.11.0 submit -p ios --id 3215c5ab-370a-447a-8a21-0eaafbc60c24 --groups "旅レートカメラ 内部テスト"`（対話式）→ TestFlight で Build 8 を削除せず上書き更新して実機確認（5点：最初の日本語・読みにくい所・商品名の確定速度・安定性と対応・副作用）。重大な問題がなければライブ翻訳の追加改善は終了し App Store 公開準備へ戻る。**実機確認が済むまでライブ翻訳全体を完了と判定しない**
