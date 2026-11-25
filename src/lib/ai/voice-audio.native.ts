@@ -59,6 +59,8 @@ export function createVoiceAudio(): VoiceAudio | null {
   let listener: ((playing: boolean) => void) | null = null;
   let lastPlaying = false;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  // 取り込みの世代：開始の途中（音声セッションの有効化を待つ間）に停止が来たら、その開始は録音を始めない（マイクを残さない）
+  let captureGen = 0;
 
   const notify = () => {
     const playing = clock.isPlaying(Date.now());
@@ -83,7 +85,8 @@ export function createVoiceAudio(): VoiceAudio | null {
     queue = ctx.createBufferQueueSource();
     queue.connect(ctx.destination);
     queue.onbufferended = (e) => {
-      if (e.isLastBufferInQueue) {
+      // 最後の塊の終わり。直後に次の塊を積んだ時と入れ違わないよう、再生の時計の残りが無い時だけ止める
+      if (e.isLastBufferInQueue && clock.remainingMs(Date.now()) <= 100) {
         clock.stop();
         notify();
       }
@@ -104,8 +107,17 @@ export function createVoiceAudio(): VoiceAudio | null {
     },
 
     async startCapture(onFrame) {
+      const my = (captureGen += 1);
       try {
         await ensureSession();
+        if (my !== captureGen) return true; // 待つ間に止められた：始めない（失敗ではない）
+        if (recorder) {
+          // 前の取り込みが残っていれば止める（二重の取り込みで2倍の速さで送らない）
+          const old = recorder;
+          recorder = null;
+          old.clearOnAudioReady();
+          await old.stop().catch(() => undefined);
+        }
         recorder = new api.AudioRecorder({ iosVoiceProcessing: true, androidInputPreset: 'voiceCommunication' });
         const r = recorder.onAudioReady({ sampleRate: 16_000, bufferLength: 1_600, channelCount: 1 }, ({ buffer, numFrames }) => {
           const samples = buffer.getChannelData(0).subarray(0, numFrames);
@@ -113,6 +125,14 @@ export function createVoiceAudio(): VoiceAudio | null {
         });
         if (r.status !== 'success') return false;
         const started = await recorder.start();
+        if (my !== captureGen) {
+          // 録音を始める間に止められた
+          const late = recorder;
+          recorder = null;
+          late.clearOnAudioReady();
+          await late.stop().catch(() => undefined);
+          return true;
+        }
         return started.status === 'success';
       } catch {
         return false;
@@ -120,6 +140,7 @@ export function createVoiceAudio(): VoiceAudio | null {
     },
 
     async stopCapture() {
+      captureGen += 1;
       const r = recorder;
       recorder = null;
       encoder.discard();

@@ -200,7 +200,9 @@ export type VoiceEvent =
   /** アプリがバックグラウンドへ移った：入力を止めて終える（バックグラウンドで録音しない） */
   | { type: 'background' }
   | { type: 'playback'; playing: boolean }
-  | { type: 'local_issue'; issue: VoiceLocalIssue };
+  | { type: 'local_issue'; issue: VoiceLocalIssue }
+  /** 接続中・再接続中・終了中に応答が無いまま端末の期限が過ぎた（画面が詰まらないように） */
+  | { type: 'timeout' };
 
 /**
  * 音声セッションの状態遷移。残量はサーバーの `quota` だけで更新し、端末で減算しない。
@@ -217,6 +219,11 @@ export function voiceReducer(s: VoiceState, e: VoiceEvent): VoiceState {
       return s.phase === 'active' || s.phase === 'connecting' ? { ...s, phase: 'draining', closedReason: 'background' } : s;
     case 'playback':
       return s.playing === e.playing ? s : { ...s, playing: e.playing };
+    case 'timeout':
+      if (s.phase === 'connecting') return { ...s, phase: 'error', error: 'offline', resumeToken: null, playing: false };
+      if (s.phase === 'reconnecting') return voiceReducer(s, { type: 'socket_lost' });
+      if (s.phase === 'draining') return { ...s, phase: 'closed', closedReason: s.closedReason === 'background' ? 'background' : 'timeout', resumeToken: null, playing: false };
+      return s;
     case 'local_issue':
       return { ...s, phase: 'error', localIssue: e.issue, resumeToken: null, playing: false };
     case 'stop':
@@ -231,6 +238,8 @@ export function voiceReducer(s: VoiceState, e: VoiceEvent): VoiceState {
     }
     case 'server': {
       const m = e.msg;
+      // 終わった後（closed・error・idle）に遅れて届いた事象で状態を戻さない（閉じる途中の接続の session・draining 等。2026-11-26 検収）
+      if (s.phase === 'closed' || s.phase === 'error' || s.phase === 'idle') return s;
       switch (m.type) {
         case 'session':
           return { ...s, phase: s.phase === 'draining' ? 'draining' : 'active', sessionId: m.session_id, resumeToken: m.resume_token, error: null, provisional: m.provisional === true };
@@ -241,6 +250,8 @@ export function voiceReducer(s: VoiceState, e: VoiceEvent): VoiceState {
         case 'draining':
           return { ...s, phase: 'draining' };
         case 'closed':
+          // 中継が端末の切断として閉じた（受信の絞り＝溜まった音声のまとめ送り など）：台帳は再開を待つ（suspended）ので、切断と同じに扱う
+          if (m.reason === 'client_disconnected' && s.phase !== 'draining') return voiceReducer(s, { type: 'socket_lost' });
           return { ...s, phase: 'closed', closedReason: s.closedReason === 'background' ? 'background' : (m.reason ?? null), resumeToken: null, playing: false };
         case 'error': {
           const code = normalizeErrorCode(m.code);
@@ -259,11 +270,15 @@ export function voiceReducer(s: VoiceState, e: VoiceEvent): VoiceState {
 export function describeClosedReason(reason: string | null): string {
   switch (reason) {
     case 'stopped': case 'normal': case 'drained': return '通訳を終了しました。';
-    case 'limit': return '利用の上限に達したため終了しました（今月の残り、または1回の長さの上限）。通常の翻訳（端末内・無料）は引き続き使えます。';
+    case 'limit': return '利用の上限に達したため終了しました（今月の残り・1回の長さの上限、または契約の確認）。通常の翻訳（端末内・無料）は引き続き使えます。';
+    case 'provider_error': return '翻訳サービスで問題が起きたため終了しました。もう一度お試しください。';
+    case 'client_disconnected': return '通信が途切れたため終了しました。もう一度始めてください。';
+    case 'timeout': return '応答が無かったため終了しました。通信の状態を確かめて、もう一度お試しください。';
     case 'idle': return 'しばらく音声が届かなかったため終了しました。';
     case 'kill_switch': case 'budget': return 'AI翻訳を一時停止しているため終了しました。通常の翻訳（端末内）をお使いください。';
     case 'superseded': return '別の端末・別の接続で通訳が始まったため、この接続を終了しました。';
     case 'background': return 'アプリが閉じられたため通訳を終了しました。もう一度始めてください。';
+    // 開発用の模擬の中継だけが送る理由
     case 'quota_exceeded': return '今月のAI音声の利用枠を使い切りました。通常の翻訳（端末内・無料）は引き続き使えます。';
     case 'session_limit': return '1回の通訳の長さの上限に達したため終了しました。続ける場合はもう一度始めてください。';
     default: return '通訳が終了しました。';

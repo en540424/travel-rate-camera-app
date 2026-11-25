@@ -129,11 +129,11 @@ export default function AiTranslateScreen() {
       )}
 
       <View style={pp.chips}>
-        <Chip label="日本語 → 相手の言語" selected={direction === 'from_ja'} onPress={() => setDirection('from_ja')} />
-        <Chip label="相手の言語 → 日本語" selected={direction === 'to_ja'} onPress={() => setDirection('to_ja')} />
+        <Chip label="日本語 → 相手の言語" selected={direction === 'from_ja'} onPress={() => { if (!voiceActive) setDirection('from_ja'); }} />
+        <Chip label="相手の言語 → 日本語" selected={direction === 'to_ja'} onPress={() => { if (!voiceActive) setDirection('to_ja'); }} />
       </View>
       <View style={pp.chips}>
-        {PARTNER_LANGS.map((l) => <Chip key={l} label={getLanguageDisplayName(l)} selected={partner === l} onPress={() => setPartner(l)} />)}
+        {PARTNER_LANGS.map((l) => <Chip key={l} label={getLanguageDisplayName(l)} selected={partner === l} onPress={() => { if (!voiceActive) setPartner(l); }} />)}
       </View>
 
       <ThemedText style={pp.h2}>テキスト</ThemedText>

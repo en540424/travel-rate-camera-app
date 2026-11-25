@@ -83,3 +83,11 @@ export function parseServerMessage(text: string): VoiceServerMessage | null {
 export function closeEvent(sawFinalMessage: boolean): 'none' | 'socket_lost' {
   return sawFinalMessage ? 'none' : 'socket_lost';
 }
+
+/**
+ * 再開の待ち（n 回目の再開の前）：0.5→1→2→4→4→4 秒。中継の台帳は切断の後30秒だけ再開を待つ（suspended）ので、6回で約16秒。
+ * 待たずに繰り返すと、通信の断の間に数百ms で再開を使い切る（2026-11-26 検収）
+ */
+export function resumeDelayMs(resumeCount: number): number {
+  return Math.min(4_000, 500 * 2 ** Math.max(0, resumeCount - 1));
+}

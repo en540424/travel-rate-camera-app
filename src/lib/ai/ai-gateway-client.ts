@@ -21,6 +21,9 @@ import { createMockGateway } from './ai-gateway-mock';
 import { closeEvent, helloMessage, parseServerMessage, STOP_MESSAGE, voiceSocketUrl } from './voice-protocol-core';
 
 const TIMEOUT_MS = 20_000;
+// session を受ける前に閉じた接続が続いた回数。upgrade の 401（トークンの期限・失効）と通信の断は端末から区別できないので、
+// 2回続いた時だけトークンを捨てる（1回の通信の断でトークンの交換を挟み、圏外で再開が尽きないように。2026-11-26 検収）
+let sessionlessCloses = 0;
 
 function appUserId(): string | null {
   return usePurchasesStore.getState().customerInfo?.originalAppUserId ?? null;
@@ -124,7 +127,10 @@ function createHttpGateway(base: string): AiGateway {
         if (typeof ev.data === 'string') {
           const m = parseServerMessage(ev.data);
           if (!m) return;
-          if (m.type === 'session') sawSession = true;
+          if (m.type === 'session') {
+            sawSession = true;
+            sessionlessCloses = 0;
+          }
           if (m.type === 'closed' || m.type === 'error') sawFinal = true;
           h.onMessage(m);
         } else if (ev.data instanceof ArrayBuffer) {
@@ -136,8 +142,11 @@ function createHttpGateway(base: string): AiGateway {
       };
       ws.onclose = () => {
         open = false;
-        // session を受ける前に閉じた：upgrade で断られた（トークンの期限・失効）かもしれない。次はトークンを取り直す
-        if (!sawSession) forgetGatewayToken();
+        // session を受ける前に閉じた：upgrade で断られた（トークンの期限・失効）かもしれない。続いたらトークンを取り直す
+        if (!sawSession && !closedByUs) {
+          sessionlessCloses += 1;
+          if (sessionlessCloses >= 2) forgetGatewayToken();
+        }
         if (closedByUs) return;
         if (closeEvent(sawFinal) === 'socket_lost') h.onSocketLost();
       };
@@ -149,8 +158,10 @@ function createHttpGateway(base: string): AiGateway {
         stop: () => {
           if (ws.readyState === WebSocket.OPEN) ws.send(STOP_MESSAGE);
           else {
+            // まだ開いていない（または閉じかけ）：中継の closed は来ないので、切断として伝える（画面が「終了中…」で詰まらない）
             closedByUs = true;
             ws.close();
+            h.onSocketLost();
           }
         },
         close: () => {

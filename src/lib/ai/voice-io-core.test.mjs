@@ -211,3 +211,58 @@ describe('音声の状態遷移（追加分）', () => {
     assert.equal(C.voiceReducer(s, { type: 'start' }).localIssue, null, '始め直すと消える');
   });
 });
+
+describe('2026-11-26 独立検収の反映', () => {
+  test('送信の歩調：実時間×1.05＋300ms を超える区画は捨てる（溜まった区画をまとめて送らない）。接続ごとに数え直す', () => {
+    const p = new P.UplinkPacer();
+    // 0ms に 30区画（3秒分）がまとめて届く：余裕の 300ms 分（3区画）だけ送る
+    let sent = 0;
+    for (let i = 0; i < 30; i += 1) if (p.allow(100, 0)) sent += 1;
+    assert.equal(sent, 3);
+    assert.equal(p.dropped, 27);
+    // 実時間どおり（100ms ごとに100ms）は捨てない
+    let ok = 0;
+    for (let t = 100; t <= 10_000; t += 100) if (p.allow(100, t)) ok += 1;
+    assert.equal(ok, 100);
+    p.reset();
+    assert.equal(p.allow(100, 50_000), true, '新しい接続では数え直す');
+  });
+
+  test('終わった後（closed・error）に遅れて届いた session・draining で通訳中へ戻らない', () => {
+    const active = C.voiceReducer(C.voiceReducer(C.VOICE_IDLE, { type: 'start' }), { type: 'server', msg: { type: 'session', session_id: 's', resume_token: 't' } });
+    const closed = C.voiceReducer(active, { type: 'server', msg: { type: 'closed', reason: 'normal' } });
+    assert.equal(C.voiceReducer(closed, { type: 'server', msg: { type: 'session', session_id: 's', resume_token: 't2' } }), closed);
+    assert.equal(C.voiceReducer(closed, { type: 'server', msg: { type: 'draining' } }), closed);
+    const err = C.voiceReducer(active, { type: 'server', msg: { type: 'error', code: 'budget_stop' } });
+    assert.equal(C.voiceReducer(err, { type: 'server', msg: { type: 'session', session_id: 's', resume_token: 't3' } }), err);
+  });
+
+  test('中継が端末の切断として閉じた（client_disconnected）時は再開を試す。利用者が止めた後なら終える', () => {
+    const active = C.voiceReducer(C.voiceReducer(C.VOICE_IDLE, { type: 'start' }), { type: 'server', msg: { type: 'session', session_id: 's', resume_token: 't' } });
+    const r = C.voiceReducer(active, { type: 'server', msg: { type: 'closed', reason: 'client_disconnected' } });
+    assert.deepEqual([r.phase, r.resumeToken, r.resumeCount], ['reconnecting', 't', 1]);
+    const stopping = C.voiceReducer(active, { type: 'stop' });
+    assert.equal(C.voiceReducer(stopping, { type: 'server', msg: { type: 'closed', reason: 'client_disconnected' } }).phase, 'closed');
+  });
+
+  test('端末の期限：接続中は通信不可のエラー、再接続中は再開の1回、終了中は閉じる（詰まらない）', () => {
+    const connecting = C.voiceReducer(C.VOICE_IDLE, { type: 'start' });
+    assert.deepEqual([C.voiceReducer(connecting, { type: 'timeout' }).phase, C.voiceReducer(connecting, { type: 'timeout' }).error], ['error', 'offline']);
+    const active = C.voiceReducer(connecting, { type: 'server', msg: { type: 'session', session_id: 's', resume_token: 't' } });
+    const rec = C.voiceReducer(active, { type: 'socket_lost' });
+    assert.equal(C.voiceReducer(rec, { type: 'timeout' }).resumeCount, 2);
+    const drain = C.voiceReducer(active, { type: 'stop' });
+    assert.deepEqual([C.voiceReducer(drain, { type: 'timeout' }).phase, C.voiceReducer(drain, { type: 'timeout' }).closedReason], ['closed', 'timeout']);
+    assert.equal(C.voiceReducer(active, { type: 'timeout' }), active, '通訳中は何もしない');
+  });
+
+  test('再開の待ち：0.5→1→2→4→4 秒', () => {
+    assert.deepEqual([1, 2, 3, 4, 5, 6].map(W.resumeDelayMs), [500, 1_000, 2_000, 4_000, 4_000, 4_000]);
+  });
+
+  test('終了の理由：中継が送る理由（provider_error・client_disconnected）と端末の期限に固有の文。知らない値は汎用', () => {
+    for (const r of ['provider_error', 'client_disconnected', 'timeout', 'limit', 'idle', 'superseded', 'kill_switch', 'background']) {
+      assert.notEqual(C.describeClosedReason(r), C.describeClosedReason('???'), r);
+    }
+  });
+});

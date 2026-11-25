@@ -234,6 +234,41 @@ export class PlaybackClock {
 }
 
 /**
+ * 送信の歩調：送った音声の長さが、送り始めてからの経過時間×比率＋余裕を超える区画は捨てる（2026-11-26 検収）。
+ * JS の停滞・録音の事象の溜まりで区画がまとめて届いても、実時間より速く送らない（中継は10秒で実時間の1.1倍を超える受信を
+ * 切断する）。比率と余裕は中継の絞りより小さくする（1.05倍・300ms）
+ */
+export class UplinkPacer {
+  private startedAt: number | null = null;
+  private sentMs = 0;
+  private readonly ratio: number;
+  private readonly slackMs: number;
+  dropped = 0;
+  constructor(ratio = 1.05, slackMs = 300) {
+    this.ratio = ratio;
+    this.slackMs = slackMs;
+  }
+
+  /** `frameMs` の区画を `now` に送ってよいか。送るなら数える */
+  allow(frameMs: number, now: number): boolean {
+    if (this.startedAt === null) this.startedAt = now;
+    const budget = (now - this.startedAt) * this.ratio + this.slackMs;
+    if (this.sentMs + frameMs > budget) {
+      this.dropped += 1;
+      return false;
+    }
+    this.sentMs += frameMs;
+    return true;
+  }
+
+  /** 新しい接続（再開を含む）で数え直す。中継の絞りは接続ごと（世代ごと）なので、端末も接続ごとに歩調を取る */
+  reset() {
+    this.startedAt = null;
+    this.sentMs = 0;
+  }
+}
+
+/**
  * マイクの音声を中継へ送ってよいか。半二重（訳の再生中はマイクの音声を送らない＝スピーカーの音を拾って訳し直す事故を防ぐ）は
  * 設定で切り替える。**半二重にするかは操作方式の判断（H-P9）の一部で、未確定**。
  */
