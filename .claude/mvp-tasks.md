@@ -5,10 +5,10 @@
 > 本節が現在地の正。以下の「現在の開発フェーズ」以降は2026-07-01〜08時点の履歴で、完了済み項目を未完へ戻さない。
 
 > [!important] 2026-11-25（Build 6 の実機確認から）**ライブ翻訳の左右の偏りと価格の一時的な読み違いを修正／実装・テスト済み・未Build・実機未確認**
-> - コード commit：`integrate/build6-live-text-fix` `dc39861`（次のビルド元・Tier/Pro+ なし）＝ `feat/proplus-core-and-store-assets` `54d7126`（cherry-pick・同一）
+> - コード commit：`integrate/build6-live-text-fix` `dc39861`＋`23fb1c3`（次のビルド元・Tier/Pro+ なし）＝ `feat/proplus-core-and-store-assets` `54d7126`＋`30e1e2c`（cherry-pick・同一）
 > - 左右：OCR は読めていて選び方の問題（正規化座標で横が約1.8倍遠い扱い＋中央の列の説明が14枠を占有＝3列16行で商品名0・説明14）→ 画面上の距離・同じ行の2番目以降（説明）を後回し・見出しと前回の選択を少し優先・札の右端を同じ行の右の文字の手前まで（`selectOverlayLines`・`placeOverlayLabels`）→ 商品名6・説明8
 > - 価格（換算式は正しい）：最初の1フレームの読み違いが残る追跡 → 直近の読みの多数決・数字の行は読みが2回以上で表示／`$5. 60` 等の崩れた小数が5になる → 翻訳ページでは出さない。`extract-prices.ts`・DB は不変
-> - テスト：新規 `src/lib/live-text-overlay.test.mjs` 14件。build branch 882・feat 930（store-assets 103）・tsc 0・lint 20。**Human：次のビルド（Human GO）で実機確認**（Vault ログ `2026-11-25_旅レートカメラ_ライブ翻訳の左右バランスと価格の読み違い対策_開発ログ`）
+> - テスト：新規 `src/lib/live-text-overlay.test.mjs` 17件。build branch 885・feat 933（store-assets 103）・tsc 0・lint 20。**Human：次のビルド（Human GO）で実機確認**（Vault ログ `2026-11-25_旅レートカメラ_ライブ翻訳の左右バランスと価格の読み違い対策_開発ログ`）
 
 > [!important] 2026-11-25 **Build 6（1.0.0 (6)）＝ライブ翻訳の修正だけを Build 5 に足したビルド／EAS FINISHED・ASC 未アップロード（submit は Human）・実機未確認**
 > - ビルド元：branch `integrate/build6-live-text-fix` `af4fba8`（worktree `trc-build6-live-text`・base `d97977e`＝Build 5）へ `17a7c5b`・`7f7b152` を cherry-pick。コード7ファイルは `7f7b152` と同一、package.json・lock・app.json・eas.json・DB は `d97977e` と同一。**Tier基盤・Pro+中核・ネイティブ依存の追加（`feat/proplus-core-and-store-assets` の残り49 commit）は載せていない**
