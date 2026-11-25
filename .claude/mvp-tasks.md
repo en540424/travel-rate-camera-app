@@ -4,6 +4,13 @@
 
 > 本節が現在地の正。以下の「現在の開発フェーズ」以降は2026-07-01〜08時点の履歴で、完了済み項目を未完へ戻さない。
 
+> [!important] 2026-11-25（Pro+ 開発の正式再開）**Human 正式決定：Free・Pro・Pro+ の3プラン同時の初回リリース。Build 9（Free＋Pro）は初回提出 Build ではない**（Free・Pro とライブ翻訳の実機基準版として保護）
+> - 状況の判定（A〜F）・残工程・Work に任せる ASC/RevenueCat の作業・実機確認の準備・Build 9 との統合：Vault `旅レートカメラ_ProPlus実装状況再統合と3プラン同時公開の残工程_2026-11-25`。開発ログ `2026-11-25_旅レートカメラ_ProPlus開発再開_実装状況再統合と課金判定_開発ログ`
+> - 要点：地図・予定・AI のアプリ側は**実装済み・実機未確認**（Pro+ の実機確認は0件）／音声の取り込み・実物の中継（外部入口・RevenueCat 照会）・Pro+ の購入画面は**未実装**／原価上限は `tabirate-ai-gateway` `feat/cost-cap` に**模擬の上で実装済み**（deploy なし）／Pro+ の商品は ASC・RevenueCat に**未作成**
+> - 今回の commit：`a18afb9` Build 9（`c83e392`）の live-text 4ファイルを取り込み Build 9 と同一に（docs は入れない・Build 9 の branch は不変）／`1e82b41` 購入判定を目標のプランで一般化（Pro の判定は従来と全組み合わせで同じ）・Pro+ 専用 Offering（`pro_plus`・暫定）・Pro+ の商品 ID を Pro の候補から除外・プラン変更（Upgrade 即時／Downgrade・Crossgrade 次回）・`useProPlanDetails` が Pro+ を読む・検証用ビルド `testflight-proplus-qa`（`EXPO_PUBLIC_PRO_PLUS_QA=1`・入口は出すが契約を装わない・審査に出さない）
+> - テスト：npm test 987・tsc 0・lint 20（baseline）。TEST_CHECKLIST #94〜#97 追加。**購入の判定を触ったので、Build に入れる前に Sandbox で #30・#32・#33・#36 を再確認**
+> - Human 判断待ち：H-P1 価格／H-P2 事業者（音声 PoC は判断保留）／H-P3 枠／H-P5 DB v8／H-P9 音声の操作方式／H-P12 中継の本番／H-7 体験／Pro+ の Product ID の確定（ASC で作ると変更不可）
+
 > [!important] 2026-11-25（Build 7 の実機確認から）**ライブ翻訳の表示安定化（止めれば落ち着く・動かせば替わる）／実装・テスト済み・未Build・実機未確認**
 > - Build 7（1.0.0 (7)・EAS `f31fbf3a-ccef-442e-a420-7ce750c0cc7d`・build branch `4d9ac8a`）：ASC VALID・IN_BETA_TESTING。EAS Free iOS 3/15
 > - コード commit：本 branch `bd33424`＝ `integrate/build6-live-text-fix` `cdba4a3`（cherry-pick・同一。次のビルド元は build branch 側）
