@@ -16,6 +16,10 @@
 //   - （Build 6 の実機確認から）中央の列の説明ばかり訳され左の商品名が残る → 画面上の距離で測り、同じ行の
 //     2番目以降の文字（説明）を少し後回しにし、見出しと前回選んだ行を少し優先する（`selectOverlayLines`）。
 //     札の右端は同じ行で右にある文字の手前まで（`placeOverlayLabels`）
+//   - （Build 7 の実機確認から）カメラを止めていても札・価格が消えたり入れ替わったりし続けた → 追跡（`updateTrackedLines`）で、
+//     同じ場面を読み続けている間は読み落とした行を数フレーム残す・同じ値段の別の行へ付け替わった行を2行の途中に置かない・
+//     1行にまとめて読んだ文字を新しい行にしない。別の所へ向けた時は従来と同じか早く替わる。重なって省いた札は次のフレームも
+//     後に回す（重なる2つの札が交代し続けない）
 // - ピンチで拡大・縮小、ダブルタップで2×⇄元の倍率（2026-10-24）。映像を引き伸ばさず、カメラそのものの倍率を
 //   変える（認識する映像・撮影する写真も同じように拡大されるので、訳を重ねる位置の計算はそのまま使える）。
 //   倍率を変えた直後は、変える前の映像で読んだ結果を誤った位置に出さないよう、追跡中の文字をいったん捨てて
@@ -294,15 +298,37 @@ export function LiveTranslationCamera({
         });
 
   // 元の文字の位置へ訳を重ねる（置き方は`placeOverlayLabels`：選んだ順に置き、重なる札は省く・訳が届くまで出さない・
-  // 札の右端は同じ行で右にある文字〔説明・価格〕の手前まで）
+  // 札の右端は同じ行で右にある文字〔説明・価格〕の手前まで）。
+  // 前のフレームで重なって省いた札は後に回す（静止中に2つの札が交代し続けない。2026-11-25）。
+  // 引き継ぐのは「前のフレーム（`tracked`）の最後の描画で省いた札」。同じフレームの中では引き継ぐ値が変わらないので、
+  // 訳が届いて描き直しても置き方は1回で決まる（描画中の調整が繰り返さない）
+  const [placementMemory, setPlacementMemory] = useState<{
+    tracked: readonly unknown[] | null;
+    carried: ReadonlySet<string>;
+    skipped: ReadonlySet<string>;
+    skippedKey: string;
+  }>(() => ({ tracked: null, carried: new Set(), skipped: new Set(), skippedKey: '' }));
+  // 読み取りを止めている間、hookは描画のたびに新しい空の配列を返すので、空どうしは同じフレームとして扱う（描画を繰り返さない）
+  const newFrame =
+    placementMemory.tracked !== tracked && !(tracked.length === 0 && (placementMemory.tracked?.length ?? 0) === 0);
+  const carriedSkipped = newFrame ? placementMemory.skipped : placementMemory.carried;
+  const labelInputs = rows.map(({ entry, translated }) => ({ id: entry.id, box: entry.box, translated }));
   const labels =
     frameSize != null && viewSize != null
-      ? placeOverlayLabels(
-          rows.map(({ entry, translated }) => ({ id: entry.id, box: entry.box, translated })),
-          tracked,
-          { frameSize, viewSize, occludedBottom, minHits: 2 },
-        )
+      ? placeOverlayLabels(labelInputs, tracked, {
+          frameSize,
+          viewSize,
+          occludedBottom,
+          minHits: 2,
+          skippedIds: carriedSkipped,
+        })
       : [];
+  const placedIds = new Set(labels.map((label) => label.id));
+  const skippedIds = labelInputs.filter((row) => row.translated != null && !placedIds.has(row.id)).map((row) => row.id);
+  const skippedKey = [...skippedIds].sort().join('|');
+  if (newFrame || placementMemory.skippedKey !== skippedKey) {
+    setPlacementMemory({ tracked, carried: carriedSkipped, skipped: new Set(skippedIds), skippedKey });
+  }
 
   const canZoom = cameraReady && !isCapturing;
 

@@ -379,10 +379,35 @@ export type TrackedLine = {
    * 無い時（テスト等で直接組み立てた行）は、`text`を`hits`回読んだものとして扱う
    */
   readings?: string[];
+  /** 続けて読めなかったフレーム数（読めたら0）。無い時（テスト等で直接組み立てた行）は0として扱う */
+  misses?: number;
+  /**
+   * 読めない間、同じ場面が続いていたので残している行（`MAX_CONTINUITY_MISSES`）。読めなくなった最初のフレームから
+   * 続けて同じ場面だった時だけtrue。一度でも外れたら以後は延長しない（別の所へ向けた後、新しい場面で古い行を延長しない）
+   */
+  held?: boolean;
 };
 
 /** 原文の多数決に使う直近の読みの数 */
 const MAX_READINGS = 5;
+/**
+ * 同じ場面を読み続けている間（下の`SCENE_CONTINUITY`）は、読めなかった行をこのフレーム数まで残す（`staleMs`を過ぎても）。
+ * Vision（`.accurate`）は、静止したメニューでも毎フレーム1割ほどの行を読み落とす。読み落としが2回続くと`staleMs`
+ * （1.5秒・フレームの間隔は認識の時間込みで0.8〜1.3秒）を過ぎて行が消え、次に読めた時は新しい行として2フレーム目まで
+ * 出ないため、静止中でも札・価格が消えたり別の行に替わったりし続けた（2026-11-25・Build 7 の実機確認から）
+ */
+const MAX_CONTINUITY_MISSES = 3;
+/**
+ * 「同じ場面を読み続けている」とみなす割合：前のフレームで読めた行のうち、今回も読めた行の割合がこれ以上
+ * （かつ`MIN_CONTINUITY_LINES`行以上）。別の所へ向けた・大きく動かした・ぶれた時はこれを下回り、従来どおり`staleMs`で消す
+ */
+const SCENE_CONTINUITY = 0.6;
+const MIN_CONTINUITY_LINES = 3;
+/**
+ * 動きを確かめられた時、同じ文字でも予測した位置から行の高さのこの倍より離れていれば別の行とみなす。
+ * この倍以内は従来どおり同じ行として滑らかに追従させる
+ */
+const FAR_MATCH = 2;
 
 /**
  * 直近の読みの多数決で、原文を替えるべき別の読み（大文字小文字・空白の揺れは同じ読み）。
@@ -443,6 +468,8 @@ export const DEFAULT_TRACKER_OPTIONS: TrackerOptions = {
 const MIN_MOTION_PAIRS = 2;
 /** 推定に使う組どうしの動きのばらつきの許容（正規化座標）。超えたら動きなしとみなす */
 const MOTION_AGREEMENT = 0.02;
+/** 平行移動で説明できない組（ずれが行の高さを超える）の割合がこれ以上なら、動きを「確かめられた」としない */
+const MOTION_MISFIT = 0.2;
 
 function median(values: readonly number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
@@ -453,11 +480,12 @@ function median(values: readonly number[]): number {
 /**
  * 前のフレームからのカメラの動き（画面全体の平行移動）。
  * 前後のフレームで1つずつしか無い文字（取り違えようがない組）の移動量の中央値。組が少なすぎる・ばらつく時は0。
+ * `reliable`：周りの文字で動きを確かめられたか（組が足りない・ばらつく時はfalse。静止して確かめられた時はtrue）
  */
 export function estimateFrameMotion(
   previous: readonly TrackedLine[],
   lines: readonly { key: string; box: NormalizedBox }[],
-): { dx: number; dy: number } {
+): { dx: number; dy: number; reliable: boolean } {
   const previousByKey = new Map<string, TrackedLine[]>();
   for (const p of previous) {
     const key = textIdentityKey(p.text);
@@ -468,6 +496,7 @@ export function estimateFrameMotion(
 
   const dxs: number[] = [];
   const dys: number[] = [];
+  const heights: number[] = [];
   for (const line of lines) {
     const candidates = previousByKey.get(line.key);
     if (candidates?.length !== 1 || currentCount.get(line.key) !== 1) continue;
@@ -475,16 +504,21 @@ export function estimateFrameMotion(
     const to = boxCenter(line.box);
     dxs.push(to.x - from.x);
     dys.push(to.y - from.y);
+    heights.push(Math.max(candidates[0].box.height, line.box.height));
   }
-  if (dxs.length < MIN_MOTION_PAIRS) return { dx: 0, dy: 0 };
+  if (dxs.length < MIN_MOTION_PAIRS) return { dx: 0, dy: 0, reliable: false };
   const dx = median(dxs);
   const dy = median(dys);
   // 3組未満は全組がそろっている時だけ信じる（1組の取り違えで全体を動かさない）
   if (dxs.length < 3) {
     const agree = dxs.every((value, index) => Math.abs(value - dx) <= MOTION_AGREEMENT && Math.abs(dys[index] - dy) <= MOTION_AGREEMENT);
-    if (!agree) return { dx: 0, dy: 0 };
+    if (!agree) return { dx: 0, dy: 0, reliable: false };
   }
-  return { dx, dy };
+  // 平行移動で説明できない動き（端末を回す・近づける）：行の高さより大きくずれる組が`MOTION_MISFIT`以上ある時は、
+  // 平行移動は従来どおり使うが「確かめられた」とはしない（距離で対応を退ける・読めなかった行を延長するのは平行移動の時だけ。
+  // 回す・近づける時に退けると、正しい対応まで新しい行になり、古い価格の行が隣の商品と組になった。独立レビューの指摘）
+  const misfit = dxs.filter((value, index) => Math.hypot(value - dx, dys[index] - dy) > heights[index]).length;
+  return { dx, dy, reliable: misfit / dxs.length < MOTION_MISFIT };
 }
 
 function shiftBox(box: NormalizedBox, motion: { dx: number; dy: number }): NormalizedBox {
@@ -548,15 +582,62 @@ export function updateTrackedLines(
     });
   });
   exactPairs.sort((a, b) => a.distance - b.distance);
+  // 遠すぎて同じ行とみなさなかった読み。似た文字の対応（3.）にも使わない（退けた正しい価格の読みが、隣の行の別の値段
+  // 〔$4.80 と $4.20 は似た文字〕に対応して、その行が別の商品の所へ移っていた。独立レビューで見つかった経路）
+  const rejected = new Set<number>();
   for (const pair of exactPairs) {
     if (matchOf.has(pair.incomingIndex) || used.has(pair.previousIndex)) continue;
+    // 周りの文字でカメラの動きを確かめられたのに、予測した位置から行の高さの`FAR_MATCH`倍より離れた同じ文字は、
+    // 別の行（同じ値段の別の品目）。同じ行として付け替えない（滑らかに追従させると2行の途中＝間の別の商品の行に置かれ、
+    // その行の商品名と組になった。2026-11-25）。前のフレームで読めた行だけ（読めなかった行は予測した位置を引き継ぐので、
+    // 回す・近づける動きでずれがたまる）。動きを確かめられない時（1行だけの看板・回す・近づける）は従来どおり対応させる
+    const from = predicted[pair.previousIndex];
+    const box = incoming[pair.incomingIndex].box;
+    if (
+      motion.reliable &&
+      (previous[pair.previousIndex].misses ?? 0) === 0 &&
+      pair.distance > FAR_MATCH * Math.max(from.height, box.height)
+    ) {
+      rejected.add(pair.incomingIndex);
+      continue;
+    }
     matchOf.set(pair.incomingIndex, { index: pair.previousIndex, exact: true });
     used.add(pair.previousIndex);
+    rejected.delete(pair.incomingIndex);
   }
 
-  // 2. 読みが1〜2文字揺れた行：（動きを補正した）位置が重なり、文字列がほぼ同じもの
+  // 2. 同じ行の2つ以上の文字を1行にまとめて読んだもの（"Cafe Latte" と "Espresso with steamed milk" を
+  //    "Cafe Latte Espresso with steamed milk"）：新しい行にせず、まとめられた行を「読めた」ことにする。
+  //    Visionは隙間の狭い文字をときどき1行にまとめる。新しい行にすると、商品名・説明の札と入れ替わって出ていた（2026-11-25）。
+  //    似た文字の対応（3.）より先に行う（後にすると、まとめた読みが説明の行に似た文字として対応し、説明の原文が替わる）
+  const absorbed = new Set<number>();
+  const refreshed = new Set<number>();
   incoming.forEach((item, incomingIndex) => {
-    if (matchOf.has(incomingIndex)) return;
+    if (matchOf.has(incomingIndex) || rejected.has(incomingIndex)) return;
+    const parts = previous
+      .map((_, index) => ({ index, center: boxCenter(predicted[index]) }))
+      .filter(
+        ({ index, center }) =>
+          !used.has(index) &&
+          center.x >= item.box.x &&
+          center.x <= item.box.x + item.box.width &&
+          verticalOverlapRatio(predicted[index], item.box) >= ROW_OVERLAP,
+      )
+      .sort((a, b) => predicted[a.index].x - predicted[b.index].x);
+    if (parts.length < 2) return;
+    const joined = parts.map(({ index }) => previousKeys[index]).join(' ');
+    // 数字（価格）が違う読みは吸収しない（"Bread" "$2.49" と "Bread $2.99"：新しい価格の読みを捨てない）
+    if (textSimilarity(joined, item.key) < 0.9 || digitSignature(joined) !== digitSignature(item.key)) return;
+    absorbed.add(incomingIndex);
+    for (const { index } of parts) {
+      used.add(index);
+      refreshed.add(index);
+    }
+  });
+
+  // 3. 読みが1〜2文字揺れた行：（動きを補正した）位置が重なり、文字列がほぼ同じもの
+  incoming.forEach((item, incomingIndex) => {
+    if (matchOf.has(incomingIndex) || absorbed.has(incomingIndex) || rejected.has(incomingIndex)) return;
     let bestScore = 0;
     let bestIndex = -1;
     previous.forEach((p, index) => {
@@ -577,19 +658,22 @@ export function updateTrackedLines(
     }
   });
 
-  const next: TrackedLine[] = incoming.map((item, incomingIndex) => {
+  const next: TrackedLine[] = incoming.flatMap((item, incomingIndex): TrackedLine[] => {
+    if (absorbed.has(incomingIndex)) return [];
     const match = matchOf.get(incomingIndex);
     if (match == null) {
-      return {
-        id: `${item.key}@${now}#${item.lineIndex}`,
-        text: item.text,
-        confidence: item.line.confidence,
-        box: item.box,
-        hits: 1,
-        firstSeenAt: now,
-        lastSeenAt: now,
-        readings: [item.text],
-      };
+      return [
+        {
+          id: `${item.key}@${now}#${item.lineIndex}`,
+          text: item.text,
+          confidence: item.line.confidence,
+          box: item.box,
+          hits: 1,
+          firstSeenAt: now,
+          lastSeenAt: now,
+          readings: [item.text],
+        },
+      ];
     }
     const p = previous[match.index];
     // 原文：別の読みが2回以上・今の原文より多くなった時だけ替える（1回だけ揺れた読みでは差し替えない＝訳が変わらない）。
@@ -607,20 +691,81 @@ export function updateTrackedLines(
       text = item.text;
       confidence = item.line.confidence;
     }
-    return {
-      id: p.id,
-      text,
-      confidence,
-      box: smoothBox(predicted[match.index], item.box, options.smoothing),
-      hits: p.hits + 1,
-      firstSeenAt: p.firstSeenAt,
-      lastSeenAt: now,
-      readings,
-    };
+    return [
+      {
+        id: p.id,
+        text,
+        confidence,
+        box: smoothBox(predicted[match.index], item.box, options.smoothing),
+        hits: p.hits + 1,
+        firstSeenAt: p.firstSeenAt,
+        lastSeenAt: now,
+        readings,
+        misses: 0,
+        held: false,
+      },
+    ];
   });
+  // まとめて読まれた行：位置・原文はそのまま、読めたことだけ記録する
+  for (const index of refreshed) {
+    const p = previous[index];
+    const priorReadings = p.readings ?? Array.from({ length: Math.min(p.hits, MAX_READINGS) }, () => p.text);
+    next.push({
+      ...p,
+      box: predicted[index],
+      hits: p.hits + 1,
+      lastSeenAt: now,
+      readings: [...priorReadings, p.text].slice(-MAX_READINGS),
+      misses: 0,
+      held: false,
+    });
+  }
 
+  // 同じ場面を読み続けているか：前のフレームで読めた行のうち、今回も同じ文字で読めた行（まとめて読んだ行を含む）の割合。
+  // 似た文字の対応は数えない（別のメニューへ向けた時、"Alpha item 10" と "Bravo item 10" のような似た文字の対応で
+  // 「同じ場面」とみなし、古い行を延長していた）
+  const sameText = new Set<number>([...refreshed]);
+  for (const match of matchOf.values()) if (match.exact) sameText.add(match.index);
+  const seenLastFrame = previous.filter((p) => (p.misses ?? 0) === 0);
+  const seenAgain = seenLastFrame.filter((p) => sameText.has(previous.indexOf(p))).length;
+  const sceneContinues =
+    seenLastFrame.length >= MIN_CONTINUITY_LINES && seenAgain / seenLastFrame.length >= SCENE_CONTINUITY;
+
+  // 今回の読みの位置（まとめて読んで吸収したものを除く）。読めなかった行の所に別の読みがある時は、古い行を延長して残さない
+  // （文字が替わった看板・別の商品へ向けた時に、古い訳の札・価格が新しいものと並んで残らない）
+  const readingBoxes = incoming.filter((_, incomingIndex) => !absorbed.has(incomingIndex)).map((item) => item.box);
+
+  // 今回読めなかった行：従来どおり`staleMs`まで残す。同じ場面が続いている間は`MAX_CONTINUITY_MISSES`フレームまで残す
   previous.forEach((p, index) => {
-    if (!used.has(index) && now - p.lastSeenAt <= options.staleMs) next.push({ ...p, box: predicted[index] });
+    if (used.has(index)) return;
+    const misses = (p.misses ?? 0) + 1;
+    const center = boxCenter(predicted[index]);
+    const inFrame = center.x >= 0 && center.x <= 1 && center.y >= 0 && center.y <= 1;
+    // 同じ所に別の読みがある：どれかと大きく重なる、または今回の読みで枠の半分以上が覆われている
+    // （まとめて読んだ行の所で、商品名と説明が分けて読めた時も、まとめた行を延長しない）
+    const target = predicted[index];
+    const area = target.width * target.height;
+    const covered = readingBoxes.reduce((sum, box) => {
+      const width = Math.min(target.x + target.width, box.x + box.width) - Math.max(target.x, box.x);
+      const height = Math.min(target.y + target.height, box.y + box.height) - Math.max(target.y, box.y);
+      return sum + (width > 0 && height > 0 ? width * height : 0);
+    }, 0);
+    const replaced = readingBoxes.some((box) => boxIoU(target, box) >= 0.3) || (area > 0 && covered / area >= 0.5);
+    // 最新の読みが今の原文と違う行（多数決で古い原文を保っている途中＝別の文字へ替わりつつある行）は延長しない
+    const lastReading = p.readings?.[p.readings.length - 1];
+    const settled = lastReading == null || textIdentityKey(lastReading) === previousKeys[index];
+    // 延長は、平行移動で動きを確かめられた時だけ（回す・近づける時は予測した位置がずれ、残した価格が隣の商品と組になる）
+    const held =
+      motion.reliable &&
+      sceneContinues &&
+      inFrame &&
+      settled &&
+      !replaced &&
+      misses <= MAX_CONTINUITY_MISSES &&
+      ((p.misses ?? 0) === 0 || p.held === true);
+    if (held || now - p.lastSeenAt <= options.staleMs) {
+      next.push({ ...p, box: predicted[index], misses, held });
+    }
   });
 
   return next
@@ -1045,6 +1190,9 @@ export function buildSmartCameraEntries(
 
 /** 同じ行で左に別の文字がある文字（説明・行の続き）に足す距離（映像の高さに対する割合） */
 const FOLLOWER_PENALTY = 0.1;
+/** 「同じ行」の度合いを上下の重なりから段階的に決める範囲（重なりがこの間で0→1） */
+const FOLLOWER_OVERLAP_FROM = 0.3;
+const FOLLOWER_OVERLAP_TO = 0.7;
 /** これより大きい隙間（映像の幅に対する割合）の向こうは別の品目（左右に並んだ看板・2列のメニュー） */
 const MAX_SEGMENT_GAP = 0.2;
 /**
@@ -1055,7 +1203,7 @@ const HEADING_RATIO = 1.4;
 const HEADING_BONUS_PER_RATIO = 0.075;
 const MAX_HEADING_BONUS = 0.15;
 /** 前回選んだ行を優先する量（位置の揺れで札が入れ替わり続けない） */
-const SELECTION_HYSTERESIS = 0.02;
+const SELECTION_HYSTERESIS = 0.04;
 
 export type OverlaySelectionOptions = {
   maxEntries: number;
@@ -1082,22 +1230,30 @@ function isPriceOnlyLine(line: TrackedLine): boolean {
 }
 
 /**
- * 同じ行の左に、同じ品目の別の文字があるか（＝この文字は説明・行の続き）。
- * 間に価格だけの行がある・隙間が大きい時は別の品目なので、先頭として扱う
+ * 同じ行の左に、同じ品目の別の文字があるか（＝この文字は説明・行の続き）の度合い（0〜1）。
+ * 間に価格だけの行がある・隙間が大きい時は別の品目なので、先頭として扱う（0）。
+ * 上下の重なりが`FOLLOWER_OVERLAP_FROM`〜`FOLLOWER_OVERLAP_TO`の間は段階的に増やす。以前は重なり50%を境に
+ * 0か1だったため、少し傾けて持つと重なりが境目付近になり、位置の揺れで判定が毎フレーム変わって、
+ * 選ばれる行（札）が入れ替わり続けた（2026-11-25・Build 7 の実機確認から）
  */
-function isRowFollower(line: TrackedLine, candidates: readonly TrackedLine[], priceLines: readonly TrackedLine[]): boolean {
-  return candidates.some((left) => {
-    if (left.id === line.id) return false;
-    if (verticalOverlapRatio(left.box, line.box) < ROW_OVERLAP) return false;
+function rowFollowerWeight(line: TrackedLine, candidates: readonly TrackedLine[], priceLines: readonly TrackedLine[]): number {
+  let weight = 0;
+  for (const left of candidates) {
+    if (left.id === line.id) continue;
+    const overlap = verticalOverlapRatio(left.box, line.box);
+    if (overlap <= FOLLOWER_OVERLAP_FROM) continue;
     const leftRight = boxRight(left.box);
-    if (leftRight > line.box.x + 0.01 || line.box.x - leftRight > MAX_SEGMENT_GAP) return false;
-    return !priceLines.some(
+    if (leftRight > line.box.x + 0.01 || line.box.x - leftRight > MAX_SEGMENT_GAP) continue;
+    const separated = priceLines.some(
       (price) =>
         verticalOverlapRatio(price.box, line.box) >= ROW_OVERLAP &&
         price.box.x >= leftRight - 0.005 &&
         boxRight(price.box) <= line.box.x + 0.01,
     );
-  });
+    if (separated) continue;
+    weight = Math.max(weight, Math.min(1, (overlap - FOLLOWER_OVERLAP_FROM) / (FOLLOWER_OVERLAP_TO - FOLLOWER_OVERLAP_FROM)));
+  }
+  return weight;
 }
 
 /**
@@ -1116,7 +1272,7 @@ export function selectOverlayLines(tracked: readonly TrackedLine[], options: Ove
     .map((line) => {
       const distance = overlayDistance(line.box, options.visibleRegion, options.imageSize);
       let score = distance;
-      if (isRowFollower(line, candidates, priceLines)) score += FOLLOWER_PENALTY;
+      score += FOLLOWER_PENALTY * rowFollowerWeight(line, candidates, priceLines);
       if (medianHeight != null && medianHeight > 0 && line.box.height >= medianHeight * HEADING_RATIO) {
         score -= Math.min(MAX_HEADING_BONUS, HEADING_BONUS_PER_RATIO * (line.box.height / medianHeight - 1));
       }
@@ -1171,14 +1327,28 @@ export function estimateLabelWidth(text: string, fontSize: number): number {
 export function placeOverlayLabels(
   rows: readonly OverlayLabelInput[],
   tracked: readonly TrackedLine[],
-  layout: { frameSize: Size; viewSize: Size; occludedBottom: number; minHits: number },
+  layout: {
+    frameSize: Size;
+    viewSize: Size;
+    occludedBottom: number;
+    minHits: number;
+    /** 前のフレームで、訳があったのに重なって省いた札の識別子。今回も後に回す */
+    skippedIds?: ReadonlySet<string>;
+  },
 ): PlacedOverlayLabel[] {
-  const { frameSize, viewSize, occludedBottom } = layout;
+  const { frameSize, viewSize, occludedBottom, skippedIds } = layout;
   const neighbors = tracked
     .filter((line) => line.hits >= layout.minHits)
     .map((line) => ({ id: line.id, rect: mapBoxToView(line.box, frameSize, viewSize) }));
+  // 前のフレームで重なって省いた札は後に回す（それ以外は選んだ順のまま）。重なる2つの札の優先度がほぼ同じ時、位置の揺れで
+  // 選んだ順が入れ替わるたびに出る札が交代していた（2026-11-25）。「前回置いた札を先に」にすると、優先度の低い札の訳が
+  // 先に届いた時に、中央寄りの札の訳が届いても出なくなる（独立レビューの指摘）ので、新しく訳が届いた札は選んだ順で競う
+  const ordered =
+    skippedIds == null || skippedIds.size === 0
+      ? rows
+      : [...rows.filter((row) => !skippedIds.has(row.id)), ...rows.filter((row) => skippedIds.has(row.id))];
   const placed: PlacedOverlayLabel[] = [];
-  for (const row of rows) {
+  for (const row of ordered) {
     if (row.translated == null) continue;
     const rect = mapBoxToView(row.box, frameSize, viewSize);
     const fontSize = Math.min(16, Math.max(10, rect.height * 0.85));
