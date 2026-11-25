@@ -13,6 +13,9 @@
 //     （枠全体の中央で選ぶと、メニューの上の方の行が訳されなかった）
 //   - 価格には商品名と説明を分けて添える（3列のメニューで説明が商品名になっていた）。確かでない時は名前を付けない
 //   - 訳の札は1行・元の文字の高さに合わせ、同じ行の価格を隠さない。訳が届くまでは出さない
+//   - （Build 6 の実機確認から）中央の列の説明ばかり訳され左の商品名が残る → 画面上の距離で測り、同じ行の
+//     2番目以降の文字（説明）を少し後回しにし、見出しと前回選んだ行を少し優先する（`selectOverlayLines`）。
+//     札の右端は同じ行で右にある文字の手前まで（`placeOverlayLabels`）
 // - ピンチで拡大・縮小、ダブルタップで2×⇄元の倍率（2026-10-24）。映像を引き伸ばさず、カメラそのものの倍率を
 //   変える（認識する映像・撮影する写真も同じように拡大されるので、訳を重ねる位置の計算はそのまま使える）。
 //   倍率を変えた直後は、変える前の映像で読んだ結果を誤った位置に出さないよう、追跡中の文字をいったん捨てて
@@ -53,11 +56,10 @@ import {
   buildTranslationPriceEntries,
   extractTranslationPrices,
   getVisionLanguagesForSource,
-  mapBoxToView,
+  placeOverlayLabels,
   resolveSourceLanguageForText,
   hiddenFrameBottom,
   selectOverlayLines,
-  stripPriceTokens,
   unobstructedRegionInImage,
   type LiveTextFrame,
   type Size,
@@ -113,22 +115,6 @@ type PriceRow = {
   /** 円換算。レート未設定ならnull */
   jpy: string | null;
 };
-
-type PlacedLabel = {
-  id: string;
-  left: number;
-  top: number;
-  maxWidth: number;
-  fontSize: number;
-  text: string;
-};
-
-/** 訳の札の幅の見積もり（日本語は1文字≒文字の大きさ、英数字はその約0.6倍）。重なり判定にだけ使う */
-function estimateLabelWidth(text: string, fontSize: number): number {
-  let width = 0;
-  for (const char of text) width += /[\u0000-ɏ]/.test(char) ? fontSize * 0.6 : fontSize;
-  return width + 10;
-}
 
 export function LiveTranslationCamera({
   sourceLanguage,
@@ -232,15 +218,26 @@ export function LiveTranslationCamera({
     [frameSize, viewSize, occludedBottom],
   );
 
+  // 前回選んだ行は少し優先する（静止中に札が入れ替わり続けない）。選び方は`selectOverlayLines`の注記（2026-11-25）。
+  // 前回の選択は「前回の値と比べてレンダー中に調整する」型で持つ（前回の選択を優先しても選ばれる行は変わらないので1回で落ち着く）
+  const [previousOverlayIds, setPreviousOverlayIds] = useState<ReadonlySet<string>>(() => new Set());
   const overlayEntries = useMemo(() => {
-    if (attentionRegion == null) return [];
+    if (attentionRegion == null || frameSize == null) return [];
     return selectOverlayLines(tracked, {
       maxEntries: MAX_OVERLAY_LABELS,
       maxTextLength: MAX_LIVE_TEXT_LENGTH,
       minHits: 2,
       visibleRegion: attentionRegion,
+      imageSize: frameSize,
+      previousIds: previousOverlayIds,
     });
-  }, [tracked, attentionRegion]);
+  }, [tracked, attentionRegion, frameSize, previousOverlayIds]);
+  const overlayIdsKey = overlayEntries.map((entry) => entry.id).join('|');
+  const [previousOverlayKey, setPreviousOverlayKey] = useState('');
+  if (previousOverlayKey !== overlayIdsKey) {
+    setPreviousOverlayKey(overlayIdsKey);
+    setPreviousOverlayIds(new Set(overlayEntries.map((entry) => entry.id)));
+  }
 
   // 訳を重ねる行を先に、価格の商品名・説明を後ろに足す（同じ文字は1回だけ）
   const translationItems = useMemo(() => {
@@ -296,45 +293,16 @@ export function LiveTranslationCamera({
           });
         });
 
-  // 元の文字の位置へ訳を重ねる（1行・元の文字の高さに合わせる）。
-  // - 中央（見えている範囲の）に近い行から置き、先に置いた札と重なる札は省く（下の一覧には全件出る）
-  // - 訳が届くまでは出さない（原文の上に同じ原文を重ねて隠さない）
-  // - 札の右端は同じ行の価格の手前まで（価格を隠さない）。入りきらない訳は折り返さず文字を縮める
-  const labels: PlacedLabel[] = [];
-  if (frameSize != null && viewSize != null) {
-    const priceRects = tracked
-      .filter((line) => line.hits >= 2 && /\d/.test(line.text) && stripPriceTokens(line.text) === '')
-      .map((line) => mapBoxToView(line.box, frameSize, viewSize));
-    const placed: { left: number; top: number; right: number; bottom: number }[] = [];
-    for (const { entry, translated } of rows) {
-      if (translated == null) continue;
-      const rect = mapBoxToView(entry.box, frameSize, viewSize);
-      const fontSize = Math.min(16, Math.max(10, rect.height * 0.85));
-      const labelHeight = fontSize * 1.3 + 2;
-      const left = Math.min(Math.max(rect.left - 2, 4), Math.max(4, viewSize.width - 64));
-      const top = Math.min(
-        Math.max(rect.top + rect.height / 2 - labelHeight / 2, 4),
-        Math.max(4, viewSize.height - occludedBottom - labelHeight),
-      );
-      const centerY = rect.top + rect.height / 2;
-      const rightLimit = priceRects
-        .filter((price) => price.left >= rect.left + rect.width - 2 && centerY >= price.top && centerY <= price.top + price.height)
-        .reduce((limit, price) => Math.min(limit, price.left - 4), viewSize.width - 4);
-      const maxWidth = Math.max(64, rightLimit - left);
-      const box = {
-        left,
-        top,
-        right: left + Math.min(maxWidth, estimateLabelWidth(translated, fontSize)),
-        bottom: top + labelHeight - 2,
-      };
-      const overlaps = placed.some(
-        (other) => box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top,
-      );
-      if (overlaps) continue;
-      placed.push(box);
-      labels.push({ id: entry.id, left, top, maxWidth, fontSize, text: translated });
-    }
-  }
+  // 元の文字の位置へ訳を重ねる（置き方は`placeOverlayLabels`：選んだ順に置き、重なる札は省く・訳が届くまで出さない・
+  // 札の右端は同じ行で右にある文字〔説明・価格〕の手前まで）
+  const labels =
+    frameSize != null && viewSize != null
+      ? placeOverlayLabels(
+          rows.map(({ entry, translated }) => ({ id: entry.id, box: entry.box, translated })),
+          tracked,
+          { frameSize, viewSize, occludedBottom, minHits: 2 },
+        )
+      : [];
 
   const canZoom = cameraReady && !isCapturing;
 
