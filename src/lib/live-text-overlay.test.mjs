@@ -323,6 +323,48 @@ test('価格：読みが割れている間は、その価格を出さない（2�
   assert.equal(isStableLine(split.find((line) => /\$/.test(line.text))), false);
 });
 
+test('数字を含む普通の文：英字だけ1文字ずつ揺れても、2回目から出て途中で消えない（訳も差し替わらない）', () => {
+  const readings = [
+    'Slow steeped for 12 hours',
+    'Slow steeped for 12 houre',
+    'Slow stceped for 12 hours',
+    'SIow steeped for 12 hours',
+    'Slow steeped tor 12 hours',
+    'Slow steeped for 12 hourS',
+    'Slow steepcd for 12 hours',
+  ];
+  let tracked = [];
+  readings.forEach((text, index) => {
+    tracked = updateTrackedLines(
+      tracked,
+      [{ text, confidence: 1, box: { x: 0.3, y: 0.5, width: 0.3, height: TEXT_HEIGHT } }],
+      1000 + index * 800,
+    );
+    assert.equal(tracked.length, 1);
+    if (index >= 1) {
+      assert.equal(isStableLine(tracked[0]), true, `${index + 1}回目に表示されない`);
+      // 大文字小文字だけの違い（hourS）は同じ読み（最新の書き方を採るのは従来どおり）
+      assert.equal(tracked[0].text.toLowerCase(), readings[0].toLowerCase(), `${index + 1}回目に原文が替わった`);
+    }
+  });
+});
+
+test('数字の無い行：直近の読みがすべて違っても、原文は替わらない（訳を取り直して札が消えない）', () => {
+  const readings = ['Japanese sencha', 'Japanese scncha', 'Japancse sencha', 'Japanese sencba', 'Japanese sench a', 'Japanesc sencha'];
+  let tracked = [];
+  readings.forEach((text, index) => {
+    tracked = updateTrackedLines(tracked, [{ text, confidence: 1, box: { x: 0.3, y: 0.5, width: 0.3, height: TEXT_HEIGHT } }], 1000 + index * 800);
+  });
+  assert.equal(tracked[0].text, 'Japanese sencha');
+  assert.equal(isStableLine(tracked[0]), true);
+});
+
+test('読みの確度が明らかに上がった時は、従来どおりすぐその読みを採る', () => {
+  let tracked = updateTrackedLines([], [{ text: 'Garlic Chickcn', confidence: 0.5, box: { x: 0.3, y: 0.5, width: 0.3, height: TEXT_HEIGHT } }], 1000);
+  tracked = updateTrackedLines(tracked, [{ text: 'Garlic Chicken', confidence: 1, box: { x: 0.3, y: 0.5, width: 0.3, height: TEXT_HEIGHT } }], 1800);
+  assert.equal(tracked[0].text, 'Garlic Chicken');
+});
+
 test('価格：小数部が崩れた読み（$5. 60・$5 .60・$5.G0）は$5.00として出さない', () => {
   for (const text of ['$5. 60', '$5 .60', '$5.G0', 'Orange Juice $5. 60', '5. 60']) {
     assert.deepEqual(usd(text), [], text);
