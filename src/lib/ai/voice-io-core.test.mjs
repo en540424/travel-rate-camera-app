@@ -168,6 +168,16 @@ describe('本人認証のトークン（端末）', () => {
     assert.deepEqual(A.exchangeOutcome(500, null), { ok: false, code: 'unknown' });
   });
 
+  test('交換の応答：429 rate_limited（交換の回数の上限・中継の S5）は語彙のまま', () => {
+    assert.deepEqual(A.exchangeOutcome(429, { error: 'rate_limited' }), { ok: false, code: 'rate_limited' });
+  });
+
+  test('交換の本文：取引の JWS と、取れた時だけ更新情報（renewal_jws。猶予期間の確認）を載せる', () => {
+    assert.deepEqual(JSON.parse(A.proofBody({ jws: 'a.b.c' })), { proof: { kind: 'storekit_jws', jws: 'a.b.c' } });
+    assert.deepEqual(JSON.parse(A.proofBody({ jws: 'a.b.c', renewalJws: 'd.e.f' })), { proof: { kind: 'storekit_jws', jws: 'a.b.c', renewal_jws: 'd.e.f' } });
+    assert.deepEqual(JSON.parse(A.proofBody({ jws: 'a.b.c', renewalJws: '' })), { proof: { kind: 'storekit_jws', jws: 'a.b.c' } });
+  });
+
   test('401 の後は1回だけ取り直して送り直す', () => {
     assert.equal(A.shouldRefreshAfter(401, 0), true);
     assert.equal(A.shouldRefreshAfter(401, 1), false);

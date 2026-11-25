@@ -3,7 +3,8 @@
  *
  * 流れ：端末は StoreKit の署名付き取引（Apple が署名した JWS。端末のネイティブ部品 `modules/storekit-proof` が取り出す）を
  * `POST {base}/v1/auth/session` へ送り、中継の短命のトークンを受ける。以後の要求（テキスト・残量・音声）は
- * `Authorization: Bearer <トークン>` と `x-app-user-id` を付ける。トークンは「誰か」だけを表し、権利は中継が要求ごとに確かめる。
+ * `Authorization: Bearer <トークン>` と `x-app-user-id` を付ける。中継はトークンの主体を「証拠の購読（Apple の取引ID）」にし、
+ * 利用枠もその購読ごとに数える（2026-11-26 B1 の根本修正。x-app-user-id からは決めない）。権利は中継が要求ごとに確かめる。
  * - トークンは端末のメモリにだけ置く（保存しない）。期限の少し前に取り直す
  * - 中継が 401 を返したら、トークンを捨てて1回だけ取り直して送り直す
  * - **証拠の方式（StoreKit の JWS を使うか）の採用は Human の判断**（2026-11-25 時点で未決定）。中継が方式を登録していなければ
@@ -28,6 +29,13 @@ export function exchangeOutcome(status: number, body: Record<string, unknown> | 
     return { ok: false, code: 'unknown' };
   }
   return { ok: false, code: normalizeErrorCode(body?.error) };
+}
+
+/** 交換の本文。更新情報（猶予期間の確認に使う）は取れた時だけ載せる。JWS は資格情報として扱い、保存・記録しない */
+export function proofBody(proof: { jws: string; renewalJws?: string }): string {
+  const p: Record<string, string> = { kind: 'storekit_jws', jws: proof.jws };
+  if (typeof proof.renewalJws === 'string' && proof.renewalJws.length > 0) p.renewal_jws = proof.renewalJws;
+  return JSON.stringify({ proof: p });
 }
 
 /** 要求が 401 で返った時、トークンを取り直して1回だけ送り直すか */
