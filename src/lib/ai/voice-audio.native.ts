@@ -124,7 +124,8 @@ export function createVoiceAudio(): VoiceAudio | null {
           const samples = buffer.getChannelData(0).subarray(0, numFrames);
           for (const frame of encoder.encode(samples, buffer.sampleRate)) onFrame(frame);
         });
-        if (r.status !== 'success') return false;
+        // 失敗の返却も世代を見る：止められ・別の開始に替わった後の古い開始の失敗を、新しい開始の失敗として返さない（再確認 N2）
+        if (r.status !== 'success') return my !== captureGen;
         const started = await rec.start();
         if (my !== captureGen) {
           // 録音を始める間に止められた：この開始が作った録音だけを止める（別の開始の録音には触れない。失敗ではない）
@@ -135,7 +136,7 @@ export function createVoiceAudio(): VoiceAudio | null {
         }
         return started.status === 'success';
       } catch {
-        return false;
+        return my !== captureGen;
       }
     },
 

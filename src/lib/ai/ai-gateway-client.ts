@@ -142,8 +142,10 @@ function createHttpGateway(base: string): AiGateway {
       };
       ws.onclose = () => {
         open = false;
-        // session を受ける前に閉じた：upgrade で断られた（トークンの期限・失効）かもしれない。続いたらトークンを取り直す
-        if (!sawSession && !closedByUs) {
+        // session を受ける前に閉じた：upgrade で断られた（トークンの期限・失効）かもしれない。続いたらトークンを取り直す。
+        // 中継が error・closed を送って閉じた（残量0・busy・停止など正常な拒否）はトークンの問題ではないので捨てない
+        // （捨てると開始の連打のたびに証拠の交換をやり直し、中継の交換の回数の上限に当たる。2026-11-26 再確認 N1）
+        if (!sawSession && !sawFinal && !closedByUs) {
           sessionlessCloses += 1;
           // 新規の開始なら1回で捨てる（期限切れ・鍵の切り替えの直後に2回「通信不可」にしない）。再開は2回続いた時だけ
           if (!opts.resume || sessionlessCloses >= 2) forgetGatewayToken();
