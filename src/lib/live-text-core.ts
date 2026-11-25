@@ -386,7 +386,28 @@ export type TrackedLine = {
    * 続けて同じ場面だった時だけtrue。一度でも外れたら以後は延長しない（別の所へ向けた後、新しい場面で古い行を延長しない）
    */
   held?: boolean;
+  /**
+   * まだ表示の条件を満たさないまま読めなくなった行を、同じ所でまた読めた時に引き継ぐために覚えている（`MAX_DORMANT_MISSES`）。
+   * 表示・価格・札の配置には使わない（`isStableLine`がfalse）。同じ文字が予測した位置のすぐ近く（`DORMANT_MATCH`）で
+   * 読めた時だけ元の行に戻す（2026-11-25）
+   */
+  dormant?: boolean;
 };
+
+/**
+ * まだ一度も表示の条件を満たしていない（1回だけ読めた）行を、読めなくなった後も見えない状態で覚えておくフレーム数。
+ * 読める行が少ない場所（反射・小さい文字・斜め）では、Visionが各行を数フレームに1回しか読めず、同じ場面か確かめられないため
+ * 読み落とした行を残せない（`SCENE_CONTINUITY`は3行以上が要る）。読み落としが2回続くと行が消え、次に読めた時も1回目として
+ * 数え直すので、2回続けて読めるまで一度も訳が出なかった（模擬：読める割合3〜5割の行は初めて出るまで中央値5〜8フレーム）。
+ * 覚えている間は表示しない。表示したことのある行は覚えない（出ている札・価格が残る・消える条件は Build 8 と同じ。
+ * 表示した行も覚えると、読み落としの多い場面で札の出入りが増えた）
+ */
+const MAX_DORMANT_MISSES = 4;
+/**
+ * 覚えている行に戻す読みの距離の上限（予測した位置からの中心の距離。行の高さの倍）。
+ * 隣の行（同じ値段の別の品目）は行の高さより離れているので、別の行を引き継がない
+ */
+const DORMANT_MATCH = 1;
 
 /** 原文の多数決に使う直近の読みの数 */
 const MAX_READINGS = 5;
@@ -539,7 +560,7 @@ function centerDistance(a: NormalizedBox, b: NormalizedBox): number {
  * 同じ読みが続く時は従来と同じ（2回目で出る）
  */
 export function isStableLine(line: TrackedLine, minHits = 2): boolean {
-  if (line.hits < minHits) return false;
+  if (line.dormant === true || line.hits < minHits) return false;
   return !/\d/.test(line.text) || readingSupport(line) >= minHits;
 }
 
@@ -566,7 +587,11 @@ export function updateTrackedLines(
     .filter(({ line, text }) => text !== '' && line.confidence >= options.minConfidence)
     .map((item) => ({ ...item, key: textIdentityKey(item.text), box: item.line.box }));
 
-  const motion = estimateFrameMotion(previous, incoming);
+  // 覚えているだけの行（`dormant`）は動きの推定・まとめ読み・似た文字の対応に使わない（従来はもう消えていた行）
+  const motion = estimateFrameMotion(
+    previous.filter((p) => p.dormant !== true),
+    incoming,
+  );
   const predicted = previous.map((p) => shiftBox(p.box, motion));
   const previousKeys = previous.map((p) => textIdentityKey(p.text));
 
@@ -593,6 +618,13 @@ export function updateTrackedLines(
     // 回す・近づける動きでずれがたまる）。動きを確かめられない時（1行だけの看板・回す・近づける）は従来どおり対応させる
     const from = predicted[pair.previousIndex];
     const box = incoming[pair.incomingIndex].box;
+    // 覚えているだけの行は、同じ文字が予測した位置のすぐ近くで読めた時だけ戻す（遠い読みは退けずに、他の対応に回す）
+    if (
+      previous[pair.previousIndex].dormant === true &&
+      pair.distance > DORMANT_MATCH * Math.max(from.height, box.height)
+    ) {
+      continue;
+    }
     if (
       motion.reliable &&
       (previous[pair.previousIndex].misses ?? 0) === 0 &&
@@ -619,6 +651,7 @@ export function updateTrackedLines(
       .filter(
         ({ index, center }) =>
           !used.has(index) &&
+          previous[index].dormant !== true &&
           center.x >= item.box.x &&
           center.x <= item.box.x + item.box.width &&
           verticalOverlapRatio(predicted[index], item.box) >= ROW_OVERLAP,
@@ -641,7 +674,7 @@ export function updateTrackedLines(
     let bestScore = 0;
     let bestIndex = -1;
     previous.forEach((p, index) => {
-      if (used.has(index)) return;
+      if (used.has(index) || p.dormant === true) return;
       const iou = boxIoU(predicted[index], item.box);
       if (iou < 0.3) return;
       const similarity = textSimilarity(previousKeys[index], item.key);
@@ -763,13 +796,20 @@ export function updateTrackedLines(
       !replaced &&
       misses <= MAX_CONTINUITY_MISSES &&
       ((p.misses ?? 0) === 0 || p.held === true);
-    if (held || now - p.lastSeenAt <= options.staleMs) {
+    if (p.dormant !== true && (held || now - p.lastSeenAt <= options.staleMs)) {
       next.push({ ...p, box: predicted[index], misses, held });
+    } else if (inFrame && !replaced && misses <= MAX_DORMANT_MISSES && !isStableLine(p)) {
+      // まだ表示していない行だけ、同じ所でまた読めた時に引き継ぐために覚えておく（従来はここで消していた）
+      next.push({ ...p, box: predicted[index], misses, held: false, dormant: true });
     }
   });
 
+  // 覚えているだけの行は最後に回す（上限を超えた時に、表示中の行より先に切り捨てる）
   return next
-    .sort((a, b) => b.lastSeenAt - a.lastSeenAt || b.hits - a.hits)
+    .sort(
+      (a, b) =>
+        Number(a.dormant === true) - Number(b.dormant === true) || b.lastSeenAt - a.lastSeenAt || b.hits - a.hits,
+    )
     .slice(0, options.maxTracked);
 }
 
@@ -1293,6 +1333,77 @@ export function selectOverlayLines(tracked: readonly TrackedLine[], options: Ove
     .map(({ entry }) => entry);
 }
 
+// MARK: 翻訳を送る順（2026-11-25・Build 8 の実機確認から）
+//
+// 実機で「起動してから最初の訳が出るまで待つ」「下部の価格が先に出て、商品名が日本語になるまで遅れる」。
+// 翻訳は同時に1要求・1要求8件まで（`use-live-text-translation.ts`）で、模擬（翻訳1要求0.3〜0.8秒）では:
+// - 翻訳を送るのは、行が2フレーム目に読めて表示の条件（`isStableLine`）を満たしてからだった。最初の札は
+//   「2フレーム目＋翻訳1要求」の後に出ていた
+// - 下部の帯の商品名は、訳を重ねる行（最大14件）の後ろに並んでいたため、2〜3回目の要求まで英語のままだった
+// 対策（表示の条件・追跡・選び方は変えない。送る順と、送り始める時期だけ）:
+// - 帯に出ている商品名を先頭に送る
+// - 1フレーム目に読めた行のうち、訳を重ねる候補になりそうな中央寄りの数件を、他に送るものが無い時だけ先に訳しておく
+//   （表示は従来どおり2フレーム目から。訳がキャッシュにあれば、その時すぐ札になる）
+
+/**
+ * 先に訳しておく行：今回のフレームで読めた・まだ表示の条件を満たしていない行のうち、訳を重ねる行の選び方
+ * （`selectOverlayLines`）で上位の`maxEntries`件。表示には使わない（`isStableLine`は満たしていない）
+ */
+export function selectPrefetchLines(
+  tracked: readonly TrackedLine[],
+  options: Omit<OverlaySelectionOptions, 'previousIds'>,
+): LiveTextEntry[] {
+  if (options.maxEntries <= 0) return [];
+  // 今回読めた行だけ（読めなかった行・覚えているだけの行は送らない）
+  const fresh = tracked.filter((line) => line.dormant !== true && (line.misses ?? 0) === 0);
+  // 先に訳すのは、読み始め（前のフレームの行が無い）か、前のフレームから続けて読めている行がある時だけ。
+  // 大きく振り回して毎回別の文字が映る間は送らない（模擬：毎フレーム8件ずつ、20フレームで約160件を余分に訳していた）
+  const fromEarlierFrames = tracked.some((line) => line.hits >= 2 || (line.misses ?? 0) > 0);
+  if (fromEarlierFrames && !fresh.some((line) => line.hits >= 2)) return [];
+  const pendingIds = new Set(fresh.filter((line) => !isStableLine(line, options.minHits)).map((line) => line.id));
+  if (pendingIds.size === 0) return [];
+  return selectOverlayLines(fresh, { ...options, minHits: 1, maxEntries: fresh.length })
+    .filter((entry) => pendingIds.has(entry.id))
+    .slice(0, options.maxEntries);
+}
+
+/**
+ * 翻訳を送る順（同じ文字は1回だけ）：帯に出ている価格の商品名 → 訳を重ねる行 → 残りの価格の商品名・説明 → 先に訳しておく行。
+ * 帯の商品名は`stripRows`行分（1つの価格の行に複数の価格がある時は、その数だけ行を使う）
+ */
+export function orderLiveTranslationTexts({
+  overlayTexts,
+  priceEntries,
+  prefetchTexts,
+  stripRows,
+}: {
+  overlayTexts: readonly string[];
+  priceEntries: readonly { label: string | null; description: string | null; amounts: readonly number[] }[];
+  prefetchTexts: readonly string[];
+  stripRows: number;
+}): string[] {
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  const add = (text: string | null) => {
+    if (text == null || seen.has(text)) return;
+    seen.add(text);
+    ordered.push(text);
+  };
+  let rows = 0;
+  for (const entry of priceEntries) {
+    if (rows >= stripRows) break;
+    rows += Math.max(1, entry.amounts.length);
+    add(entry.label);
+  }
+  for (const text of overlayTexts) add(text);
+  for (const entry of priceEntries) {
+    add(entry.label);
+    add(entry.description);
+  }
+  for (const text of prefetchTexts) add(text);
+  return ordered;
+}
+
 // MARK: 訳の札の置き方（2026-11-25 にコンポーネントから切り出し）
 
 export type OverlayLabelInput = { id: string; box: NormalizedBox; translated: string | null };
@@ -1338,7 +1449,7 @@ export function placeOverlayLabels(
 ): PlacedOverlayLabel[] {
   const { frameSize, viewSize, occludedBottom, skippedIds } = layout;
   const neighbors = tracked
-    .filter((line) => line.hits >= layout.minHits)
+    .filter((line) => line.hits >= layout.minHits && line.dormant !== true)
     .map((line) => ({ id: line.id, rect: mapBoxToView(line.box, frameSize, viewSize) }));
   // 前のフレームで重なって省いた札は後に回す（それ以外は選んだ順のまま）。重なる2つの札の優先度がほぼ同じ時、位置の揺れで
   // 選んだ順が入れ替わるたびに出る札が交代していた（2026-11-25）。「前回置いた札を先に」にすると、優先度の低い札の訳が
