@@ -11,10 +11,10 @@
 import { deepEqual, equal } from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { classifyPlanChange, identifyPlanProduct } from './plan-change-core.ts';
+import { classifyPlanChange, identifyPlanProduct, purchaseTargetTier } from './plan-change-core.ts';
 import { getProPlusAccess, resolveProPlusFlags } from './proplus/proplus-access-core.ts';
 import { resolveAnnualPackage, resolveMonthlyPackage, resolvePackageByProductId } from './revenuecat-package-core.ts';
-import { resolvePurchaseOutcome, resolveTierPurchaseOutcome } from './revenuecat-purchase-core.ts';
+import { needsPurchaseRecheck, resolvePurchaseOutcome, resolveTierPurchaseOutcome } from './revenuecat-purchase-core.ts';
 
 const TIERS = ['free', 'pro', 'pro_plus'];
 const BOOLS = [true, false];
@@ -33,6 +33,44 @@ test('目標＝pro：従来の判定（wasProBefore・proActiveAfter）と全組
       equal(resolvePurchaseOutcome({ threw, cancelled, wasProBefore, proActiveAfter }), legacy,
         JSON.stringify({ threw, cancelled, wasProBefore, proActiveAfter }));
     }
+});
+
+// 本番の経路（tierの入力×目標pro）を、従来の式（isPro＝Pro以上）と全組み合わせで突き合わせる
+test('本番の経路：tierの入力×目標proが、従来の式（wasProBefore＝isPro・proActiveAfter＝isPro）と全組み合わせで一致', () => {
+  const isPro = (t) => t === 'pro' || t === 'pro_plus';
+  let n = 0;
+  for (const threw of BOOLS) for (const cancelled of BOOLS) for (const tierBefore of TIERS)
+    for (const tierAfter of [...TIERS, null]) {
+      const legacy = (() => {
+        const proActiveAfter = tierAfter == null ? null : isPro(tierAfter);
+        if (!threw) return proActiveAfter === true ? 'success' : 'entitlement_missing';
+        if (cancelled) return 'cancelled';
+        if (!isPro(tierBefore) && proActiveAfter === true) return 'success';
+        return 'error';
+      })();
+      equal(resolveTierPurchaseOutcome({ threw, cancelled, tierBefore, tierAfter, targetTier: 'pro' }), legacy,
+        JSON.stringify({ threw, cancelled, tierBefore, tierAfter }));
+      n++;
+    }
+  equal(n, 48);
+});
+
+test('取り直しの条件：目標proでは従来（例外ならキャンセル以外・正常ならCustomerInfoが無いかProでない）と一致', () => {
+  const isPro = (t) => t === 'pro' || t === 'pro_plus';
+  for (const threw of BOOLS) for (const cancelled of BOOLS) for (const tierAfter of [...TIERS, null]) {
+    const legacy = threw ? !cancelled : tierAfter == null || !isPro(tierAfter);
+    equal(needsPurchaseRecheck({ threw, cancelled, tierAfter, targetTier: 'pro' }), legacy);
+  }
+  // Pro→Pro+で戻り値がまだproだけ → 取り直す
+  equal(needsPurchaseRecheck({ threw: false, cancelled: false, tierAfter: 'pro', targetTier: 'pro_plus' }), true);
+  equal(needsPurchaseRecheck({ threw: false, cancelled: false, tierAfter: 'pro_plus', targetTier: 'pro_plus' }), false);
+});
+
+test('Free→Pro+：正常終了でpro_plus＝success・proだけ＝entitlement_missing／例外後にpro_plus＝救済でsuccess', () => {
+  equal(resolveTierPurchaseOutcome({ threw: false, cancelled: false, tierBefore: 'free', tierAfter: 'pro_plus', targetTier: 'pro_plus' }), 'success');
+  equal(resolveTierPurchaseOutcome({ threw: false, cancelled: false, tierBefore: 'free', tierAfter: 'pro', targetTier: 'pro_plus' }), 'entitlement_missing');
+  equal(resolveTierPurchaseOutcome({ threw: true, cancelled: false, tierBefore: 'free', tierAfter: 'pro_plus', targetTier: 'pro_plus' }), 'success');
+  equal(resolveTierPurchaseOutcome({ threw: true, cancelled: false, tierBefore: 'free', tierAfter: null, targetTier: 'pro_plus' }), 'error');
 });
 
 test('目標＝pro：購入前がPro+でも「既に権利がある」扱い（従来のisPro＝Pro以上と同じ）', () => {
@@ -81,9 +119,17 @@ test('Proの商品だけのOffering：除外の有無で結果が同じ（定義
     { availablePackages: [] },
     null,
   ];
+  // 親commitの解決（offering.monthly → packageType → Product ID）をそのまま写したもの
+  const legacy = (o, preset, type, id) => {
+    if (o == null) return null;
+    const ps = o.availablePackages ?? [];
+    return preset ?? ps.find((p) => p.packageType === type) ?? ps.find((p) => p.product?.identifier === id) ?? null;
+  };
   for (const o of offerings) {
     equal(resolveMonthlyPackage(o, PRO_M, EXCLUDE), resolveMonthlyPackage(o, PRO_M));
     equal(resolveAnnualPackage(o, PRO_Y, EXCLUDE), resolveAnnualPackage(o, PRO_Y));
+    equal(resolveMonthlyPackage(o, PRO_M, EXCLUDE), legacy(o, o?.monthly, 'MONTHLY', PRO_M));
+    equal(resolveAnnualPackage(o, PRO_Y, EXCLUDE), legacy(o, o?.annual, 'ANNUAL', PRO_Y));
   }
 });
 
@@ -110,6 +156,15 @@ test('Pro+の解決はProduct IDの完全一致だけ（$rc_monthly・packageTyp
 // ── 3. プラン変更 ──
 
 const CATALOG = { proMonthly: PRO_M, proAnnual: PRO_Y, proPlusMonthly: PLUS_M, proPlusAnnual: PLUS_Y };
+
+test('購入の目標プランは商品から：Pro+の商品＝pro_plus／Proの商品・知らない商品・null＝pro（従来と同じ）', () => {
+  equal(purchaseTargetTier(PLUS_M, CATALOG), 'pro_plus');
+  equal(purchaseTargetTier(PLUS_Y, CATALOG), 'pro_plus');
+  equal(purchaseTargetTier(PRO_M, CATALOG), 'pro');
+  equal(purchaseTargetTier(PRO_Y, CATALOG), 'pro');
+  equal(purchaseTargetTier('com.other', CATALOG), 'pro');
+  equal(purchaseTargetTier(undefined, CATALOG), 'pro');
+});
 
 test('Product IDから商品を特定し、知らないIDはnull', () => {
   deepEqual(identifyPlanProduct(PRO_M, CATALOG), { tier: 'pro', period: 'monthly' });

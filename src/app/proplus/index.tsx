@@ -5,6 +5,7 @@ import { ScrollView } from 'react-native';
 import { AccessNotice, Notice, pp } from '@/components/proplus/proplus-ui';
 import { SectionCard } from '@/components/ui/SectionCard';
 import { SettingRow } from '@/components/ui/SettingRow';
+import { PRO_PLUS_QA } from '@/config/feature-flags';
 import { PRO_PLUS_SIMULATED, useProPlusAccess, useProPlusData } from '@/hooks/use-proplus';
 
 export default function ProPlusHome() {
@@ -15,6 +16,7 @@ export default function ProPlusHome() {
   return (
     <ScrollView style={pp.screen} contentContainerStyle={pp.content}>
       {PRO_PLUS_SIMULATED && <Notice>開発用ビルドのため、Pro+を契約中として表示しています（本番では表示されません）。</Notice>}
+      {PRO_PLUS_QA && <Notice>Pro+の検証用ビルドです（審査・一般公開には使いません）。契約はSandboxの購入状態で判定しています。</Notice>}
       <AccessNotice access={access} blocked={blockedReason} />
       <SectionCard padding={0}>
         <SettingRow label="買い物マップ" value={`${places}か所`} onPress={() => router.push('/proplus/map')} />

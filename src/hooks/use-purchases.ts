@@ -10,7 +10,7 @@ import {
   REVENUECAT_PRO_PLUS_ENTITLEMENT_ID,
   REVENUECAT_PRO_PLUS_MONTHLY_PRODUCT_ID,
 } from '@/config/revenuecat';
-import { identifyPlanProduct, type PlanProductCatalog } from '@/lib/plan-change-core';
+import { identifyPlanProduct, purchaseTargetTier, type PlanProductCatalog } from '@/lib/plan-change-core';
 import {
   addCustomerInfoListener,
   configureRevenueCat,
@@ -215,10 +215,10 @@ export function usePurchases() {
     setIsPurchasing(true);
     try {
       // 購入前の契約プランと、この商品のプランを渡す（例外後の救済で既存の契約を今回の成功と誤認しないため）。
-      // 購入画面の対象はProの2商品だけなので目標は'pro'。Pro+の購入画面を作る時に商品から目標を決める
+      // 目標は商品から決める：Pro+の商品ならpro_plus、Proの商品（と知らない商品）はpro＝従来と同じ判定
       const outcome = await purchasePackageOnDevice(pkg, {
         tierBefore: usePurchasesStore.getState().planTier,
-        targetTier: 'pro',
+        targetTier: purchaseTargetTier(pkg.product?.identifier, PLAN_PRODUCT_CATALOG),
       });
       if (outcome.status === 'success') {
         usePurchasesStore.getState().setCustomerInfo(outcome.customerInfo);
@@ -278,6 +278,8 @@ export interface ProPlanDetails {
   planPeriod: 'monthly' | 'annual' | null;
   /** 契約中の商品のプラン（'pro' / 'pro_plus'）。Product IDから確実に判定できた場合のみ。判定できなければnull */
   productTier: 'pro' | 'pro_plus' | null;
+  /** 契約中の商品の期間（Pro・Pro+のどちらでも）。Product IDから確実に判定できた場合のみ */
+  productPeriod: 'monthly' | 'annual' | null;
   /** pro Entitlementの有効期限（ISO8601）。買い切り等でnullの場合あり。 */
   expirationDate: string | null;
   /** 自動更新されるか。CustomerInfoから取得できない場合はnull。 */
@@ -303,8 +305,11 @@ export function useProPlanDetails(): ProPlanDetails {
   const product = identifyPlanProduct(entitlement?.productIdentifier ?? null, PLAN_PRODUCT_CATALOG);
 
   return {
-    planPeriod: product?.period ?? null,
+    // 既存の画面（pro.tsx・CurrentPlanCard）は「Proの月額/年額」として表示するので、Proの商品の時だけ返す（従来どおり）。
+    // Pro+の商品の期間は`productPeriod`＋`productTier`で読む（Pro+の表示を作る時に使う）
+    planPeriod: product?.tier === 'pro' ? product.period : null,
     productTier: product?.tier ?? null,
+    productPeriod: product?.period ?? null,
     expirationDate: entitlement?.expirationDate ?? null,
     willRenew: entitlement?.willRenew ?? null,
     managementURL: customerInfo?.managementURL ?? null,

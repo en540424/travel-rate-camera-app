@@ -10,8 +10,8 @@ import type {
 
 import { getRevenueCatIosApiKey, REVENUECAT_OFFERING_ID, REVENUECAT_PRO_PLUS_OFFERING_ID } from '@/config/revenuecat';
 import { getPlanTier } from '@/lib/plan-tier';
-import { hasProAccess, isTierAtLeast, type PlanTier } from '@/lib/plan-tier-core';
-import { resolveTierPurchaseOutcome } from '@/lib/revenuecat-purchase-core';
+import { hasProAccess, type PlanTier } from '@/lib/plan-tier-core';
+import { needsPurchaseRecheck, resolveTierPurchaseOutcome } from '@/lib/revenuecat-purchase-core';
 
 let configured = false;
 
@@ -123,6 +123,10 @@ export type PurchaseOptions = {
 };
 
 export type RestoreOutcome =
+  /**
+   * hasEntitlement は「Pro以上（Pro・Pro+）」の有無。Pro+の復元画面では使わず、`getPlanTier(customerInfo)`で
+   * pro_plusかを見ること（Proだけの利用者にPro+を「復元できました」と出さないため）
+   */
   | { status: 'success'; customerInfo: CustomerInfo; hasEntitlement: boolean }
   | { status: 'error' };
 
@@ -175,9 +179,12 @@ export async function purchasePackage(
   }
 
   // 正常終了で目標のプランが見えない／例外（キャンセル以外）のときだけ、CustomerInfoをもう1回だけ見る
-  const needsRecheck = threw
-    ? !cancelled
-    : customerInfo == null || !isTierAtLeast(getPlanTier(customerInfo), options.targetTier);
+  const needsRecheck = needsPurchaseRecheck({
+    threw,
+    cancelled,
+    tierAfter: customerInfo ? getPlanTier(customerInfo) : null,
+    targetTier: options.targetTier,
+  });
   if (needsRecheck) {
     try {
       customerInfo = await Purchases.getCustomerInfo();

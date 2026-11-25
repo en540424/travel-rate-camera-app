@@ -37,6 +37,14 @@ export function identifyPlanProduct(productId: string | null | undefined, catalo
   return null;
 }
 
+/**
+ * 購入する商品の目標プラン（購入の結果判定 `resolveTierPurchaseOutcome` の targetTier）。
+ * Pro+の商品ならpro_plus、それ以外（Proの商品・知らない商品）はpro＝従来のProの購入と同じ判定。
+ */
+export function purchaseTargetTier(productId: string | null | undefined, catalog: PlanProductCatalog): PaidTier {
+  return identifyPlanProduct(productId, catalog)?.tier === 'pro_plus' ? 'pro_plus' : 'pro';
+}
+
 export type PlanChangeKind =
   /** 有料の契約が無い（Free）→ 新規の購入 */
   | 'new'

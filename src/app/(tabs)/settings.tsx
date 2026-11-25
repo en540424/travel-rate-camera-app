@@ -17,7 +17,7 @@ import { CurrencyFlagImage } from '@/components/domain/CurrencyFlagImage';
 import { CurrentPlanCard } from '@/components/domain/CurrentPlanCard';
 import { TripLimitSheet } from '@/components/domain/TripLimitSheet';
 import { FALLBACK_BUDGET_JPY } from '@/constants/camera-screen';
-import { SHOW_PRO } from '@/config/feature-flags';
+import { PRO_PLUS_QA, SHOW_PRO } from '@/config/feature-flags';
 import { useProPlusAccess } from '@/hooks/use-proplus';
 import type { TripRow } from '@/db/queries/trips';
 import { useHistory } from '@/hooks/use-history';
@@ -262,7 +262,11 @@ export default function SettingsScreen() {
           {/* Pro+（買い物マップ・旅行の予定・AI翻訳）。公開フラグが無効の間は出さない（本番の初期値）。 */}
           {proPlusAccess !== 'hidden' && (
             <SettingSection title="Pro+">
-              <SettingRow label="買い物マップ・旅行の予定" onPress={() => router.push('/proplus')} />
+              <SettingRow
+                label="買い物マップ・旅行の予定"
+                value={PRO_PLUS_QA ? '検証用ビルド' : undefined}
+                onPress={() => router.push('/proplus')}
+              />
             </SettingSection>
           )}
 

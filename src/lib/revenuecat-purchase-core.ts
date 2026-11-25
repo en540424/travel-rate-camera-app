@@ -101,6 +101,22 @@ export type TierPurchaseObservation = {
  * - 例外: 購入前は目標未満かつ今は目標以上 → success（Apple側で成立していた救済）／それ以外 → error
  *   （ProからPro+への購入では`pro`が既に有効なこと自体は今回の成立の証明にならない。見るのは目標への昇格）
  */
+/**
+ * purchasePackageの直後に、CustomerInfoをもう1回だけ取り直すべきか。
+ * - 例外（キャンセル以外）→ 取り直す（Apple側で成立していた場合の救済のため）
+ * - キャンセル → 取り直さない
+ * - 正常終了で、戻り値のCustomerInfoが無い・目標のプランに届いていない → 取り直す
+ */
+export function needsPurchaseRecheck(o: {
+  threw: boolean;
+  cancelled: boolean;
+  tierAfter: PurchaseTier | null;
+  targetTier: PurchaseTier;
+}): boolean {
+  if (o.threw) return !o.cancelled;
+  return !atLeast(o.tierAfter, o.targetTier);
+}
+
 export function resolveTierPurchaseOutcome(o: TierPurchaseObservation): PurchaseResolution {
   if (!o.threw) {
     return atLeast(o.tierAfter, o.targetTier) ? 'success' : 'entitlement_missing';
