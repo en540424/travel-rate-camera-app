@@ -4,6 +4,13 @@
 
 > 本節が現在地の正。以下の「現在の開発フェーズ」以降は2026-07-01〜08時点の履歴で、完了済み項目を未完へ戻さない。
 
+> [!important] 2026-11-25 **App Store 公開準備：最終監査・掲載素材（第12回）・掲載原稿・LP の表記修正 / 提出準備は未完了（Human 判断と Build 9 の実機確認待ち）**
+> - 監査（A〜E・残作業）：Vault `AI-Workflow-System/07_project-kits/tabirate-camera/旅レートカメラ_AppStore公開前最終監査_2026-11-25.md`。新しい EAS Build が必要なコードの問題はなし（B が合格すれば Build 9 のまま提出の見込み）
+> - **E-1（最優先・Human）**：Build 9 は Free＋Pro。2026-11-04 の「3プラン同時初回リリース」との関係で、Build 9 を初回提出 Build とするかは Human 判断
+> - B（Build 9 の実機）：P0 の未確認7・部分確認9、#78・#86・#87・#44・#45・S節（#81〜#85）、Sandbox の #32 成功経路・#33・#36。B（ASC・Human）：契約/Banking/Tax・サブスクの表示名/審査用スクショ/バージョンへの追加・App Privacy・年齢制限・配信地域・スクショ
+> - 掲載素材：推奨9枚（6.9″・6.1″）＝ `trc-tier-foundation` `tools/store-assets/out/tabirate/20261125-phase12-build9-live-statusbar/`、コピー `C:\Users\envie\OneDrive\デスクトップ\旅レートカメラAppStore掲載素材_提出候補_2026-11-25\`（draft・採否は Human）
+> - 掲載原稿：Vault 提出パッケージ（Promotional Text を「ライブ翻訳」表記へ・Build 分岐を解消）。LP：`travel-rate-camera-lp` branch `feat/lp-appstore-prep-2026-11` `035b462`（ローカルのみ・本番反映は Human GO）
+
 > [!important] 2026-11-25 **Build 9 を正式採用（Human 決定）・ライブ翻訳は現行仕様で完成・追加改善は終了 → App Store 公開準備へ**
 > - Apple 側（`eas submit:status` 読み取り）：1.0.0 (9)・VALID・IN_BETA_TESTING・submission `a29d274c-8231-4765-a4e0-8bfb70bba033`・upload 17:59 JST。内部テストグループへの所属は CLI で見えない（Human の ASC 画面で確認）
 > - Human 実機確認（iPhone・Build 9）：ライブ翻訳の表示・中央/左右/上下・斜め・認識後の安定・商品名/USD/円を確認。軽微なラグは許容。重大な問題なし
