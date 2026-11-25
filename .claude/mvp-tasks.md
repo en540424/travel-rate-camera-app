@@ -4,7 +4,12 @@
 
 > 本節が現在地の正。以下の「現在の開発フェーズ」以降は2026-07-01〜08時点の履歴で、完了済み項目を未完へ戻さない。
 
-> [!important] 2026-11-25（Build 7 の実機確認から）**ライブ翻訳の表示安定化（止めれば落ち着く・動かせば替わる）／実装・テスト済み・未Build・実機未確認**
+> [!important] 2026-11-25 **Build 8（ライブ翻訳の表示安定化 `cdba4a3` を含む）作成済み・Submit は Human 待ち・実機未確認**
+> - Build 8：1.0.0 (8)・EAS `e32435b1-cf04-4716-95cc-4f87e6c97980`・ビルド元 `integrate/build6-live-text-fix` `7445f79`・production・STORE・fingerprint `c6dd6345…`（Build 4〜7 と同一）・FINISHED（2026-11-25T06:58Z）
+> - ビルド前：Build 7（`4d9ac8a`）からの差分はライブ翻訳3ファイル＋本ファイルのみ・npm test 908・tsc 0・lint 20。EAS Free iOS 4/15・超過0円
+> - **Human：** `eas submit`（対話式・`--groups "旅レートカメラ 内部テスト"`）→ ASC VALID・IN_BETA_TESTING を確認 → TestFlight で上書き更新（削除しない）して実機確認（Vault ログ `2026-11-25_旅レートカメラ_ライブ翻訳表示安定化版Build8とTestFlight配布_開発ログ` §7）
+
+> [!important] 2026-11-25（Build 7 の実機確認から）**ライブ翻訳の表示安定化（止めれば落ち着く・動かせば替わる）／実装・テスト済み・Build 8 作成済み・実機未確認**
 > - Build 7（1.0.0 (7)・EAS `f31fbf3a-ccef-442e-a420-7ce750c0cc7d`・`4d9ac8a`）：ASC VALID・IN_BETA_TESTING。EAS Free iOS 3/15。上下・左右は大きく改善、静止中も札と下部の価格が入れ替わり続ける問題が残った
 > - コード commit：`integrate/build6-live-text-fix` `cdba4a3`（次のビルド元・Tier/Pro+ なし）＝ `feat/proplus-core-and-store-assets` に cherry-pick
 > - 原因（シミュレーション・再現テストで確認。実機での内訳は未確定）：読み落としが2回続くと追跡から消えて出直す／同じ値段の行の付け替えで2行の途中（別の商品の行）に置かれて組になる／傾きで「同じ行の2番目」の判定が境目で揺れる／まとめ読み／重なる札の交代
