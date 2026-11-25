@@ -143,7 +143,7 @@ export function keepIdempotencyKey(outcome: AiErrorCode | 'success'): boolean {
 // ── 音声セッション（端末⇔中継の状態。§6-11のメッセージ） ──
 
 export type VoiceServerMessage =
-  | { type: 'session'; session_id: string; resume_token: string }
+  | { type: 'session'; session_id: string; resume_token: string; provisional?: boolean }
   | { type: 'quota'; remaining_user_ms: number; session_remaining_ms: number; period_end?: string; trial?: boolean }
   | { type: 'warn'; remaining_user_ms: number }
   | { type: 'draining' }
@@ -151,6 +151,20 @@ export type VoiceServerMessage =
   | { type: 'error'; code: string };
 
 export type VoicePhase = 'idle' | 'connecting' | 'active' | 'draining' | 'reconnecting' | 'closed' | 'error';
+
+/**
+ * 端末側で起きた問題（中継の語彙ではない。中継の KNOWN_CODES と突き合わせる一覧には入れない）。
+ * mic_denied：マイクの許可が無い／audio_unavailable：取り込み・再生の部品が無い・開けない／proof_unavailable：本人の証拠を取れない
+ */
+export type VoiceLocalIssue = 'mic_denied' | 'audio_unavailable' | 'proof_unavailable';
+
+export function describeVoiceIssue(issue: VoiceLocalIssue): AiErrorInfo {
+  switch (issue) {
+    case 'mic_denied': return { message: 'マイクの使用が許可されていません。設定アプリで旅レートカメラのマイクを許可してから、もう一度お試しください。', recovery: 'none', resumable: false };
+    case 'audio_unavailable': return { message: 'この端末では音声の通訳を始められませんでした。通常の翻訳（翻訳タブの音声入力）をお使いください。', recovery: 'use_device_translation', resumable: false };
+    default: return { message: 'Pro+ の契約を確認できませんでした。契約中の場合は購入の復元をお試しください。', recovery: 'restore_purchase', resumable: false };
+  }
+}
 
 export type VoiceState = {
   phase: VoicePhase;
@@ -162,11 +176,16 @@ export type VoiceState = {
   warning: string | null;
   error: AiErrorCode | null;
   closedReason: string | null;
+  /** 契約の紐付けが未確定で、暫定の小さな枠で動いている（中継の session.provisional） */
+  provisional: boolean;
+  /** 訳の音声を再生中か（端末の再生の時計。半二重の入力の止めに使う） */
+  playing: boolean;
+  localIssue: VoiceLocalIssue | null;
 };
 
 export const VOICE_IDLE: VoiceState = {
   phase: 'idle', sessionId: null, resumeToken: null, resumeCount: 0, remainingUserMs: null, sessionRemainingMs: null,
-  warning: null, error: null, closedReason: null,
+  warning: null, error: null, closedReason: null, provisional: false, playing: false, localIssue: null,
 };
 
 /** 再開（同じセッションのつなぎ直し）の上限の初期値（候補値・H-P3。サーバーの `max_resumes` と同じ6） */
@@ -177,7 +196,11 @@ export type VoiceEvent =
   | { type: 'server'; msg: VoiceServerMessage }
   | { type: 'socket_lost' }
   | { type: 'stop' }
-  | { type: 'reset' };
+  | { type: 'reset' }
+  /** アプリがバックグラウンドへ移った：入力を止めて終える（バックグラウンドで録音しない） */
+  | { type: 'background' }
+  | { type: 'playback'; playing: boolean }
+  | { type: 'local_issue'; issue: VoiceLocalIssue };
 
 /**
  * 音声セッションの状態遷移。残量はサーバーの `quota` だけで更新し、端末で減算しない。
@@ -189,6 +212,13 @@ export function voiceReducer(s: VoiceState, e: VoiceEvent): VoiceState {
       return s.phase === 'idle' || s.phase === 'closed' || s.phase === 'error' ? { ...VOICE_IDLE, phase: 'connecting' } : s;
     case 'reset':
       return VOICE_IDLE;
+    case 'background':
+      if (s.phase === 'reconnecting') return { ...s, phase: 'closed', closedReason: 'background', resumeToken: null, playing: false };
+      return s.phase === 'active' || s.phase === 'connecting' ? { ...s, phase: 'draining', closedReason: 'background' } : s;
+    case 'playback':
+      return s.playing === e.playing ? s : { ...s, playing: e.playing };
+    case 'local_issue':
+      return { ...s, phase: 'error', localIssue: e.issue, resumeToken: null, playing: false };
     case 'stop':
       // 再接続中はつながっていないので、排出を待たずに終える
       if (s.phase === 'reconnecting') return { ...s, phase: 'closed', closedReason: 'stopped', resumeToken: null };
@@ -203,7 +233,7 @@ export function voiceReducer(s: VoiceState, e: VoiceEvent): VoiceState {
       const m = e.msg;
       switch (m.type) {
         case 'session':
-          return { ...s, phase: s.phase === 'draining' ? 'draining' : 'active', sessionId: m.session_id, resumeToken: m.resume_token, error: null };
+          return { ...s, phase: s.phase === 'draining' ? 'draining' : 'active', sessionId: m.session_id, resumeToken: m.resume_token, error: null, provisional: m.provisional === true };
         case 'quota':
           return { ...s, remainingUserMs: m.remaining_user_ms, sessionRemainingMs: m.session_remaining_ms };
         case 'warn':
@@ -211,7 +241,7 @@ export function voiceReducer(s: VoiceState, e: VoiceEvent): VoiceState {
         case 'draining':
           return { ...s, phase: 'draining' };
         case 'closed':
-          return { ...s, phase: 'closed', closedReason: m.reason ?? null, resumeToken: null };
+          return { ...s, phase: 'closed', closedReason: s.closedReason === 'background' ? 'background' : (m.reason ?? null), resumeToken: null, playing: false };
         case 'error': {
           const code = normalizeErrorCode(m.code);
           return { ...s, phase: 'error', error: code, resumeToken: describeAiError(code).resumable ? s.resumeToken : null };
@@ -220,6 +250,24 @@ export function voiceReducer(s: VoiceState, e: VoiceEvent): VoiceState {
     }
   }
   return s;
+}
+
+/**
+ * 音声の回が終わった理由の表示。中継の closed.reason（stop_reason・final）と端末の理由（stopped・background）。
+ * 上限・停止で終わった時は理由が分かるように書く（設計書 §6-4「残量0」「停止スイッチ・全体予算」）。知らない値は汎用の文
+ */
+export function describeClosedReason(reason: string | null): string {
+  switch (reason) {
+    case 'stopped': case 'normal': case 'drained': return '通訳を終了しました。';
+    case 'limit': return '利用の上限に達したため終了しました（今月の残り、または1回の長さの上限）。通常の翻訳（端末内・無料）は引き続き使えます。';
+    case 'idle': return 'しばらく音声が届かなかったため終了しました。';
+    case 'kill_switch': case 'budget': return 'AI翻訳を一時停止しているため終了しました。通常の翻訳（端末内）をお使いください。';
+    case 'superseded': return '別の端末・別の接続で通訳が始まったため、この接続を終了しました。';
+    case 'background': return 'アプリが閉じられたため通訳を終了しました。もう一度始めてください。';
+    case 'quota_exceeded': return '今月のAI音声の利用枠を使い切りました。通常の翻訳（端末内・無料）は引き続き使えます。';
+    case 'session_limit': return '1回の通訳の長さの上限に達したため終了しました。続ける場合はもう一度始めてください。';
+    default: return '通訳が終了しました。';
+  }
 }
 
 /** 音声を送ってよい状態か（入力を止める判定。サーバーの `draining` の後は送らない）。 */

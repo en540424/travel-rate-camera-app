@@ -62,6 +62,14 @@
           "speechRecognitionPermission": "話した内容を文字に変換して翻訳するために音声認識を使用します"
         }
       ],
+      [
+        "react-native-audio-api",
+        {
+          "iosBackgroundMode": false,
+          "androidPermissions": [],
+          "androidForegroundService": false
+        }
+      ],
       "expo-sharing",
       [
         "expo-location",

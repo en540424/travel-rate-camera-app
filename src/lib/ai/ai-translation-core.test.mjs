@@ -98,11 +98,11 @@ test('模擬の中継：同じキーの再送は二重に数えず、別の本�
   assert.deepEqual([over.ok, over.code, over.quota.textRemaining], [false, 'quota_exceeded', 0]);
 });
 
-test('模擬の中継：音声は1秒ごとに残量を送り、停止でdraining→closed。枠が無ければ開始しない', () => {
+test('模擬の中継：音声は1秒ごとに残量を送り、停止でdraining→closed。枠が無ければ開始しない', async () => {
   const ticks = [];
   const g = createMockGateway({ voiceLimitMs: 3000, setTimer: (fn) => { ticks.push(fn); return 1; }, clearTimer: () => {} });
   const msgs = [];
-  const conn = g.openVoice({ direction: 'from_ja', partnerLang: 'en' }, { onMessage: (m) => msgs.push(m), onSocketLost: () => {} });
+  const conn = await g.openVoice({ direction: 'from_ja', partnerLang: 'en' }, { onMessage: (m) => msgs.push(m), onSocketLost: () => {} });
   ticks[0]();
   ticks[0]();
   assert.deepEqual(msgs.map((m) => m.type), ['session', 'quota', 'quota']);
@@ -110,7 +110,7 @@ test('模擬の中継：音声は1秒ごとに残量を送り、停止でdrainin
   assert.deepEqual(msgs.slice(-2).map((m) => m.type), ['draining', 'closed']);
   assert.equal(msgs.at(-1).reason, 'quota_exceeded');
   conn.stop();
-  assert.deepEqual(g.openVoice({ direction: 'from_ja', partnerLang: 'en' }, { onMessage: () => {}, onSocketLost: () => {} }), { error: 'quota_exceeded' });
+  assert.deepEqual(await g.openVoice({ direction: 'from_ja', partnerLang: 'en' }, { onMessage: () => {}, onSocketLost: () => {} }), { error: 'quota_exceeded' });
 });
 
 test('冪等キー：届いたか分からない時（offline）だけ同じキーを使い、答えが返った後は新しいキー（2026-11-25 検収 B2）', () => {

@@ -57,7 +57,7 @@ export function createMockGateway(opts: MockOptions = {}): AiGateway & { state: 
     async getQuota() {
       return { ok: true, quota: quota() };
     },
-    openVoice(_o: VoiceOpenOptions, h: VoiceHandlers): VoiceConnection | { error: 'quota_exceeded' } {
+    async openVoice(_o: VoiceOpenOptions, h: VoiceHandlers): Promise<VoiceConnection | { error: 'quota_exceeded' }> {
       if (state.voiceUsedMs >= voiceLimitMs) return { error: 'quota_exceeded' };
       const TICK = 1000;
       let sessionRemaining = 5 * 60_000;
@@ -79,7 +79,8 @@ export function createMockGateway(opts: MockOptions = {}): AiGateway & { state: 
         h.onMessage({ type: 'draining' });
         h.onMessage({ type: 'closed', reason });
       };
-      return { sendAudio: () => {}, stop: () => finish('stopped'), close: () => { open = false; clearTimer(timer); } };
+      // 模擬：上りの音声は数えず捨てる（訳の音声は返さない。再生の経路の確認は実機の中継で行う）
+      return { sendAudio: () => {}, isOpen: () => open, stop: () => finish('stopped'), close: () => { open = false; clearTimer(timer); } };
     },
   };
 }

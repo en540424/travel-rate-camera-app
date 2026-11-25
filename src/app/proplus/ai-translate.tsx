@@ -3,9 +3,11 @@
  * - 利用量はサーバーが正。この画面は残量を表示するだけで、上限の判定をしない
  * - 初回は送信先と内容の同意を取る。同意しなければ送信しない
  * - 枠切れ・停止・通信不可のときは、通常の翻訳（端末内）へ案内する
+ * - リアルタイム音声は use-voice-session（マイク → 中継 → 訳の音声の再生）。release では AI_VOICE_CAPTURE_READY が真に
+ *   なるまで「準備中」（実機で確かめる前に利用可と見せない）。操作方式（H-P9）は未確定で、今の「始める・終了」は仮の形
  */
 import { router } from 'expo-router';
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 
 import { AccessNotice, Chip, Notice, pp } from '@/components/proplus/proplus-ui';
@@ -15,14 +17,15 @@ import { GhostButton } from '@/components/ui/GhostButton';
 import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { SecondaryButton } from '@/components/ui/SecondaryButton';
 import { SectionCard } from '@/components/ui/SectionCard';
+import { AI_VOICE_CAPTURE_READY } from '@/config/ai-gateway';
 import { getLanguageDisplayName } from '@/config/translation-language-names';
 import { useProPlusAccess } from '@/hooks/use-proplus';
+import { useVoiceSession } from '@/hooks/use-voice-session';
 import { hasAiConsent, saveAiConsent } from '@/lib/ai/ai-consent';
 import { getAiGateway } from '@/lib/ai/ai-gateway-client';
-import type { VoiceConnection } from '@/lib/ai/ai-gateway-types';
 import {
-  countChars, DEFAULT_TEXT_MAX_CHARS, describeAiError, formatDurationMs, formatQuota, languagePair, mergeQuota,
-  keepIdempotencyKey, shouldRetryText, UNKNOWN_QUOTA, validateTextRequest, VOICE_IDLE, voiceReducer, type AiDirection, type AiErrorCode,
+  countChars, DEFAULT_TEXT_MAX_CHARS, describeAiError, describeClosedReason, describeVoiceIssue, formatDurationMs, formatQuota, languagePair, mergeQuota,
+  keepIdempotencyKey, shouldRetryText, UNKNOWN_QUOTA, validateTextRequest, type AiDirection, type AiErrorCode,
 } from '@/lib/ai/ai-translation-core';
 import { canEditProPlusData } from '@/lib/proplus/proplus-access-core';
 import { newLocalId } from '@/lib/proplus/proplus-store-core';
@@ -42,14 +45,19 @@ export default function AiTranslateScreen() {
   const [error, setError] = useState<AiErrorCode | null>(null);
   const [busy, setBusy] = useState(false);
   const [quota, setQuota] = useState(UNKNOWN_QUOTA);
-  const [voice, dispatch] = useReducer(voiceReducer, VOICE_IDLE);
-  const conn = useRef<VoiceConnection | null>(null);
+  const session = useVoiceSession({
+    gateway, direction, partnerLang: partner,
+    onQuota: (m) => setQuota((q) => mergeQuota(q, { voiceRemainingMs: m.remaining_user_ms, periodEnd: m.period_end })),
+  });
+  const voice = session.voice;
+  // release では実機で確かめるまで音声を出さない（開発の build と模擬の中継では状態を確かめられる）
+  const voiceReady = AI_VOICE_CAPTURE_READY || __DEV__;
   // 同じ本文の再送は同じキー（サーバーで二重に消費されない）。本文が変わったら新しいキー
   const keyRef = useRef<{ body: string; key: string } | null>(null);
 
   useEffect(() => {
     void hasAiConsent().then(setConsent);
-    return () => { conn.current?.close(); void stopSpeaking(); };
+    return () => { void stopSpeaking(); };
   }, []);
 
   // 残量の照会も利用者のIDを中継へ送るため、同意の後で、Pro+ を使える時だけ行う
@@ -92,40 +100,13 @@ export default function AiTranslateScreen() {
     await speakText({ text: result, language: target === 'ja' ? 'ja-JP' : target }, { onStart: () => {}, onFinish: () => {}, onError: () => {} });
   }
 
-  function openVoice(resumeToken: string | null) {
-    // 再開の前に古い接続を閉じる（二重に開かない）
-    conn.current?.close();
-    conn.current = null;
-    const c = gateway.openVoice({ direction, partnerLang: partner, resumeToken }, {
-      onMessage: (m) => {
-        dispatch({ type: 'server', msg: m });
-        if (m.type === 'quota') setQuota((q) => mergeQuota(q, { voiceRemainingMs: m.remaining_user_ms, periodEnd: m.period_end }));
-      },
-      onSocketLost: () => dispatch({ type: 'socket_lost' }),
-    });
-    if ('error' in c) { dispatch({ type: 'server', msg: { type: 'error', code: c.error } }); return; }
-    conn.current = c;
-  }
-
   function startVoice() {
     if (!consent) { setError('consent_required'); return; }
-    dispatch({ type: 'start' });
-    openVoice(null);
+    void stopSpeaking();
+    void session.start();
   }
 
-  // 切断後の再開：同じ再開トークンでつなぎ直す（回数の上限は状態遷移側。残量はサーバーが引き継ぐ）
-  const reconnectToken = voice.phase === 'reconnecting' ? voice.resumeToken : null;
-  useEffect(() => {
-    if (reconnectToken) openVoice(reconnectToken);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reconnectToken, voice.resumeCount]);
-
-  function stopVoice() {
-    dispatch({ type: 'stop' });
-    conn.current?.stop();
-  }
-
-  const err = error ? describeAiError(error) : voice.error ? describeAiError(voice.error) : null;
+  const err = error ? describeAiError(error) : voice.localIssue ? describeVoiceIssue(voice.localIssue) : voice.error ? describeAiError(voice.error) : null;
   const voiceActive = voice.phase === 'active' || voice.phase === 'connecting' || voice.phase === 'reconnecting' || voice.phase === 'draining';
   const n = countChars(text.trim());
 
@@ -170,19 +151,24 @@ export default function AiTranslateScreen() {
         状態：{{ idle: '待機中', connecting: '接続中…', active: '通訳中', draining: '終了中…', reconnecting: '再接続中…', closed: '終了しました', error: 'エラー' }[voice.phase]}
         {voice.sessionRemainingMs != null && voiceActive ? `・この回の残り ${formatDurationMs(voice.sessionRemainingMs)}` : ''}
       </ThemedText>
+      {!voiceReady && <Notice>リアルタイム音声は提供開始の準備中です。翻訳タブの音声入力（端末内・無料）をお使いください。</Notice>}
+      {voice.phase === 'active' && <ThemedText style={pp.muted}>{voice.playing ? '訳を再生中…（再生中はマイクの音声を送りません）' : 'マイクで聞き取り中。話してください'}</ThemedText>}
+      {voice.provisional && voiceActive && <Notice>契約の確認中のため、小さな利用枠で動いています。</Notice>}
       {voice.warning && <Notice>{voice.warning}</Notice>}
+      {voice.phase === 'closed' && <ThemedText style={pp.muted}>{describeClosedReason(voice.closedReason)}</ThemedText>}
       {voiceActive ? (
-        <SecondaryButton title="終了" onPress={stopVoice} disabled={voice.phase === 'draining'} />
+        <SecondaryButton title="終了" onPress={session.stop} disabled={voice.phase === 'draining'} />
       ) : (
-        <PrimaryButton title="音声で通訳を始める" onPress={startVoice} disabled={!usable} />
+        <PrimaryButton title="音声で通訳を始める" onPress={startVoice} disabled={!usable || !voiceReady} />
       )}
+      {voice.playing && <GhostButton title="訳の再生を止める" tone="primary" onPress={session.stopPlayback} />}
 
       {err && (
         <SectionCard>
           <ThemedText style={pp.error}>{err.message}</ThemedText>
           {err.recovery === 'use_device_translation' && <GhostButton title="通常の翻訳を開く" tone="primary" onPress={() => router.push('/translation')} />}
           {err.recovery === 'restore_purchase' && <GhostButton title="購入を復元" tone="primary" onPress={() => router.push('/purchase-restore')} />}
-          {(err.recovery === 'retry' || err.recovery === 'retry_later') && <GhostButton title="もう一度" tone="primary" onPress={() => { setError(null); dispatch({ type: 'reset' }); }} />}
+          {(err.recovery === 'retry' || err.recovery === 'retry_later') && <GhostButton title="もう一度" tone="primary" onPress={() => { setError(null); session.reset(); }} />}
         </SectionCard>
       )}
     </ScrollView>
