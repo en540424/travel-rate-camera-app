@@ -20,8 +20,8 @@ import { useIsPro } from '@/hooks/use-purchases';
 import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
-import { convert, normalizeJpyInput } from '@/utils/currency';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
+import { deriveEntryAmounts, webHomeSaveValues } from '@/utils/save-values-core';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
 export default function CameraScreen() {
@@ -59,8 +59,8 @@ export default function CameraScreen() {
   const isReverse = !isJpyMode && inputMode === 'FROM_JPY';
   const inputNum = parseFloat(nativeAmount) || 0;
   // JPY旅行は入力を整数円へ正規化してから扱う（index.tsxと同じ。小数JPYを新たにDBへ入れない）
-  const foreignAmount = isJpyMode ? normalizeJpyInput(inputNum) : (isReverse ? convert(inputNum, rate, 'FROM_JPY') : inputNum);
-  const jpyAmount = isJpyMode ? normalizeJpyInput(inputNum) : (isReverse ? inputNum : convert(inputNum, rate, 'TO_JPY'));
+  // 式は `utils/save-values-core.ts` の `deriveEntryAmounts`（ネイティブと同じ・GX-06・切り出す前と同じ値を回帰テストで固定）
+  const { foreignAmount, jpyAmount } = deriveEntryAmounts({ isJpyMode, rate, inputNum, isReverse });
   // 有限でない金額（Infinity等）は保存対象にしない（集計側でも0扱いだが、入口で明示的に拒否する）
   const canSave = isJpyMode
     ? !!activeTrip && jpyAmount > 0 && Number.isFinite(jpyAmount)
@@ -102,8 +102,10 @@ export default function CameraScreen() {
       setShowSaveLimitSheet(true);
       return;
     }
-    const currencyToSave: CurrencyCode = isJpyMode ? 'JPY' : selectedCurrency;
-    const result = await addEntry(currencyToSave, foreignAmount, jpyAmount, rate, memo.trim() || undefined);
+    // 保存する4つの値は `utils/save-values-core.ts` の `webHomeSaveValues`（Web は選んだ通貨で保存する既存の挙動のまま。
+    // GX-06・切り出す前と同じ値を回帰テストで固定）
+    const v = webHomeSaveValues({ isJpyMode, selectedCurrency, foreignAmount, jpyAmount, rate });
+    const result = await addEntry(v.currency, v.foreignAmount, v.jpyAmount, v.rate, memo.trim() || undefined);
     if (result.busy) return; // 別の保存が進行中。成功扱いにしない
     if (result.blocked) {
       setShowSaveLimitSheet(true);

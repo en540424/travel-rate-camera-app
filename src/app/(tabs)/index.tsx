@@ -38,12 +38,13 @@ import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { color, radius, shadow, spacing, statusColor, typography } from '@/theme/tokens';
-import { convert, normalizeJpyInput } from '@/utils/currency';
+import { convert } from '@/utils/currency';
 import { extractMemoLines, extractPriceCandidates } from '@/utils/extract-prices';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
 import { mergeMemoCandidates, resolveMemoCandidateDisplay } from '@/utils/memo-candidate-display';
 import { resolveMemoInsertText } from '@/utils/memo-candidate-insert';
 import { appendMemoText, MEMO_MAX_LENGTH, removeMemoText, replaceMemoText } from '@/utils/memo-text';
+import { deriveEntryAmounts, nativeHomeSaveValues } from '@/utils/save-values-core';
 import {
   DEFAULT_BENCHMARK_ARMS,
   EXTRA_BENCHMARK_ARMS,
@@ -269,8 +270,8 @@ export default function CameraScreen() {
   const inputNum = parseFloat(nativeAmount) || 0;
   // JPY旅行は入力を整数円へ正規化してから扱う（`normalizeJpyInput`）。decimal-pad＋parseFloatで小数が入っても
   // 表示（formatJpy）と同じ値を保存し、小数JPYを新たにDBへ入れない。外貨→円の換算値はここでは丸めない（従来どおり）
-  const foreignAmount = isJpyMode ? normalizeJpyInput(inputNum) : (isReverse ? convert(inputNum, rate, 'FROM_JPY') : inputNum);
-  const jpyAmount = isJpyMode ? normalizeJpyInput(inputNum) : (isReverse ? inputNum : convert(inputNum, rate, 'TO_JPY'));
+  // 式は `utils/save-values-core.ts` の `deriveEntryAmounts`（GX-06・切り出す前と同じ値を回帰テストで固定）
+  const { foreignAmount, jpyAmount } = deriveEntryAmounts({ isJpyMode, rate, inputNum, isReverse });
   // 有限でない金額（Infinity等）は保存対象にしない（集計側でも0扱いだが、入口で明示的に拒否する）
   // JPYは正規化後の値で判定する（"0.4"→0円は保存不可）
   const canSave = isJpyMode
@@ -852,9 +853,17 @@ export default function CameraScreen() {
         photoSaveFailed = true;
       }
     }
-    const currencyToSave = activeTrip.base_currency;
-    const rateToSave = currencyToSave === 'JPY' ? 1 : activeTrip.manual_rate;
-    const foreignAmountToSave = currencyToSave === 'JPY' ? jpyAmount : foreignAmount;
+    // 保存する4つの値は `utils/save-values-core.ts` の `nativeHomeSaveValues`（GX-06・切り出す前と同じ値を回帰テストで固定）
+    const {
+      currency: currencyToSave,
+      foreignAmount: foreignAmountToSave,
+      rate: rateToSave,
+    } = nativeHomeSaveValues({
+      baseCurrency: activeTrip.base_currency,
+      manualRate: activeTrip.manual_rate,
+      foreignAmount,
+      jpyAmount,
+    });
     try {
       const result = await addEntry(
         currencyToSave,

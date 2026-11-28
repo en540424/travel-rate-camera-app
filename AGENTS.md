@@ -46,7 +46,7 @@ UI修正がこれらへ波及しそうな場合は、実装せず変更案の提
 - 変更前に必ず現在のbranch・HEAD・upstream・working tree状態を確認する
 - 検収コマンド：`npx tsc --noEmit`、`npm test`（`node --test "src/**/*.test.mjs"`）、`npm run lint`（`expo lint`）
 - 日本語の直書きの検査（2026-11-28・GX-03）：`npm test` に含まれる `src/i18n/ja-literals.test.mjs` が、画面に出る日本語の件数をファイルごとの基準値（`src/i18n/ja-literals-baseline.json`）と比べる。**新しい文言は翻訳キー（`useT()`・`src/i18n/dict/`）で書く**。キー化で減ったら `node scripts/i18n/ja-literals.mjs --update` で基準値を下げる。増やす必要がある時だけ `--allow-increase` を付ける（理由を commit に書く）。正本は Vault `旅レートカメラ_多言語多通貨海外展開_機能正本・実装追跡表_2026-11-28`
-- `npm test`は`src/`配下の`*.test.mjs`（純ロジックのユニットテスト）を実行する。**`node --test src/`はNode 24ではテストを発見できない**ためglob指定を使う。lintのbaselineは**20 problems（16 errors / 4 warnings）**で、これを増やさないことを条件とする（2026-09-12実測。旧記載の「23 problems（16 errors / 7 warnings）」はwarning 3件が解消済みで古い）
+- `npm test`は`src/`配下の`*.test.mjs`（純ロジックのユニットテスト）を実行する。**`node --test src/`はNode 24ではテストを発見できない**ためglob指定を使う。lintのbaselineは**19 problems（15 errors / 4 warnings）**で、これを増やさないことを条件とする（2026-11-28 GX-06 で `index.tsx` の `react-hooks/purity` の誤検知1件が消えた。それ以前は 20 problems〈16 errors / 4 warnings〉・2026-09-12実測。旧記載の「23 problems（16 errors / 7 warnings）」はwarning 3件が解消済みで古い）
 - UI・DB・課金・OCRなどユニットテスト不可能な領域は引き続き実機確認で担保する（`TEST_CHECKLIST.md`）
 - 変更範囲は指定されたファイル・機能に限定する
 

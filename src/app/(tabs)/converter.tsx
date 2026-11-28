@@ -22,8 +22,8 @@ import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { color, radius, shadow, spacing } from '@/theme/tokens';
-import { convert, normalizeJpyInput } from '@/utils/currency';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
+import { converterAmounts, converterSaveValues } from '@/utils/save-values-core';
 
 async function copySelectedImageToPhotos(uri: string): Promise<string | undefined> {
   const docsDir = FileSystem.documentDirectory;
@@ -60,16 +60,20 @@ export default function ConverterScreen() {
   const tripCurrency = activeTrip?.base_currency ?? null;
   const isJpyMode = tripCurrency === 'JPY';
   const tripRate = activeTrip?.manual_rate ?? 0;
-  const effectiveRate = !activeTrip
-    ? 0
-    : isJpyMode
-      ? 1
-      : (tripRate > 0 ? tripRate : (rates[tripCurrency as CurrencyCode] ?? 0));
   const amount = parseFloat(amountText) || 0;
   const isReverse = !!activeTrip && !isJpyMode && direction === 'FROM_JPY';
   // JPY旅行は入力を整数円へ正規化する（`normalizeJpyInput`）。保存する`foreign_amount`/`jpy_amount`も
   // この値を使い、小数JPYを新たにDBへ入れない。外貨→円の換算値はここでは丸めない（従来どおり）
-  const result = !activeTrip ? 0 : isJpyMode ? normalizeJpyInput(amount) : convert(amount, effectiveRate, direction);
+  // レート（旅行のレートが0なら予備のレート）と換算結果の式は `utils/save-values-core.ts` の `converterAmounts`
+  // （GX-06・切り出す前と同じ値を回帰テストで固定）
+  const { effectiveRate, result } = converterAmounts({
+    hasTrip: !!activeTrip,
+    isJpyMode,
+    tripRate,
+    fallbackRate: rates[tripCurrency as CurrencyCode],
+    amount,
+    direction,
+  });
   const hasRate = isJpyMode || effectiveRate > 0;
   // 有限でない金額（Infinity等）は保存対象にしない。JPYは正規化後の値が0（"0.4"等）でも保存対象にしない
   // （外貨側の判定は従来どおり。逆方向表示を含め挙動を変えない）
@@ -118,7 +122,9 @@ export default function ConverterScreen() {
     // 保存ロジック本体（addEntry）は変更しない。
     try {
       // JPY旅行は foreign_amount にも正規化後の整数円（result）を入れる（旧実装は parseFloat の生値だった）
-      const saveOutcome = await addEntry(tripCurrency, isJpyMode ? result : amount, result, effectiveRate, undefined, savedUri, saveAsPurchased);
+      // 保存する4つの値は `utils/save-values-core.ts` の `converterSaveValues`（GX-06・切り出す前と同じ値を回帰テストで固定）
+      const v = converterSaveValues({ tripCurrency, isJpyMode, amount, result, effectiveRate });
+      const saveOutcome = await addEntry(v.currency, v.foreignAmount, v.jpyAmount, v.rate, undefined, savedUri, saveAsPurchased);
       if (saveOutcome.blocked) {
         setShowSaveLimitSheet(true);
         return; // 入力値を保持したまま終了
