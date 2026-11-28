@@ -9,7 +9,8 @@
  * 既存の旅行はすべて `target_currency = 'JPY'`（書く経路がまだ無い）なので、今の利用者の記録はすべて 'JPY' と読まれる。
  */
 import { CURRENCIES, type CurrencyCode } from '@/constants/currencies';
-import { isDomestic } from '@/utils/money-core';
+import type { EditHomeContext } from '@/utils/edit-amount-core';
+import { isDomestic, roundMoney } from '@/utils/money-core';
 
 /** 7通貨のどれかならその値、それ以外（null・undefined・空文字・小文字・未知の通貨・文字列以外）は 'JPY' */
 export function normalizeHomeCurrency(value: unknown): CurrencyCode {
@@ -82,4 +83,20 @@ export function isDomesticTrip(
  */
 export function isDomesticRecord(record: { currency: CurrencyCode; home_currency: unknown }): boolean {
   return isDomestic(record.currency, normalizeHomeCurrency(record.home_currency));
+}
+
+/**
+ * 記録の編集（`edit-amount-core.ts`）に渡す基準通貨と丸め（GX-06 段階 c）。`edit-amount-core` は値の import を
+ * 持たない（S8）ので、丸めはここで `roundMoney` を注入する。基準通貨が円の記録では `edit-amount-core` が今の規則の
+ * 分岐を通るので、丸め関数は使われない。記録の通貨が7通貨に無い（壊れた値）時は、記録の通貨の丸めをしない
+ */
+export function editHomeContextFor(record: { currency: string; home_currency: unknown }): EditHomeContext {
+  const home = normalizeHomeCurrency(record.home_currency);
+  const local = record.currency;
+  const localKnown = Object.prototype.hasOwnProperty.call(CURRENCIES, local);
+  return {
+    homeCurrency: home,
+    roundHome: (amount) => roundMoney(amount, home),
+    roundLocal: (amount) => (localKnown ? roundMoney(amount, local as CurrencyCode) : amount),
+  };
 }

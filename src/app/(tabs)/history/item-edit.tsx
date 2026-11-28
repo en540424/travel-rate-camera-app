@@ -17,7 +17,8 @@ import { getHistoryById } from '@/db/queries/history';
 import { useHistory } from '@/hooks/use-history';
 import { useUnsavedChangesStore } from '@/stores/unsaved-changes-store';
 import { color, radius, shadow } from '@/theme/tokens';
-import { resolveEditedAmount } from '@/utils/edit-amount-core';
+import { initialAmountText, previewHomeAmount, resolveEditedAmount } from '@/utils/edit-amount-core';
+import { editHomeContextFor, isDomesticRecord } from '@/utils/home-currency-core';
 import { itemStackBaseOf } from '@/utils/item-route-core';
 import { deleteStoredPhotoFile } from '@/utils/resolve-image-uri';
 import { formatJpy } from '@/utils/format';
@@ -153,7 +154,13 @@ export default function ItemEditScreen() {
       refreshDraftOnNextItemRef.current = false;
       // JPYは整数円で表示・編集する（一覧の`formatJpy`と同じ`Math.round`）。DBに小数JPYが残っている既存記録でも
       // 欄には丸めた値を出し、金額を触らなければ`resolveEditedAmount`が同値と判定してDBの値は書き換えない。
-      const initialAmount = item.currency === 'JPY' ? String(Math.round(item.jpy_amount)) : String(item.foreign_amount);
+      // 式は `utils/edit-amount-core.ts` の `initialAmountText`（基準通貨が円の記録は今の式のまま・GX-06 段階 c・SF3）
+      const initialAmount = initialAmountText({
+        currency: item.currency,
+        foreignAmount: item.foreign_amount,
+        jpyAmount: item.jpy_amount,
+        home: editHomeContextFor(item),
+      });
       const initialMemo = item.memo ?? '';
       const initialIsPurchased = (item.is_purchased ?? 0) === 1;
       const initialPhotoUri = item.image_uri ?? null;
@@ -305,17 +312,17 @@ export default function ItemEditScreen() {
   // 無料版で記録対象以外の旅行（終了済み等）の記録も、保存済みの記録の訂正としてここで編集できる
   // （2026-10-20 Human確定）。新しい記録の追加・旅行の再開はこの画面には無い。
 
-  const isForeign = item.currency !== 'JPY';
-  const previewJpy = (() => {
-    if (isForeign) {
-      const f = parseFloat(amount);
-      return isFinite(f) && f > 0 ? Math.round(f * item.rate_used) : null;
-    }
-    // JPYは`resolveEditedAmount`と同じ規則（parseFloat→Math.round）で見せる。保存される値とプレビューを一致させる
-    const parsed = parseFloat(amount);
-    const n = isFinite(parsed) ? Math.round(parsed) : NaN;
-    return isFinite(n) && n > 0 ? n : null;
-  })();
+  const isForeign = !isDomesticRecord(item);
+  // JPYは`resolveEditedAmount`と同じ規則（parseFloat→Math.round）で見せる。保存される値とプレビューを一致させる。
+  // 式は `utils/edit-amount-core.ts` の `previewHomeAmount`（基準通貨が円の記録は今の式のまま・GX-06 段階 c・SF3）
+  const previewJpy = previewHomeAmount({
+    currency: item.currency,
+    text: amount,
+    currentForeignAmount: item.foreign_amount,
+    currentJpyAmount: item.jpy_amount,
+    rateUsed: item.rate_used,
+    home: editHomeContextFor(item),
+  });
 
   /**
    * 撮影・選択した写真を「未保存の下書き」として採用する。
@@ -394,6 +401,7 @@ export default function ItemEditScreen() {
       currentForeignAmount: current.foreign_amount,
       currentJpyAmount: current.jpy_amount,
       rateUsed: current.rate_used,
+      home: editHomeContextFor(current),
     });
     if (!amountResolution.ok) {
       Alert.alert(
