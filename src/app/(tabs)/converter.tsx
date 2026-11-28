@@ -23,6 +23,7 @@ import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { color, radius, shadow, spacing } from '@/theme/tokens';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
+import { isDomesticTrip, tripHomeCurrency } from '@/utils/home-currency-core';
 import { converterAmounts, converterSaveValues } from '@/utils/save-values-core';
 
 async function copySelectedImageToPhotos(uri: string): Promise<string | undefined> {
@@ -58,26 +59,32 @@ export default function ConverterScreen() {
 
   // 通貨は常に現在の旅行の基準通貨。ここでは選ばせない。
   const tripCurrency = activeTrip?.base_currency ?? null;
+  // 国内（現地通貨＝基準通貨）と基準通貨。レート・換算結果・保存できるかの判定・保存する4つの値に使う（GX-06 段階 d。
+  // 基準通貨が円の旅行では今の `tripCurrency === 'JPY'` と同じ値）
+  const isDomestic = isDomesticTrip(activeTrip);
+  const homeCurrency: CurrencyCode = activeTrip ? tripHomeCurrency(activeTrip) : 'JPY';
+  // 表示（ラベル・キーボード・円の記号）だけに使う旧い判定。S2・S3 で置き換える（基準通貨が円の旅行では `isDomestic` と同じ値）
   const isJpyMode = tripCurrency === 'JPY';
   const tripRate = activeTrip?.manual_rate ?? 0;
   const amount = parseFloat(amountText) || 0;
-  const isReverse = !!activeTrip && !isJpyMode && direction === 'FROM_JPY';
+  const isReverse = !!activeTrip && !isDomestic && direction === 'FROM_JPY';
   // JPY旅行は入力を整数円へ正規化する（`normalizeJpyInput`）。保存する`foreign_amount`/`jpy_amount`も
   // この値を使い、小数JPYを新たにDBへ入れない。外貨→円の換算値はここでは丸めない（従来どおり）
   // レート（旅行のレートが0なら予備のレート）と換算結果の式は `utils/save-values-core.ts` の `converterAmounts`
   // （GX-06・切り出す前と同じ値を回帰テストで固定）
   const { effectiveRate, result } = converterAmounts({
     hasTrip: !!activeTrip,
-    isJpyMode,
+    isJpyMode: isDomestic,
     tripRate,
     fallbackRate: rates[tripCurrency as CurrencyCode],
     amount,
     direction,
+    homeCurrency,
   });
-  const hasRate = isJpyMode || effectiveRate > 0;
+  const hasRate = isDomestic || effectiveRate > 0;
   // 有限でない金額（Infinity等）は保存対象にしない。JPYは正規化後の値が0（"0.4"等）でも保存対象にしない
   // （外貨側の判定は従来どおり。逆方向表示を含め挙動を変えない）
-  const hasResult = !!activeTrip && amount > 0 && (!isJpyMode || result > 0) && hasRate && Number.isFinite(result);
+  const hasResult = !!activeTrip && amount > 0 && (!isDomestic || result > 0) && hasRate && Number.isFinite(result);
 
   function switchDirection(next: ConversionDirection) {
     setDirection(next);
@@ -123,7 +130,7 @@ export default function ConverterScreen() {
     try {
       // JPY旅行は foreign_amount にも正規化後の整数円（result）を入れる（旧実装は parseFloat の生値だった）
       // 保存する4つの値は `utils/save-values-core.ts` の `converterSaveValues`（GX-06・切り出す前と同じ値を回帰テストで固定）
-      const v = converterSaveValues({ tripCurrency, isJpyMode, amount, result, effectiveRate });
+      const v = converterSaveValues({ tripCurrency, isJpyMode: isDomestic, amount, result, effectiveRate });
       const saveOutcome = await addEntry(v.currency, v.foreignAmount, v.jpyAmount, v.rate, undefined, savedUri, saveAsPurchased);
       if (saveOutcome.blocked) {
         setShowSaveLimitSheet(true);
@@ -229,8 +236,8 @@ export default function ConverterScreen() {
             </Pressable>
           )}
 
-          {/* 換算方向切り替え（JPY国内モードでは非表示） */}
-          {!isJpyMode && (
+          {/* 換算方向切り替え（国内では非表示。計算側の `isReverse` と同じ判定・GX-06 段階 d・Fable SF1） */}
+          {!isDomestic && (
             <View style={styles.segment}>
               <Pressable
                 style={[styles.segBtn, !isReverse && styles.segBtnActive]}

@@ -92,3 +92,24 @@ test('Web：旅行の保存先が壊れている・旅行が見つからない�
   setWeb(HISTORY, [{ id: 1, target_currency: 'JPY' }]);
   deepEqual(S.getTripStatsForDisplay(B.EMPTY_BUDGET_TOTALS, 10, 2), B.computeBudgetStatsFromTotals(B.sumBudgetTotals(rows), 10));
 });
+
+test('tripStatsHomeCurrency（GX-06 段階 d）：Web は stats と同じ localStorage の旅行から旅行の id で引く・native は渡した値', () => {
+  globalThis.__TEST_PLATFORM_OS = 'web';
+  setWeb(HISTORY, TRIPS);
+  // 渡された第2引数（store の activeTrip.target_currency）は使わない
+  equal(S.tripStatsHomeCurrency(2, 'JPY'), 'USD');
+  equal(S.tripStatsHomeCurrency(1, 'USD'), 'JPY');
+  // 旅行が無い・見つからない・壊れた保存先は JPY（stats は単位なしで合計する）
+  equal(S.tripStatsHomeCurrency(null, 'USD'), 'JPY');
+  equal(S.tripStatsHomeCurrency(undefined, 'USD'), 'JPY');
+  equal(S.tripStatsHomeCurrency(99, 'USD'), 'JPY');
+  store.set('travelrate:trips', '{broken');
+  equal(S.tripStatsHomeCurrency(2, 'USD'), 'JPY');
+  // 記録の id（例：id 3 は旅行 2 の記録）を渡しても旅行の基準通貨にはならない（旅行の id で引く）
+  setWeb(HISTORY, [{ id: 2, target_currency: 'USD' }]);
+  equal(S.tripStatsHomeCurrency(3, 'JPY'), 'JPY');
+  globalThis.__TEST_PLATFORM_OS = 'ios';
+  equal(S.tripStatsHomeCurrency(2, 'EUR'), 'EUR');
+  equal(S.tripStatsHomeCurrency(2, undefined), 'JPY');
+  equal(S.tripStatsHomeCurrency(2, 'eur'), 'JPY');
+});

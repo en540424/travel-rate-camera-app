@@ -54,7 +54,7 @@ import {
 import type { VisionOcrBenchmarkArmDefinition, VisionOcrBenchmarkArmId, VisionOcrBenchmarkResult } from '@/utils/ocr-benchmark';
 import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
 import { remainingAfterSaving, remainingSaveSlots, shouldShowNearSaveLimit } from '@/utils/budget-core';
-import { budgetUnitsForHome } from '@/utils/home-currency-core';
+import { budgetUnitsForHome, isDomesticTrip, tripHomeCurrency } from '@/utils/home-currency-core';
 import {
   adoptChosenPhoto,
   adoptNewReadingPhoto,
@@ -262,20 +262,26 @@ export default function CameraScreen() {
     };
   }, []);
 
+  // 国内（現地通貨＝基準通貨）と基準通貨。額の計算・保存できるかの判定・保存する4つの値に使う（GX-06 段階 d。
+  // 基準通貨が円の旅行では今の `base_currency === 'JPY'` と同じ値）。handleSave も同じ描画の activeTrip から作った値を使う
+  const isDomestic = isDomesticTrip(activeTrip);
+  const homeCurrency: CurrencyCode = activeTrip ? tripHomeCurrency(activeTrip) : 'JPY';
+  // 表示（ラベル・キーボード・円の記号）だけに使う旧い判定。S2・S3 で置き換える（基準通貨が円の旅行では `isDomestic` と同じ値）
   const isJpyMode = activeTrip?.base_currency === 'JPY';
   const currencyForDisplay = activeTrip?.base_currency ?? selectedCurrency;
   const tripRate = activeTrip?.manual_rate ?? 0;
+  // 旅行が無い時だけ予備のレート（canSave が旅行を必須にするので保存には届かない）
   const globalRate = rates[currencyForDisplay] ?? 0;
-  const rate = activeTrip ? (isJpyMode ? 1 : tripRate) : globalRate;
-  const isReverse = !isJpyMode && inputMode === 'FROM_JPY';
+  const rate = activeTrip ? (isDomestic ? 1 : tripRate) : globalRate;
+  const isReverse = !isDomestic && inputMode === 'FROM_JPY';
   const inputNum = parseFloat(nativeAmount) || 0;
   // JPY旅行は入力を整数円へ正規化してから扱う（`normalizeJpyInput`）。decimal-pad＋parseFloatで小数が入っても
   // 表示（formatJpy）と同じ値を保存し、小数JPYを新たにDBへ入れない。外貨→円の換算値はここでは丸めない（従来どおり）
   // 式は `utils/save-values-core.ts` の `deriveEntryAmounts`（GX-06・切り出す前と同じ値を回帰テストで固定）
-  const { foreignAmount, jpyAmount } = deriveEntryAmounts({ isJpyMode, rate, inputNum, isReverse });
+  const { foreignAmount, jpyAmount } = deriveEntryAmounts({ isJpyMode: isDomestic, rate, inputNum, isReverse, homeCurrency });
   // 有限でない金額（Infinity等）は保存対象にしない（集計側でも0扱いだが、入口で明示的に拒否する）
   // JPYは正規化後の値で判定する（"0.4"→0円は保存不可）
-  const canSave = isJpyMode
+  const canSave = isDomestic
     ? !!activeTrip && jpyAmount > 0 && Number.isFinite(jpyAmount)
     : !!activeTrip && rate > 0 && foreignAmount > 0 && jpyAmount > 0 && Number.isFinite(jpyAmount);
   const c = CURRENCIES[currencyForDisplay];
@@ -866,6 +872,7 @@ export default function CameraScreen() {
       manualRate: activeTrip.manual_rate,
       foreignAmount,
       jpyAmount,
+      homeCurrency,
     });
     try {
       const result = await addEntry(
@@ -1607,8 +1614,9 @@ export default function CameraScreen() {
                     </View>
                   </View>
 
-                  {/* 入力モード切替（JPYモードでは非表示）。失敗・手入力主導は2ボタン / OCR成功は逆換算リンク。 */}
-                  {!isJpyMode && (
+                  {/* 入力モード切替（国内＝現地通貨と基準通貨が同じ旅行では非表示）。失敗・手入力主導は2ボタン / OCR成功は逆換算リンク。
+                      計算側の `isReverse`（`!isDomestic`）と同じ判定にそろえる（GX-06 段階 d・Fable SF1） */}
+                  {!isDomestic && (
                     manualOpenByDefault ? (
                       <View style={styles.inputModeRow}>
                         <TouchableOpacity

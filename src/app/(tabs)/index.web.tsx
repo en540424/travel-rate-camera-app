@@ -22,9 +22,9 @@ import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { remainingAfterSaving } from '@/utils/budget-core';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
-import { budgetUnitsForHome } from '@/utils/home-currency-core';
-import { deriveEntryAmounts, webHomeSaveValues } from '@/utils/save-values-core';
-import { getTripStatsForDisplay } from '@/utils/trip-stats';
+import { budgetUnitsForHome, isDomesticTrip, tripHomeCurrency } from '@/utils/home-currency-core';
+import { deriveEntryAmounts, webEntryRate, webHomeSaveValues } from '@/utils/save-values-core';
+import { getTripStatsForDisplay, tripStatsHomeCurrency } from '@/utils/trip-stats';
 
 export default function CameraScreen() {
   const [nativeAmount, setNativeAmount] = useState('');
@@ -54,17 +54,22 @@ export default function CameraScreen() {
     }, [reload]),
   );
 
+  // 国内（現地通貨＝基準通貨）と基準通貨。レート・額・保存できるかの判定・保存する4つの値に使う（GX-06 段階 d。
+  // 基準通貨が円の旅行では今の `base_currency === 'JPY'` と同じ値）
+  const isDomestic = isDomesticTrip(activeTrip);
+  const homeCurrency: CurrencyCode = activeTrip ? tripHomeCurrency(activeTrip) : 'JPY';
+  // 表示（ラベル・キーボード・円の記号）だけに使う旧い判定。S2・S3 で置き換える（基準通貨が円の旅行では `isDomestic` と同じ値）
   const isJpyMode = activeTrip?.base_currency === 'JPY';
   const tripRate = activeTrip?.manual_rate ?? 0;
-  const globalRate = rates[selectedCurrency] ?? 0;
-  const rate = isJpyMode ? 1 : (tripRate > 0 ? tripRate : globalRate);
-  const isReverse = !isJpyMode && inputMode === 'FROM_JPY';
+  // 旅行のレートが0なら予備のレート（rates[selectedCurrency]＝1単位あたりの円）。基準通貨が円の時だけ使う（§6・S1）
+  const rate = webEntryRate({ isJpyMode: isDomestic, tripRate, fallbackRate: rates[selectedCurrency], homeCurrency });
+  const isReverse = !isDomestic && inputMode === 'FROM_JPY';
   const inputNum = parseFloat(nativeAmount) || 0;
   // JPY旅行は入力を整数円へ正規化してから扱う（index.tsxと同じ。小数JPYを新たにDBへ入れない）
   // 式は `utils/save-values-core.ts` の `deriveEntryAmounts`（ネイティブと同じ・GX-06・切り出す前と同じ値を回帰テストで固定）
-  const { foreignAmount, jpyAmount } = deriveEntryAmounts({ isJpyMode, rate, inputNum, isReverse });
+  const { foreignAmount, jpyAmount } = deriveEntryAmounts({ isJpyMode: isDomestic, rate, inputNum, isReverse, homeCurrency });
   // 有限でない金額（Infinity等）は保存対象にしない（集計側でも0扱いだが、入口で明示的に拒否する）
-  const canSave = isJpyMode
+  const canSave = isDomestic
     ? !!activeTrip && jpyAmount > 0 && Number.isFinite(jpyAmount)
     : !!activeTrip && rate > 0 && foreignAmount > 0 && jpyAmount > 0 && Number.isFinite(jpyAmount);
   const c = CURRENCIES[isJpyMode ? 'JPY' : selectedCurrency];
@@ -74,9 +79,11 @@ export default function CameraScreen() {
     [budgetTotals, tripBudgetJpy, activeTrip?.id],
   );
 
-  // 小数の基準通貨の旅行だけ最小単位で引く（円の旅行は今の式のまま・GX-06 段階 c-2）
+  // 小数の基準通貨の旅行だけ最小単位で引く（円の旅行は今の式のまま・GX-06 段階 c-2）。
+  // 基準通貨は `stats` と同じ出どころ（localStorage の旅行・旅行の id で引く）にそろえる（GX-06 段階 d・c-2 の Fable N-d）
+  const statsHomeCurrency = tripStatsHomeCurrency(activeTrip?.id, activeTrip?.target_currency);
   const remainingIfSaved = canSave
-    ? remainingAfterSaving(stats.remainingBudget, jpyAmount, budgetUnitsForHome(activeTrip?.target_currency))
+    ? remainingAfterSaving(stats.remainingBudget, jpyAmount, budgetUnitsForHome(statsHomeCurrency))
     : null;
   const budgetUsedRatio = tripBudgetJpy > 0
     ? Math.min(1, stats.purchasedTotalJpy / tripBudgetJpy)
@@ -107,7 +114,7 @@ export default function CameraScreen() {
     }
     // 保存する4つの値は `utils/save-values-core.ts` の `webHomeSaveValues`（Web は選んだ通貨で保存する既存の挙動のまま。
     // GX-06・切り出す前と同じ値を回帰テストで固定）
-    const v = webHomeSaveValues({ isJpyMode, selectedCurrency, foreignAmount, jpyAmount, rate });
+    const v = webHomeSaveValues({ isJpyMode: isDomestic, selectedCurrency, foreignAmount, jpyAmount, rate, homeCurrency });
     const result = await addEntry(v.currency, v.foreignAmount, v.jpyAmount, v.rate, memo.trim() || undefined);
     if (result.busy) return; // 別の保存が進行中。成功扱いにしない
     if (result.blocked) {
@@ -174,8 +181,8 @@ export default function CameraScreen() {
 
             {/* 金額入力カード */}
             <View style={styles.inputCard}>
-              {/* 入力モード切り替え（JPY モードでは非表示） */}
-              {!isJpyMode && (
+              {/* 入力モード切り替え（国内では非表示。計算側の `isReverse` と同じ判定・GX-06 段階 d・Fable SF1） */}
+              {!isDomestic && (
                 <View style={styles.inputModeRow}>
                   <TouchableOpacity
                     style={[styles.inputModeBtn, !isReverse && styles.inputModeBtnActive]}

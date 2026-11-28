@@ -407,10 +407,19 @@ test('SF3：保存したら残り（remainingAfterSaving）は units で最小�
       }
     }
   }
-  // 配線：ホーム（native・Web）とも旅行の基準通貨を渡す
-  for (const p of ['../../app/(tabs)/index.tsx', '../../app/(tabs)/index.web.tsx']) {
+  // 配線：ホーム（native・Web）とも旅行の基準通貨を渡す。
+  // Web は GX-06 段階 d（c-2 の Fable N-d）で、store の activeTrip ではなく stats と同じ出どころ（localStorage の旅行を
+  // 旅行の id で引く `tripStatsHomeCurrency`）の基準通貨を渡すように変えた（値の検査は trip-stats.test.mjs）
+  const WIRING = {
+    '../../app/(tabs)/index.tsx': ['remainingAfterSaving(stats.remainingBudget, jpyAmount, budgetUnitsForHome(activeTrip?.target_currency))'],
+    '../../app/(tabs)/index.web.tsx': [
+      'const statsHomeCurrency = tripStatsHomeCurrency(activeTrip?.id, activeTrip?.target_currency);',
+      'remainingAfterSaving(stats.remainingBudget, jpyAmount, budgetUnitsForHome(statsHomeCurrency))',
+    ],
+  };
+  for (const [p, needles] of Object.entries(WIRING)) {
     const src = readFileSync(new URL(p, import.meta.url), 'utf8');
-    ok(src.includes('remainingAfterSaving(stats.remainingBudget, jpyAmount, budgetUnitsForHome(activeTrip?.target_currency))'), p);
+    for (const n of needles) ok(src.includes(n), `${p}: ${n}`);
     ok(!src.includes('stats.remainingBudget - Math.round(jpyAmount)'), p);
   }
 });

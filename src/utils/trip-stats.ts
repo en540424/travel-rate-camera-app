@@ -12,6 +12,7 @@ import {
   budgetTotalsForHome,
   budgetUnitsForHome,
   homeCurrencyOfTrip,
+  normalizeHomeCurrency,
   tripHomesFromJson,
 } from '@/utils/home-currency-core';
 
@@ -66,6 +67,19 @@ export interface TripStats {
  */
 export function getTripStats(rows: HistoryRow[], budgetJpy: number): TripStats {
   return computeBudgetStats(rows, budgetJpy);
+}
+
+/**
+ * `getTripStatsForDisplay` が残り予算に使う基準通貨（GX-06 段階 d）。Web は localStorage の旅行から旅行の id で引く
+ * （store の `activeTrip` ではなく `stats` と同じ出どころ）。旅行が無い時は 'JPY'（`stats` は単位なしで合計する）。
+ * ネイティブは渡された基準通貨（`activeTrip.target_currency`）を正規化した値
+ */
+export function tripStatsHomeCurrency(activeTripId?: number | null, homeCurrency?: unknown): CurrencyCode {
+  if (Platform.OS === 'web') {
+    if (activeTripId == null) return 'JPY';
+    return homeCurrencyOfTrip(activeTripId, loadTripHomesFromWebStorage());
+  }
+  return normalizeHomeCurrency(homeCurrency);
 }
 
 /**
