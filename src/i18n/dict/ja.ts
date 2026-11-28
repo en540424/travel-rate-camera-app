@@ -21,6 +21,8 @@ export const ja = {
   'settings.language.followsSystem': 'iPhoneの「設定」でこのアプリの言語を変えられます',
   'settings.language.openSystemSettings': '「設定」を開く',
   'count.records': { other: '{count}件' },
+  'csv.header.convertedAmount': '換算金額',
+  'csv.header.convertedCurrency': '換算通貨',
 } as const satisfies Dictionary;
 
 export type MessageKey = keyof typeof ja;

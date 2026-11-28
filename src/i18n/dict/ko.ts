@@ -18,4 +18,6 @@ export const ko: Record<MessageKey, DictValue> = {
   'settings.language.followsSystem': 'iPhone 설정에서 이 앱의 언어를 바꿀 수 있습니다.',
   'settings.language.openSystemSettings': '설정 열기',
   'count.records': { other: '{count}건' },
+  'csv.header.convertedAmount': '환산 금액',
+  'csv.header.convertedCurrency': '환산 통화',
 };

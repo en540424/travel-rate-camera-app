@@ -182,3 +182,11 @@ export function budgetTotalsByTripFromRows(
   }
   return map;
 }
+
+/**
+ * CSV（`csv-export-core.ts` の `roundInHome`）に注入する丸め（GX-06 段階 c-3・S8）。
+ * 基準通貨の桁で1件の額を丸める（`roundMoney`）。7通貨に無い値は 'JPY' と読む（§11 C3）
+ */
+export function roundInHomeCurrency(amount: number, homeCurrency: string): number {
+  return roundMoney(amount, normalizeHomeCurrency(homeCurrency));
+}

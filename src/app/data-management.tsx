@@ -9,9 +9,11 @@ import { SHOW_PRO } from '@/config/feature-flags';
 import { useHistory } from '@/hooks/use-history';
 import { useIsPro } from '@/hooks/use-purchases';
 import { useTrips } from '@/hooks/use-trips';
+import { useT } from '@/i18n';
 import { buildCsvFilename, buildHistoryCsv, withUtf8Bom } from '@/lib/csv-export-core';
-import { shareCsv } from '@/lib/csv-export-service';
+import { shareCsv, type CsvShareResult } from '@/lib/csv-export-service';
 import { color, radius, shadow } from '@/theme/tokens';
+import { roundInHomeCurrency } from '@/utils/home-currency-core';
 import { deleteStoredPhotoFile } from '@/utils/resolve-image-uri';
 
 function StatCard({ label, value, tone }: { label: string; value: string; tone?: 'candidate' | 'purchased' }) {
@@ -33,6 +35,7 @@ function todayDateKey(): string {
 export default function DataManagementScreen() {
   const { history, totalCount, budgetTotals, clearAll, reload } = useHistory();
   const { activeTrip, loadTrips } = useTrips();
+  const t = useT();
   const isPro = useIsPro();
   const [tripCount, setTripCount] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
@@ -116,24 +119,42 @@ export default function DataManagementScreen() {
 
     setIsExporting(true);
     try {
-      const csv = withUtf8Bom(
-        buildHistoryCsv(
-          history.map((row) => ({
-            createdAt: row.created_at,
-            entryDate: row.entry_date,
-            category: row.category,
-            memo: row.memo,
-            isPurchased: (row.is_purchased ?? 0) === 1,
-            currency: row.currency,
-            foreignAmount: row.foreign_amount,
-            jpyAmount: row.jpy_amount,
-            rateUsed: row.rate_used,
-          })),
-          // カテゴリーラベルは config/categories.ts を唯一の正とする（別mapを作らない）
-          { tripName: activeTrip.name, categoryLabelOf: getCategoryLabel },
-        ),
-      );
-      const result = await shareCsv(buildCsvFilename(activeTrip.name, todayDateKey()), csv);
+      // CSV の組み立て・共有の失敗（基準通貨の配線漏れの throw を含む）は「書き出せませんでした」へ流す
+      // （未処理の Promise にして、利用者に何も出ないまま終わらせない。GX-06 段階 c-3）
+      let result: CsvShareResult;
+      try {
+        const csv = withUtf8Bom(
+          buildHistoryCsv(
+            history.map((row) => ({
+              createdAt: row.created_at,
+              entryDate: row.entry_date,
+              category: row.category,
+              memo: row.memo,
+              isPurchased: (row.is_purchased ?? 0) === 1,
+              currency: row.currency,
+              foreignAmount: row.foreign_amount,
+              jpyAmount: row.jpy_amount,
+              rateUsed: row.rate_used,
+              // 記録の基準通貨（読み出し時に付く）。全記録が 'JPY' なら CSV は今と同じ（GX-06 段階 c-3）
+              homeCurrency: row.home_currency,
+            })),
+            // カテゴリーラベルは config/categories.ts を唯一の正とする（別mapを作らない）
+            {
+              tripName: activeTrip.name,
+              categoryLabelOf: getCategoryLabel,
+              roundInHome: roundInHomeCurrency,
+              multiCurrencyHeaders: {
+                convertedAmount: t('csv.header.convertedAmount'),
+                convertedCurrency: t('csv.header.convertedCurrency'),
+              },
+            },
+          ),
+        );
+        result = await shareCsv(buildCsvFilename(activeTrip.name, todayDateKey()), csv);
+      } catch (e) {
+        console.warn('[csv export]', e);
+        result = { status: 'error' };
+      }
       if (result.status === 'unavailable') {
         Alert.alert('この端末では書き出せません', 'ファイルの共有に対応していません。', [{ text: 'OK' }]);
       } else if (result.status === 'error') {

@@ -18,4 +18,6 @@ export const zhHant: Record<MessageKey, DictValue> = {
   'settings.language.followsSystem': '可在 iPhone 的「設定」中變更此 App 的語言。',
   'settings.language.openSystemSettings': '開啟「設定」',
   'count.records': { other: '{count} 筆' },
+  'csv.header.convertedAmount': '換算金額',
+  'csv.header.convertedCurrency': '換算幣別',
 };

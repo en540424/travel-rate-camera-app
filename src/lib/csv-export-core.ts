@@ -99,6 +99,12 @@ export type CsvHistoryRow = {
   foreignAmount: number;
   jpyAmount: number;
   rateUsed: number;
+  /**
+   * 記録の基準通貨（`HistoryRow.home_currency`。GX-06 段階 c-3）。未指定は 'JPY'。
+   * 全行が 'JPY' なら CSV は今と同じ列・見出し・値（設計書 `design/gx05-home-currency-design.md` §7）。
+   * 型では必須（渡し忘れると円以外の記録が「換算金額(円)」のまま出るので tsc で止める）。実行時の未指定は 'JPY'
+   */
+  homeCurrency: string;
 };
 
 /** CSVの見出し行。列の順序はここが正 */
@@ -124,7 +130,36 @@ export type BuildHistoryCsvOptions = {
    * ここで別のcategory mapを新設しないための注入点。
    */
   categoryLabelOf: (slug: string | null) => string;
+  /**
+   * 基準通貨の桁で1件の額を丸める（GX-06 段階 c-3・S8：このモジュールは値の import を持たないので注入する）。
+   * 呼び出し側は `home-currency-core.ts` の `roundInHomeCurrency`（`money-core` の `roundMoney`）を渡すこと。
+   * 'JPY' 以外の基準通貨の記録がある時だけ使う
+   */
+  roundInHome?: (amount: number, homeCurrency: string) => number;
+  /**
+   * 'JPY' 以外の基準通貨の記録がある時の見出し（表示言語の文言。辞書 `csv.header.*` から渡す）。
+   * 「換算金額(円)」の位置を `convertedAmount` に替え、その右に `convertedCurrency` の列を足す
+   */
+  multiCurrencyHeaders?: { convertedAmount: string; convertedCurrency: string };
 };
+
+/** 'JPY' 以外の基準通貨の記録があるか（あれば見出しと列を変える。無ければ今と同じ CSV） */
+export function hasNonJpyHome(rows: readonly CsvHistoryRow[]): boolean {
+  return (rows ?? []).some((row) => (row.homeCurrency ?? 'JPY') !== 'JPY');
+}
+
+/** 'JPY' 以外の基準通貨を含む CSV の見出し（「換算金額(円)」を置き換え、その右に「換算通貨」） */
+function multiCurrencyHeaderRow(labels: { convertedAmount: string; convertedCurrency: string }): string[] {
+  const headers: string[] = [];
+  CSV_HEADERS.forEach((header, i) => {
+    if (i === CONVERTED_AMOUNT_COLUMN) headers.push(labels.convertedAmount, labels.convertedCurrency);
+    else headers.push(header);
+  });
+  return headers;
+}
+
+/** `CSV_HEADERS` の「換算金額(円)」の位置（テストで見出しと一致を固定） */
+export const CONVERTED_AMOUNT_COLUMN = 8;
 
 /**
  * 履歴行からCSV本文を組み立てる（BOMは付けない。付与は`withUtf8Bom`の責務）。
@@ -136,35 +171,53 @@ export type BuildHistoryCsvOptions = {
  *
  * 0件でも見出し行だけのCSVを返す。「書き出せる記録がありません」の判定は
  * 呼び出し側（UI）が行い、ここでは文字列組み立てに徹する。
+ *
+ * ■ 基準通貨（GX-06 段階 c-3・設計書 §7）
+ *   全行の基準通貨が 'JPY' なら今と同じ列・見出し・値。'JPY' 以外を含む時だけ、見出しの「換算金額(円)」を
+ *   注入した文言に替え、その右に「換算通貨」の列を足す。丸めるのは**国内の記録（記録の通貨＝その記録の基準通貨）だけ**で、
+ *   基準通貨が 'JPY' なら今と同じ `Math.round`、それ以外は注入した `roundInHome`（基準通貨の桁）。
+ *   外貨の記録は元金額・換算金額とも生値のまま（訪日客の JPY の記録を円として丸めない）。
  */
 export function buildHistoryCsv(
   rows: readonly CsvHistoryRow[],
   options: BuildHistoryCsvOptions,
 ): string {
-  const lines: string[] = [toCsvLine(CSV_HEADERS.map((header) => escapeCsvField(header)))];
+  const multiCurrency = hasNonJpyHome(rows);
+  const { roundInHome, multiCurrencyHeaders } = options;
+  if (multiCurrency && (!roundInHome || !multiCurrencyHeaders)) {
+    // 円以外の基準通貨の記録を、丸めと見出しの文言なしに書き出さない（呼び出し側の配線漏れを黙って通さない）
+    throw new Error('buildHistoryCsv: roundInHome and multiCurrencyHeaders are required for non-JPY home currencies');
+  }
+  const headers = multiCurrency && multiCurrencyHeaders ? multiCurrencyHeaderRow(multiCurrencyHeaders) : CSV_HEADERS;
+  const lines: string[] = [toCsvLine(headers.map((header) => escapeCsvField(header)))];
 
   for (const row of rows ?? []) {
     // JPY建て記録は整数円が正本（`formatJpy`・`normalizeJpyInput`・SQL `ROUND(jpy_amount)`と同じ`Math.round`）。
     // 2026-09-18以前に保存された小数JPY（例: 1200.5）がDBに残り得るが、画面は常に¥1,201なので
     // CSVも同じ値にする（DBは書き換えない。書き出し時の表現だけ）。JPY記録は`foreign_amount`にも同じ円が
     // 入っているため「元金額」も揃えて丸める。**外貨記録は元金額・換算円とも生値のまま**（内部換算値の契約は変えない）。
-    const isJpyRecord = row.currency === 'JPY';
-    const foreignAmount = isJpyRecord ? roundJpy(row.foreignAmount) : row.foreignAmount;
-    const jpyAmount = isJpyRecord ? roundJpy(row.jpyAmount) : row.jpyAmount;
-    lines.push(
-      toCsvLine([
-        escapeCsvField(row.createdAt),
-        escapeCsvField(row.entryDate),
-        escapeCsvField(options.tripName),
-        escapeCsvField(options.categoryLabelOf(row.category)),
-        escapeCsvField(row.memo),
-        escapeCsvField(row.isPurchased ? '購入済み' : '候補'),
-        escapeCsvField(row.currency),
-        formatNumberCell(foreignAmount),
-        formatNumberCell(jpyAmount),
-        formatNumberCell(row.rateUsed),
-      ]),
-    );
+    // 基準通貨が 'JPY' の記録では「国内の記録」＝`row.currency === 'JPY'` で、今と同じ判定・同じ丸め。
+    const home = row.homeCurrency ?? 'JPY';
+    const isDomesticRecord = row.currency === home;
+    // 有限でない額は丸めずに空セルにする（`roundMoney` は NaN を 0 にするので、先に除く。`roundJpy` は NaN のまま返す）
+    const roundHome = (value: number) =>
+      home === 'JPY' || !roundInHome || !Number.isFinite(value) ? roundJpy(value) : roundInHome(value, home);
+    const foreignAmount = isDomesticRecord ? roundHome(row.foreignAmount) : row.foreignAmount;
+    const homeAmount = isDomesticRecord ? roundHome(row.jpyAmount) : row.jpyAmount;
+    const cells = [
+      escapeCsvField(row.createdAt),
+      escapeCsvField(row.entryDate),
+      escapeCsvField(options.tripName),
+      escapeCsvField(options.categoryLabelOf(row.category)),
+      escapeCsvField(row.memo),
+      escapeCsvField(row.isPurchased ? '購入済み' : '候補'),
+      escapeCsvField(row.currency),
+      formatNumberCell(foreignAmount),
+      formatNumberCell(homeAmount),
+    ];
+    if (multiCurrency) cells.push(escapeCsvField(home));
+    cells.push(formatNumberCell(row.rateUsed));
+    lines.push(toCsvLine(cells));
   }
 
   // 末尾にも改行を置く（POSIXのテキストファイル慣習。Excel/Sheetsとも空行として読まない）

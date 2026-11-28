@@ -18,4 +18,6 @@ export const en: Record<MessageKey, DictValue> = {
   'settings.language.followsSystem': 'You can change the language for this app in iPhone Settings.',
   'settings.language.openSystemSettings': 'Open Settings',
   'count.records': { one: '{count} record', other: '{count} records' },
+  'csv.header.convertedAmount': 'Converted amount',
+  'csv.header.convertedCurrency': 'Converted currency',
 };
