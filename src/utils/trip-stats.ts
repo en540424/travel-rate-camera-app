@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
 import type { CurrencyCode } from '@/constants/currencies';
-import type { HistoryRow } from '@/db/queries/history';
+import type { HistoryRow, StoredHistoryRow } from '@/db/queries/history';
 import {
   computeBudgetStats,
   computeBudgetStatsFromTotals,
@@ -11,11 +11,12 @@ import {
 
 const WEB_HISTORY_STORAGE_KEY = 'travelrate:history';
 
-function loadAllFromWebStorage(): HistoryRow[] {
+/** 集計（件数・合計）にだけ使うので基準通貨は付けない（小数の基準通貨の合計は GX-06 段階 c〈S7〉で扱う） */
+function loadAllFromWebStorage(): StoredHistoryRow[] {
   try {
     const raw = localStorage.getItem(WEB_HISTORY_STORAGE_KEY);
     if (!raw) return [];
-    return (JSON.parse(raw) as Partial<HistoryRow & { purchase_date?: string }>[]).map((r) => ({
+    return (JSON.parse(raw) as Partial<StoredHistoryRow & { purchase_date?: string }>[]).map((r) => ({
       id: r.id ?? 0,
       currency: (r.currency ?? 'USD') as CurrencyCode,
       foreign_amount: r.foreign_amount ?? 0,

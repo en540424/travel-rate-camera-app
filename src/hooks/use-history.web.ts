@@ -5,20 +5,23 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { canSaveEntry } from '@/config/limits';
 import type { CurrencyCode } from '@/constants/currencies';
-import type { HistoryRow } from '@/db/queries/history';
+import type { HistoryRow, StoredHistoryRow } from '@/db/queries/history';
 import { useIsPro } from '@/hooks/use-purchases';
 import { useTripStore } from '@/stores/trip-store';
 import { EMPTY_BUDGET_TOTALS, sumBudgetTotals, type BudgetTotals } from '@/utils/budget-core';
+import { attachHomeCurrencyFromTrips, stripHomeCurrency, tripHomesFromJson } from '@/utils/home-currency-core';
 
 const STORAGE_KEY = 'travelrate:history';
+/** 旅行の保存先（`use-trips.ts` の `STORAGE_KEY` と同じ）。記録の基準通貨を引くためだけに読む */
+const TRIPS_STORAGE_KEY = 'travelrate:trips';
 
 let idCounter = Date.now();
 
-function loadAll(): HistoryRow[] {
+function loadAll(): StoredHistoryRow[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
-    return (JSON.parse(raw) as Partial<HistoryRow & { purchase_date?: string }>[]).map((r) => ({
+    return (JSON.parse(raw) as Partial<StoredHistoryRow & { purchase_date?: string }>[]).map((r) => ({
       id: r.id ?? 0,
       currency: (r.currency ?? 'USD') as CurrencyCode,
       foreign_amount: r.foreign_amount ?? 0,
@@ -40,9 +43,19 @@ function loadAll(): HistoryRow[] {
   }
 }
 
-function persistAll(rows: HistoryRow[]) {
+/** 記録の基準通貨を引くための旅行（id と基準通貨だけ）。localStorage が使えない時は空（全記録を 'JPY' と読む） */
+function loadTripHomes(): { id: number; target_currency: unknown }[] {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
+    return tripHomesFromJson(localStorage.getItem(TRIPS_STORAGE_KEY));
+  } catch {
+    return [];
+  }
+}
+
+/** 読み出し専用の `home_currency` は書かない（型では余分なキーを止められないので実行時に落とす。設計書 §13） */
+function persistAll(rows: readonly StoredHistoryRow[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(rows.map(stripHomeCurrency)));
   } catch {}
 }
 
@@ -65,7 +78,10 @@ export function useHistory() {
     setBudgetTotals(sumBudgetTotals(rows));
     // 初回MVPは保存上限を露出しない方針のため、表示件数はFREE_HISTORY_LIMIT（FREE_LIMITS.saves）で切らない（P0-04）。
     const limit = 500;
-    setHistoryState(rows.slice(0, limit));
+    // 記録の基準通貨は、記録と同じ同期処理の中で読んだ旅行から引く（store の activeTrip は使わない。GX-06 段階 a）
+    setHistoryState(
+      attachHomeCurrencyFromTrips(rows.slice(0, limit), loadTripHomes()),
+    );
   }, [activeTrip]);
 
   useEffect(() => {
@@ -91,7 +107,7 @@ export function useHistory() {
       const currentCount = loadAll().filter((r) => r.trip_id === activeTrip.id).length;
       if (!canSaveEntry(isPro, currentCount)) return { blocked: true };
       const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
-      const entry: HistoryRow = {
+      const entry: StoredHistoryRow = {
         id: idCounter++,
         currency,
         foreign_amount: foreignAmount,

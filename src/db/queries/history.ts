@@ -13,8 +13,10 @@ import {
   historyDateKeyRangeParams,
   type DateKeyRange,
 } from '@/utils/history-date-core';
+import { withHomeCurrency } from '@/utils/home-currency-core';
 
-export interface HistoryRow {
+/** DB（と Web の localStorage）に実際にある記録の列 */
+export interface StoredHistoryRow {
   id: number;
   currency: CurrencyCode;
   foreign_amount: number;
@@ -32,6 +34,27 @@ export interface HistoryRow {
   category: string | null;
 }
 
+/**
+ * 読み出した記録。`home_currency` は**読み出し専用**（記録の旅行の `target_currency`。旅行が無い・見つからない・
+ * 7通貨に無い値は 'JPY'。設計書 `design/gx05-home-currency-design.md` §11 C1・C3）。DB の列ではないので保存しない
+ */
+export interface HistoryRow extends StoredHistoryRow {
+  home_currency: CurrencyCode;
+}
+
+/**
+ * 記録の SELECT の頭。記録の基準通貨を**副問い合わせ**で載せる（GX-06 段階 a・設計書 §11 C1）。
+ * - JOIN は使わない（`SELECT *` のまま JOIN すると、`trips` と同名の `id`・`created_at`・`updated_at` で記録の列が旅行の値に化ける）
+ * - FROM は `conversion_history` だけなので、後ろに続く `WHERE id = ?`・`history-date-core.ts` の無修飾の列は記録の表に解決される
+ * - 元の列の並び・値は素の `SELECT *` と同じで、`home_currency` が末尾に1列増えるだけ（`history-home-currency.test.mjs`）
+ * - 空文字は `COALESCE` を素通りするので、読んだ後に必ず `withHomeRows` で正規化する（§13 の nit）
+ */
+const SELECT_HISTORY_SQL = `SELECT *, COALESCE((SELECT trips.target_currency FROM trips WHERE trips.id = conversion_history.trip_id), 'JPY') AS home_currency FROM conversion_history`;
+
+function withHomeRows(rows: (StoredHistoryRow & { home_currency: unknown })[]): HistoryRow[] {
+  return rows.map((r) => withHomeCurrency(r, r.home_currency));
+}
+
 /** 無料版の最大保存件数（config/limits.ts の FREE_LIMITS.saves を正とする） */
 export const FREE_HISTORY_LIMIT = FREE_LIMITS.saves;
 
@@ -40,10 +63,10 @@ export async function getHistory(
   db: SQLiteDatabase,
   limit: number = 50,
 ): Promise<HistoryRow[]> {
-  return db.getAllAsync<HistoryRow>(
-    'SELECT * FROM conversion_history ORDER BY created_at DESC LIMIT ?',
+  return withHomeRows(await db.getAllAsync<StoredHistoryRow & { home_currency: unknown }>(
+    `${SELECT_HISTORY_SQL} ORDER BY created_at DESC LIMIT ?`,
     limit,
-  );
+  ));
 }
 
 /**
@@ -56,11 +79,11 @@ export async function getHistory(
  * 「見つからなかった時だけ」の単発読み取りに留める）。
  */
 export async function getHistoryById(db: SQLiteDatabase, id: number): Promise<HistoryRow | null> {
-  const row = await db.getFirstAsync<HistoryRow>(
-    'SELECT * FROM conversion_history WHERE id = ?',
+  const row = await db.getFirstAsync<StoredHistoryRow & { home_currency: unknown }>(
+    `${SELECT_HISTORY_SQL} WHERE id = ?`,
     id,
   );
-  return row ?? null;
+  return row ? withHomeRows([row])[0] : null;
 }
 
 /**
@@ -76,10 +99,10 @@ export async function getHistoryInDateKeyRange(
   db: SQLiteDatabase,
   range: DateKeyRange,
 ): Promise<HistoryRow[]> {
-  return db.getAllAsync<HistoryRow>(
-    `SELECT * FROM conversion_history WHERE ${HISTORY_DATE_KEY_RANGE_WHERE_SQL} ORDER BY created_at DESC`,
+  return withHomeRows(await db.getAllAsync<StoredHistoryRow & { home_currency: unknown }>(
+    `${SELECT_HISTORY_SQL} WHERE ${HISTORY_DATE_KEY_RANGE_WHERE_SQL} ORDER BY created_at DESC`,
     ...historyDateKeyRangeParams(range),
-  );
+  ));
 }
 
 /** 履歴の総件数を取得（全件） */
@@ -96,11 +119,11 @@ export async function getHistoryForTrip(
   tripId: number,
   limit: number = 50,
 ): Promise<HistoryRow[]> {
-  return db.getAllAsync<HistoryRow>(
-    'SELECT * FROM conversion_history WHERE trip_id = ? ORDER BY created_at DESC LIMIT ?',
+  return withHomeRows(await db.getAllAsync<StoredHistoryRow & { home_currency: unknown }>(
+    `${SELECT_HISTORY_SQL} WHERE trip_id = ? ORDER BY created_at DESC LIMIT ?`,
     tripId,
     limit,
-  );
+  ));
 }
 
 /** アクティブ旅行スコープの件数（trip_id 完全一致のみ） */
@@ -170,7 +193,7 @@ export async function clearHistoryForTrip(
 /** 履歴を1件追加 */
 export async function insertHistory(
   db: SQLiteDatabase,
-  entry: Omit<HistoryRow, 'id' | 'created_at' | 'is_purchased' | 'purchased_at' | 'updated_at' | 'memo' | 'image_uri' | 'entry_date' | 'category'>,
+  entry: Omit<StoredHistoryRow, 'id' | 'created_at' | 'is_purchased' | 'purchased_at' | 'updated_at' | 'memo' | 'image_uri' | 'entry_date' | 'category'>,
   memo?: string,
   imageUri?: string,
   isPurchased?: boolean,

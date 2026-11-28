@@ -3,19 +3,20 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import type { CurrencyCode } from '@/constants/currencies';
-import type { HistoryRow } from '@/db/queries/history';
+import type { HistoryRow, StoredHistoryRow } from '@/db/queries/history';
 import type { TripRow } from '@/db/queries/trips';
 import { budgetTotalsByTripFromGroupRows, type BudgetTotals } from '@/utils/budget-core';
 import { isDateKeyInRange, rowToDateKey, type DateKeyRange } from '@/utils/history-date-core';
+import { attachHomeCurrencyFromTrips, stripHomeCurrency } from '@/utils/home-currency-core';
 
 const HISTORY_KEY = 'travelrate:history';
 const TRIPS_KEY   = 'travelrate:trips';
 
-function loadAllHistory(): HistoryRow[] {
+function loadAllHistory(): StoredHistoryRow[] {
   try {
     const raw = localStorage.getItem(HISTORY_KEY);
     if (!raw) return [];
-    return (JSON.parse(raw) as Partial<HistoryRow & { purchase_date?: string }>[]).map((r) => ({
+    return (JSON.parse(raw) as Partial<StoredHistoryRow & { purchase_date?: string }>[]).map((r) => ({
       id: r.id ?? 0,
       currency: (r.currency ?? 'USD') as CurrencyCode,
       foreign_amount: r.foreign_amount ?? 0,
@@ -59,9 +60,10 @@ function loadAllTrips(): TripRow[] {
   }
 }
 
-function persistHistory(rows: HistoryRow[]) {
+/** 読み出し専用の `home_currency` は書かない（型では余分なキーを止められないので実行時に落とす。設計書 §13） */
+function persistHistory(rows: readonly StoredHistoryRow[]) {
   try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(rows));
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(rows.map(stripHomeCurrency)));
   } catch {}
 }
 
@@ -82,9 +84,13 @@ export function useAllHistory(options: UseAllHistoryOptions = {}) {
     const rows = loadAllHistory();
     const trips = loadAllTrips();
     // native版は期間内に入り得る行をSQLで返す。Webは全行から同じ日付キー規則で絞る（集計は全行のまま）
+    // 記録の基準通貨は、同じ同期処理で読んだ旅行から引く（state の tripMap は使わない。GX-06 段階 a）
     setHistory(
       rangeFrom !== undefined && rangeTo !== undefined
-        ? rows.filter((r) => isDateKeyInRange(rowToDateKey(r), { from: rangeFrom, to: rangeTo }))
+        ? attachHomeCurrencyFromTrips(
+            rows.filter((r) => isDateKeyInRange(rowToDateKey(r), { from: rangeFrom, to: rangeTo })),
+            trips,
+          )
         : [],
     );
     setTripMap(new Map(trips.map((t) => [t.id, t])));
