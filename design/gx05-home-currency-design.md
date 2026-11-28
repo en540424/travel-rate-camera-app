@@ -39,7 +39,7 @@
 
 - 旅行：`isDomestic(trip.base_currency, trip.target_currency)`（`money-core.ts`）。今の `isJpyMode`（`base_currency === 'JPY'`）は H='JPY' の時に同じ値。
 - 記録：`recordHome = tripOf(record)?.target_currency ?? 'JPY'`、`isDomesticRecord = record.currency === recordHome`。
-- 今の判定（2026-11-28 の grep で 41 行。うち記録単位 13・旅行単位 22・その他）を、この2つの関数の呼び出しへ置き換える。記録だけを受け取る部品（`ItemCard`・`ConversionSummaryCard`・一覧の行）には**記録の基準通貨を一緒に渡す**（呼び出し側が旅行を引く。`useAllHistory` の `tripMap` を使う）。
+- 今の判定（2026-11-28 の grep で 41 行。うち記録単位 13・旅行単位 22・その他）を、この2つの関数の呼び出しへ置き換える。記録だけを受け取る部品（`ItemCard`・`ConversionSummaryCard`・一覧の行）には**記録の基準通貨を一緒に渡す**（**記録の基準通貨は SQL の JOIN で行に載せる：§11 C1**。`tripMap` で別に引く方式は使わない）。
 - 置き換えの対象（2026-11-28 時点）：`calendar/index.tsx:516,526`・`converter.tsx:61`・`history/index.tsx:113`・`item-detail.tsx:111,208`・`item-edit.tsx:156,308`・`index.tsx:263,856,857`・`index.web.tsx:55`・`settings.tsx:158,183,239`・`rate-setup.tsx:19`・`trip-create.tsx:38,76,77`・`trip-created.tsx:24,58,85`・`trip-edit.tsx:83,114,115,130`・`trip-list.tsx:113,182`・`trip-records.tsx:165,231`・`ActiveTripSwitchSheet.tsx:47`・`ConversionSummaryCard.tsx:28`・`ItemCard.tsx:72`・`csv-export-core.ts:151`・`live-text-core.ts:1518`・`edit-amount-core.ts:46`・`format.ts:31`・`currencies.ts:27`（`FOREIGN_CURRENCY_CODES`）。`extract-prices.ts:242` は OCR の読み取り方式の選択（現地通貨）なので**変えない**。
 
 ## 4. 保存・編集（保護領域）
@@ -86,3 +86,41 @@
 3. 保存・編集の変更（§4）が H='JPY' で今と同じ行になるか、回帰テストの範囲が足りるか
 4. 全旅行の集計（§5）で、今の利用者の画面が変わらないか
 5. スキーマを変えない前提で、見落としている保存先（Pro+ の JSON・CSV の読み込み・全データ削除）が無いか
+
+## 11. 審査の条件（db-guardian・2026-11-28・条件付き合格。実装はこの条件を満たすこと）
+
+判定：案α（スキーマ変更なし・migration なし・既存行の書き換えなし）は DB の観点で成立。破壊的変更なし。
+根拠の追加確認：`target_currency` は NOT NULL（NULL の行なし）、`INSERT INTO trips` は `trips.ts` と `schema.ts` の2か所だけ、`DELETE FROM trips` は無い（旅行は archive のみ）、`trip-store` は永続化しない、全データ削除（`clearAll`）は記録だけを消し旅行は残す、Pro+ の `proplus-v1.json` に金額・通貨・予算の項目は無い、CSV の読み込み・復元は存在しない（書き出しだけ）。
+
+- **C1 記録の基準通貨は SQL の副問い合わせで取る（Fable B1 で改訂）**：`history.ts` の各 SELECT を `SELECT *, COALESCE((SELECT target_currency FROM trips WHERE trips.id = conversion_history.trip_id), 'JPY') AS home_currency FROM conversion_history …（以降は今のまま）` にする。**JOIN は使わない**（`SELECT *` のままだと `trips` と同名の `id`・`created_at`・`updated_at` で記録の `id` が旅行の `id` に化け、`WHERE id = ?` と `history-date-core.ts` の無修飾の `created_at` が ambiguous で失敗する。Fable が node:sqlite で実測）。`tripMap` で別に引く方式も使わない（初期値が空の間や1件の読み直しで 'JPY' と誤読するため）
+- **C2 基準通貨の変更はアトミックに**：専用の関数で `UPDATE trips SET target_currency = ?, manual_rate = 0, budget_jpy = ? WHERE id = ? AND NOT EXISTS (SELECT 1 FROM conversion_history WHERE trip_id = ?)` を1文で行う（件数の確認と更新の間に隙間を作らない）。**レートと予算は旧い基準通貨の単位なので、同時にリセットするか再入力させる**。`updateTrip` には実行時の列名の許可リストを持たせる（今は型で除外しているだけで、`Object.keys` をそのまま SET 句に使っている）
+- **C3 読み取り時の正規化**：7通貨に無い `target_currency` は読み取り時に 'JPY' として扱う関数を1つ置く（列は TEXT で CHECK 制約が無い）
+- **C4 新規作成だけで列を明示する**：`insertTrip` に `target_currency` を足すのは新規作成だけ。ネイティブと Web の作成の4経路（`createTrip`・`endCurrentAndCreateTrip` × 2）で同じ値にする
+- **C5 回帰テストの追加**：読み出した行の `id`・`created_at`・`updated_at` が変更前と同じ（B1）／逆換算で保存した外貨の記録を金額に触れずメモだけ保存すると `changed: false`（B2）／換算タブの4つの値（予備レートの有無 × 基準通貨が円か否か）（B3）／C2 が拒否された時にレート・予算が書かれない／基準通貨が円以外の旅行で `exchange_rates` が書かれない（S1）／既存の小数の円の行（1200.5）で金額に触れずメモだけ保存すると `changed: false`／外貨の記録の編集（`Math.round(f * rateUsed)`）が基準通貨＝円で同じ値／`addEntry` に渡る4つの値（currency・foreign・jpy・rate）が変更前の式と完全に同じ／基準通貨が0桁の時に SQL の合計と JS の合計が一致／CSV が基準通貨＝円で今と同じ列・見出し・値。`record-jpy-total.test.mjs`・`budget-core.test.mjs` に基準通貨が円以外の例を足す。同じ合計の式の写し（`getBudgetTotalsForTrip`・`useHistory.budgetTotals`・`sumBudgetTotals`・`analytics-core`・Web 版）を1つでも旧い式のまま残さない
+- **C6 既存の利用者の判定**：§2 の「既に旅行がある端末」は `getAllTrips`（アーカイブを含む）か記録の有無で判定する（`getActiveTrips` だと、全旅行をアーカイブした利用者が地域の通貨を既定にされる）
+- **保存と編集の丸めの非対称**：今は保存時の外貨の記録の `jpy_amount` は丸めず、編集時は `Math.round(f * rateUsed)` で丸めて保存している。基準通貨が円以外でもこの非対称を保つ（保存は生値、編集は基準通貨の桁で丸める）。変えない
+
+## 12. Fable 5.2 の審査（2026-11-28・条件付き合格）と GX-06 の実装条件
+
+判定：案αは成立（§1 の「既存の行はすべて H='JPY'」に穴なし。`target_currency` を書く経路は存在しない）。ただし文面どおりに作ると円の利用者が壊れる経路が3つ（B1〜B3）あった。**B1〜B3・S1 は本文（§4・§6・§11）を直した。再確認は差分（B1〜B3・S1）だけでよい。** S2〜S11 は GX-06 の実装条件。
+
+### 12-1. 本文の修正（blocker と S1）
+
+- **B1**：§11 C1 を副問い合わせの形へ改訂した（上）
+- **B2（§4 を改訂）**：編集欄の初期値は**基準通貨が円の記録では今の `String(foreign_amount)` のまま変えない**。表示を丸めるのは基準通貨が円以外の記録だけで、その時は外貨の分岐の未変更の判定も「入力と現在値を同じ桁で丸めて比べる」にする（円の分岐 `edit-amount-core.ts:51` と同じ規律）。プレビュー（`item-edit.tsx:310-312`）も同じ規則。理由：¥1000 を 150 で逆換算した記録は `foreign_amount = 6.666666666666667`。欄を 6.67 で出すと、メモだけ直して保存した時に `jpy_amount` が 1000 → 1001 に書き換わる
+- **B3（§4 に追記）**：**保存の経路は3つ**ある。`index.tsx:855-866`／換算タブ `converter.tsx:63-74, 121`（旅行のレートが0なら `exchange_rates` の円のレートで**保存まで**行う）／Web `index.web.tsx:57-58, 105-106`。3つとも「保存する4つの値を作る純粋関数」に切り出し、経路ごとに C5 の回帰テストを置く。換算タブは「旅行のレート0・予備あり・基準通貨＝円」で今と同じ値、「基準通貨≠円」では予備のレートを使わず保存できない（C2 でレートを0にした旅行に円のレートで保存しないため）
+- **S1（§6 に追記）**：`exchange_rates` への書き込み（`rate-setup.tsx:38`・`trip-edit.tsx:130` の `saveRate`）は **H='JPY' かつ L≠'JPY' の時だけ**（今と同じ条件）。`cur !== 'JPY'` を `!isDomestic` に機械的に置き換えない（訪日客で `saveRate('JPY', 0.0067)` が入り、円の旅行の予備のレートが狂う）
+
+### 12-2. GX-06 の実装条件（S2〜S11・nit）
+
+- **S2 判定の3分類**：§3 の行は「国内の判定」「入力する通貨の小数の桁（`number-pad`／`decimal-pad`：`index.tsx:1645`・`converter.tsx:262`・`item-edit.tsx:546` は `decimalsOf(入力する通貨)` で決める）」「円の記号・ラベル（`item-detail.tsx:208`・`item-edit.tsx:551`・`index.tsx:1188,1607,1615,1626,1636`・`converter.tsx:233-268`・`history/index.tsx:156`・`trip-edit.tsx:250,263`）」に分けて扱う。旅行が無い時は `isDomestic` を呼ばず false
+- **S3 基準通貨の額の表示・丸めの棚卸し**：`formatJpy(` 27ファイル59か所（§3 に無い `proplus/place-edit.tsx:121`・`SmartCameraLayer.tsx:117`・`translation-price-format.ts:21`・`ActiveTripBanner.tsx:41,46`・`TripListItem.tsx:49`・`PriceResultCard`・`AnalysisSummaryCard`・`CategorySpendCard`・`SpendBarChart`・`analytics.tsx:262,311` を含む）と、整数に丸める式（`index.tsx:286,319,1892,1965`・`index.web.tsx:78`・`item-edit.tsx:312`・`trip-create.tsx:42`）。完了条件：`formatJpy`・`Math.round(…jpy…)`・`¥` の直書きが、基準通貨を受け取る1つの関数を経由する。翻訳ページの型 `TripPriceConversion`（`live-text-core.ts:1509`）に基準通貨を足す
+- **S4 分析**：`formatCompactYen`・`formatAxisLabels`（`analytics-core.ts:183-235`）は通貨と表示言語を引数に取る。`summarizePeriodSpending` は基準通貨を受け取り、合計・棒・カテゴリー別を**最小単位の整数で足してから戻す**（浮動小数で足すと3つの合計の一致が崩れる）
+- **S5 主な基準通貨**：「表示期間内の記録の基準通貨（1種類ならそれ、複数なら件数が最多か最新の記録）、記録が無い時だけ使用中の旅行の H」。§5 の「最新の旅行の H」は使わない。旅行なしの履歴（`use-history.ts:55`）も全旅行の横断として扱う
+- **S6 C2 の運用**：`changes === 0` は拒否。基準通貨の変更は、フォームの新しいレート・予算を**同じ1文で SET** し、拒否なら全体を中止（旧い基準通貨の旅行に新しい単位の値を書かない）。`updated_at = datetime('now')`。条件は `NOT EXISTS (SELECT 1 FROM conversion_history WHERE conversion_history.trip_id = trips.id)`。成功後に `getTripById` → `setActiveTrip`。Web（`use-trips.ts:108-110`）にも同じ条件と許可リスト
+- **S7 旅行ごとの合計**：**H が0桁の旅行は `BUDGET_GROUP_SQL`（`history.ts:122-124`）を1文字も変えずに使う**。H が小数の旅行だけ行を別に読んで JS の `sumMoney` で上書きする（同一性を構造で保証）。件数は SQL のまま
+- **S8 純粋モジュールの規律**：`edit-amount-core`・`budget-core`・`analytics-core`・`csv-export-core` は値の import を持たない（テストが直接 import）。桁や丸めは**引数で注入**する（`csv-export-core.ts` の `categoryLabelOf` と同じ方式）
+- **S9 訪日客で検索に掛からない前提**：`translation-languages.ts:26` の `JPY: null`（スマートカメラの換算・メモの翻訳・翻訳タブの初期言語）、`live-text-core.ts:1531` の「元」を TWD と判定（日本語の「元祖」「地元」）、`getRateInputExample` は1通貨あたりの円。**訪日客の翻訳ページ・スマートカメラの換算は GX-09 で扱い、それまで出さない**。入力例は `crossRateFromJpyTable` で作る
+- **S10 旅行編集のレート欄**：基準通貨が円以外の旅行では「欄の文字列が初期値から変わった時だけ `manual_rate` を書く」（名前だけの編集でレートを変えない）
+- **S11 Web 版**：記録を読む場所は3つ（`use-history.web.ts:17`・`use-all-history.web.ts:14`・`trip-stats.ts:14`）。3つとも旅行の基準通貨を載せる（localStorage に書き戻さない）。`use-all-history.web.ts:99` の `Math.round` も写しの1つ。§8 の「Web は旅行の通貨で保存」は基準通貨が円でも挙動が変わるので、「今と同じ」の例外として**別の commit** にする
+- nit：`HistoryRow` に `home_currency` を足すと `insertHistory` の `Omit` と Web の行の生成が型エラーになる（C3 の関数で絞る）／CSV は1旅行単位なので見出しは旅行の H で決まり、「H の桁で丸める」は H≠円の時だけ（既存の「外貨の記録は生値」の契約を保つ）／旅行の作成・編集に基準通貨の選択を足すのは「画面が同じ」の例外（ui の審査）／`expo-localization` は Build が要る（GX-02・Human GO）
