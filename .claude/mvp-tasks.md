@@ -8,7 +8,7 @@
 > - 進捗台帳の正本は Vault `旅レートカメラ_多言語多通貨海外展開_機能正本・実装追跡表_2026-11-28` の §5（GX-01〜GX-13）、再開手順は同 §7。ここは再開位置の案内だけ
 > - ローカル完了：GX-01 i18n コア（`src/i18n/`）・GX-03 日本語の直書きの検査（`scripts/i18n/ja-literals.mjs`・基準値）・GX-04 通貨のコア（`src/utils/money-core.ts`）。独立監査 Fable 5.2（2回・blocker の丸めの不一致を修正済み）。既存画面にはまだ配線していない（`SHOW_MULTILINGUAL_UI=false`）
 > - GX-05 設計書（`design/gx05-home-currency-design.md`）：db-guardian 条件付き合格（§11 C1〜C6）・Fable 5.2 条件付き合格（blocker B1〜B3 と S1 は本文へ反映済み・`00387c3`）
-> - 次：Fable で GX-05 の差分（B1〜B3・S1）だけ再確認 → 合格なら GX-06（保護領域。§12 の条件どおり、保存の3経路の4つの値を作る純粋関数と回帰テストを先に）。Pro+ branch との合流は Human 判断（H-GX01）
+> - 次：Fable で GX-05 の差分（B1〜B3・S1）だけ再確認 → 合格なら GX-06（保護領域。§12 の条件どおり、保存の3経路の4つの値を作る純粋関数と回帰テストを先に）。**H-GX01 解決（2026-11-28・Human が技術判断を委任）：本 branch が Pro+ branch（`bba5ccb`）の全 commit を含むため merge 不要。今後の開発は Pro+ も含めて本 branch で行い、`feat/proplus-core-and-store-assets` は凍結・保持**（`AI_CONTEXT.md`「開発ブランチ」）
 
 > [!important] 2026-11-26（続き2）**Pro+ 本人認証の残課題の修正・購読の更新の整合性・Sandbox の準備／ローカル実装済み・モックテスト合格・独立検収（Fable 5.2・2回）blocker 0・外部サービスでの実証0件・本番公開は不可**
 > - 中継 `2d63c43`：RS-2 の残り（署名日時ごとの窓＋外側の上限）・RS-5（返金と取り消しを事象の時刻で・Directory version 3・旧い版へ戻しても同じ判定）・RS-6（権利なしを60秒覚える・同時の照会は3本）・NX-2・NY-1（持ち主の記録の期限・件数・not_owner で消す）・Webhook の HMAC 署名（RevenueCat 公式の機能・任意で必須）・RS-3（S1 の記述）。検収の RV-1〜6・NV-1〜2 の should-fix は修正、nit の一部は記録のみ（中継 README）

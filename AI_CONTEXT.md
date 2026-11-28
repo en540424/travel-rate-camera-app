@@ -9,6 +9,14 @@
 2. `.claude/design-sync-v2-plan.md` — 現行デザイン移行方針（v2トークン移行・触ってはいけないロジック一覧・ロールアウト計画）
 3. このファイルの「絶対に勝手に触らないもの」「作業前に確認すること」
 
+## 開発ブランチ（2026-11-28 から）
+
+- **旅レートカメラの開発（Pro+・多言語・多通貨とも）は `feat/i18n-multicurrency` を基準にする**（H-GX01 の結果）。この branch は `feat/proplus-core-and-store-assets`（`bba5ccb`）の全 commit を含む直系の子孫で、merge は不要だった（Fable 5.2 の独立検証・blocker 0）
+- `feat/proplus-core-and-store-assets` は **`bba5ccb` で凍結・保持**（削除しない・commit しない）。そこから作業を再開しない。もし誰かが commit した時は、`feat/i18n-multicurrency` から `integrate/proplus-i18n` を作って取り込む
+- `integrate/build6-live-text-fix`（Build 9 の基準・`c83e392`）は保護。コードは内容として本 branch に含まれる（`a18afb9`）。Build 6〜9 の EAS・Submit・ASC の記録はその branch の `.claude/mvp-tasks.md` にだけあるので branch を残す
+- Pro+ の作業と画面の多言語化（GX-07）は**同じ branch で直列**に行う（同じ画面ファイル・`src/i18n/ja-literals-baseline.json`・日本語を確かめるテストで衝突するため。2つの worktree で別々に進めない）
+- 正本：Vault `旅レートカメラ_多言語多通貨海外展開_機能正本・実装追跡表_2026-11-28` §6（H-GX01）
+
 ## 領域別の正本
 
 | 領域 | 正となる文書 |
@@ -25,7 +33,7 @@
 | Free・Pro・Pro+の商品構成（方針・2026-11-04 Human決定） | Vault `AI-Workflow-System/07_project-kits/tabirate-camera/旅レートカメラ_ProPlus・高性能OCR・クラウド機能_構想設計書_v1.md` 冒頭（Human決定の正本）。調査結果・工程・未確定事項は同フォルダ `旅レートカメラ_Free-Pro-ProPlus_3プラン実現調査_2026-11-04.md`（判断材料）。**Pro+の中核はGPS買い物マップ・旅行スケジュール・AI翻訳（2026-11-04続報でHuman決定）。価格・利用枠・事業者・Freeの制限値は未確定で、実装はHuman承認後**（Tier基盤のみ例外として`feat/plan-tier-foundation`に実装済み・下行） |
 | Pro+中核3機能の技術設計・原価制御（設計案・2026-11-04） | Vault `AI-Workflow-System/07_project-kits/tabirate-camera/旅レートカメラ_ProPlus中核3機能_技術設計・原価制御_2026-11-04.md`。音声の累計制御・サーバー中継・利用枠の主キー・地図の保存区分・カレンダー方式・収益試算・工程。**既存の端末内OCR・翻訳は変更しない。AI翻訳は別のサービス層として足す** |
 | 契約プラン（free／pro／pro_plus）の判定（実コード・2026-11-04・`feat/plan-tier-foundation`・未Build） | `src/lib/plan-tier-core.ts`（純粋関数・テスト`plan-tier-core.test.mjs`）＋`src/lib/plan-tier.ts`。**「Pro以上か」を決める唯一の入口**で、store（`isPro`）・購入成否・復元結果の3か所が共有する。`pro_plus`はProを包含。`pro_plus`のEntitlement識別子は暫定・Dashboard未登録。**Pro+の価格・機能・商品・購入画面は含まない** |
-| Pro+ 買い物マップ・旅行の予定・AI翻訳（実コード・2026-11-21・`feat/proplus-core-and-store-assets`・未Build・フラグで非表示） | 純ロジック `src/lib/proplus/`（場所・予定・権利・データ操作）・`src/lib/ai/`（AI翻訳の入力検査・残量表示・エラー・音声セッション・中継の口）、画面 `src/app/proplus/`、公開フラグ `SHOW_PRO_PLUS`（false）・`DEV_PRO_PLUS_PREVIEW`（__DEV__）、中継URL `src/config/ai-gateway.ts`（null）。**保存は既存DBと別のJSONファイル**で、DB v8は `design/proplus-db-v8-draft.md`（下書き・未適用・H-P5） |
+| Pro+ 買い物マップ・旅行の予定・AI翻訳（実コード・2026-11-21・`feat/proplus-core-and-store-assets`→2026-11-28 から `feat/i18n-multicurrency`・未Build・フラグで非表示） | 純ロジック `src/lib/proplus/`（場所・予定・権利・データ操作）・`src/lib/ai/`（AI翻訳の入力検査・残量表示・エラー・音声セッション・中継の口）、画面 `src/app/proplus/`、公開フラグ `SHOW_PRO_PLUS`（false）・`DEV_PRO_PLUS_PREVIEW`（__DEV__）、中継URL `src/config/ai-gateway.ts`（null）。**保存は既存DBと別のJSONファイル**で、DB v8は `design/proplus-db-v8-draft.md`（下書き・未適用・H-P5） |
 | Pro+ 実装状況・3プラン同時公開の残工程（2026-11-25・Human 正式決定で再開） | Vault `AI-Workflow-System/07_project-kits/tabirate-camera/旅レートカメラ_ProPlus実装状況再統合と3プラン同時公開の残工程_2026-11-25.md`（A〜F の判定・残工程・Work に任せる ASC/RevenueCat の作業・実機確認の準備・Build 9 との統合）。購入の判定は `src/lib/revenuecat-purchase-core.ts` の `resolveTierPurchaseOutcome`（目標のプラン）、プラン変更は `src/lib/plan-change-core.ts`、Pro+ の商品 ID・Offering は `src/config/revenuecat.ts`（**暫定・未登録**）、検証用ビルドは eas.json `testflight-proplus-qa`（審査に出さない）。**Build 9 は初回提出 Build ではない**。Pro+ のプラン画面（購入・アップグレード・復元・現在の契約）は `src/app/proplus/plans.tsx`、その判定は `src/lib/proplus/proplus-purchase-core.ts`（2026-11-25続き）。AI 中継の外部入口・サーバー側の RevenueCat 照会・原価制御 L3〜L5 は別repo `tabirate-ai-gateway`（`feat/cost-cap`・README「外部の入口」） |
 | E-NEXUS共通 ストア・広告素材生成（2026-11-21） | `tools/store-assets/README.md`（エンジンはアプリ非依存・旅レートの設定は `apps/tabirate/profile.json`）。撮影元の規則：Web版はfinal不可、未公開機能を文言に使わない。遠隔撮影のジョブ（`job-*`・README「遠隔撮影」）：どの端末からでも作成・検証・取り込み。撮影はmacOSの実行先（GitHub Actions：`.github/workflows/store-assets-ios.yml`。4回目（2026-11-23）で原因＝expo-location の事前コンパイル版と expo-modules-core の版の不整合を特定し修正、5回目で実際のアプリの画面を3枚撮影・下書き10枚を生成、6回目（run 45169001221）で8画面を撮影・Maestro が CI で実動作・下書き16枚（カレンダーは誤撮影で除外・撮り直しジョブは承認待ち）。カメラOCR・ライブ翻訳など実機だけの画面は `import --source device` で取り込む（採用はHuman判断）。現在地は `.claude/mvp-tasks.md` 冒頭） |
 | Pro+ リアルタイム音声・本人認証（実コード・2026-11-26・未Build・実機未確認） | 端末：`src/lib/ai/voice-pcm-core.ts`（PCM・区画・歩調）・`voice-protocol-core.ts`（中継との手順）・`voice-audio.native.ts`（`react-native-audio-api` 1.0.1）・`src/hooks/use-voice-session.ts`・本人認証 `ai-auth-core.ts`・`ai-auth-client.ts`・`modules/storekit-proof`。中継 `tabirate-ai-gateway`（`feat/cost-cap`）の README「独立検収（2026-11-26）」。**release は `AI_VOICE_CAPTURE_READY=false` で準備中。本人認証は 2026-11-26 に B1 を根本修正（主体・権利・枠は証拠の購読から）、残課題（RS-2・RS-5・RS-6・NX-2・NY-1・Webhook の HMAC）も修正（中継 `2d63c43`・アプリ `dc3fb72` まで）、独立検収でコード上の blocker 0。ただし方式の採用（Human）と Sandbox の実測の前は有効にしない（公開できる水準と判定していない）**。実機は TEST_CHECKLIST #100〜#105 |
