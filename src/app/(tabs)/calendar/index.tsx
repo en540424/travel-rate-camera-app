@@ -17,6 +17,7 @@ import { color, radius, shadow } from '@/theme/tokens';
 import { sumBudgetTotals } from '@/utils/budget-core';
 import { formatJpy, formatRate } from '@/utils/format';
 import { monthDateKeyRange, rowToDateKey, toDateKey } from '@/utils/history-date-core';
+import { isDomesticRecord } from '@/utils/home-currency-core';
 import { deleteStoredPhotoFile } from '@/utils/resolve-image-uri';
 import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
 
@@ -513,7 +514,7 @@ export default function CalendarScreen() {
                                           />
                                         </View>
                                         <View style={styles.cardAmounts}>
-                                          {item.currency !== 'JPY' && (
+                                          {!isDomesticRecord(item) && (
                                             <ThemedText style={styles.cardForeign}>
                                               {c.symbol}{item.foreign_amount.toLocaleString()}
                                             </ThemedText>
@@ -523,7 +524,7 @@ export default function CalendarScreen() {
                                               styles.cardJpy,
                                               isPurchased && styles.cardJpyPurchased,
                                             ]}>
-                                            {item.currency === 'JPY'
+                                            {isDomesticRecord(item)
                                               ? formatJpy(item.jpy_amount)
                                               : `約 ${formatJpy(item.jpy_amount)}`}
                                           </ThemedText>

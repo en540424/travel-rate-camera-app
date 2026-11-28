@@ -4,12 +4,15 @@ import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } fro
 import type { CurrencyCode } from '@/constants/currencies';
 import { card, color, radius, spacing, statusColor, typography } from '@/theme/tokens';
 import { formatForeign, formatJpy } from '@/utils/format';
+import { isDomestic } from '@/utils/money-core';
 
 export interface ItemCardProps {
   /** 商品名（任意） */
   title?: string | null;
   foreignAmount: number;
   currency: CurrencyCode;
+  /** 記録の基準通貨（`HistoryRow.home_currency`）。記録の通貨と同じなら国内として現地の額を出さない */
+  homeCurrency: CurrencyCode;
   jpyAmount: number;
   memo?: string | null;
   /** 写真URI。未指定/nullなら写真なし表示 */
@@ -28,7 +31,7 @@ const CARD_TOKEN: Record<ItemStatus, typeof card.candidate | typeof card.purchas
 };
 
 function ItemCardBase({ status, ...props }: ItemCardProps & { status: ItemStatus }) {
-  const { title, foreignAmount, currency, jpyAmount, memo, imageUri, date, onPress, style } = props;
+  const { title, foreignAmount, currency, homeCurrency, jpyAmount, memo, imageUri, date, onPress, style } = props;
   const tokens = statusColor[status];
   const cardTokens = CARD_TOKEN[status];
 
@@ -69,7 +72,7 @@ function ItemCardBase({ status, ...props }: ItemCardProps & { status: ItemStatus
       </View>
       <View style={styles.amounts}>
         <Text style={styles.jpy}>{formatJpy(jpyAmount)}</Text>
-        {currency !== 'JPY' && <Text style={styles.foreign}>{formatForeign(foreignAmount, currency)}</Text>}
+        {!isDomestic(currency, homeCurrency) && <Text style={styles.foreign}>{formatForeign(foreignAmount, currency)}</Text>}
         <View style={[styles.badge, { backgroundColor: tokens.badgeBg }]}>
           <Text style={[styles.badgeText, { color: tokens.text }]}>{tokens.label}</Text>
         </View>

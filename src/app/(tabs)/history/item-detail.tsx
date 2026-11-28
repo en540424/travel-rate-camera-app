@@ -14,6 +14,7 @@ import { useHistory } from '@/hooks/use-history';
 import { useTrips } from '@/hooks/use-trips';
 import { color, radius, shadow } from '@/theme/tokens';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
+import { isDomesticRecord } from '@/utils/home-currency-core';
 import { itemEditPathnameFor, itemStackBaseOf } from '@/utils/item-route-core';
 import { deleteStoredPhotoFile } from '@/utils/resolve-image-uri';
 
@@ -108,7 +109,7 @@ export default function ItemDetailScreen() {
   }
 
   const isPurchased = (item.is_purchased ?? 0) === 1;
-  const isForeign = item.currency !== 'JPY';
+  const isForeign = !isDomesticRecord(item);
   const statusLabel = isPurchased ? '購入済み' : '候補';
   const statusBg = isPurchased ? color.primarySoft : color.candidateSoft;
   const statusFg = isPurchased ? color.purchasedText : color.candidateText;

@@ -6,6 +6,7 @@ import { GhostButton, PrimaryButton, SecondaryButton } from '@/components/ui';
 import { useTrips } from '@/hooks/use-trips';
 import { color, radius, shadow } from '@/theme/tokens';
 import { formatJpy } from '@/utils/format';
+import { isDomesticTrip } from '@/utils/home-currency-core';
 
 function dateRange(start: string | null, end: string | null): string {
   const fmt = (s: string) => {
@@ -21,7 +22,7 @@ export default function TripCreatedScreen() {
   const { activeTrip } = useTrips();
 
   // レート必須の通貨で未設定（0）のまま作成された場合だけ強く誘導する（通常は作成時にレート入力が必須のため基本発生しない想定）。
-  const rateNeedsSetup = !!activeTrip && activeTrip.base_currency !== 'JPY' && activeTrip.manual_rate <= 0;
+  const rateNeedsSetup = !!activeTrip && !isDomesticTrip(activeTrip) && activeTrip.manual_rate <= 0;
 
   function openCamera() {
     router.dismissAll();
@@ -55,7 +56,7 @@ export default function TripCreatedScreen() {
             <View style={styles.sumRow}>
               <ThemedText style={styles.sumLabel}>レート</ThemedText>
               <ThemedText style={[styles.sumValue, rateNeedsSetup && styles.sumValueWarn]}>
-                {activeTrip.base_currency === 'JPY'
+                {isDomesticTrip(activeTrip)
                   ? '円のみ'
                   : activeTrip.manual_rate > 0
                     ? `1 ${activeTrip.base_currency} = ¥${activeTrip.manual_rate}`
@@ -82,7 +83,7 @@ export default function TripCreatedScreen() {
             この旅行で使うレートを設定してください。設定するまで円換算は表示されません。
           </ThemedText>
         ) : (
-          activeTrip && activeTrip.base_currency !== 'JPY' && (
+          activeTrip && !isDomesticTrip(activeTrip) && (
             <ThemedText style={styles.rateHint}>
               レートはあとから設定画面で変更できます。
             </ThemedText>

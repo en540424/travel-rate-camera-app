@@ -17,6 +17,7 @@ import { useIsPro } from '@/hooks/use-purchases';
 import { useTrips } from '@/hooks/use-trips';
 import { color, radius, shadow, statusColor } from '@/theme/tokens';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
+import { isDomesticRecord } from '@/utils/home-currency-core';
 import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
@@ -110,7 +111,7 @@ export default function HistoryScreen() {
 
   function renderItem({ item }: { item: HistoryRow }) {
     const isPurchased = (item.is_purchased ?? 0) === 1;
-    const isForeign = item.currency !== 'JPY';
+    const isForeign = !isDomesticRecord(item);
     const tone = isPurchased ? statusColor.purchased : statusColor.candidate;
     const hasMemo = !!item.memo?.trim();
     const titleText = hasMemo ? item.memo!.trim() : '（メモなし）';

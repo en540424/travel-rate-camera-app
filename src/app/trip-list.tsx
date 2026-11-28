@@ -11,6 +11,7 @@ import { useTrips } from '@/hooks/use-trips';
 import { color, radius, shadow } from '@/theme/tokens';
 import { computeBudgetStatsFromTotals, EMPTY_BUDGET_TOTALS } from '@/utils/budget-core';
 import { formatJpy } from '@/utils/format';
+import { isDomesticTrip } from '@/utils/home-currency-core';
 
 function monthLabel(t: TripRow): string {
   const src = t.started_at ?? t.created_at;
@@ -110,7 +111,7 @@ export default function TripListScreen() {
                 <View style={styles.rateFlagRow}>
                   <CurrencyFlagImage currency={cur} size={14} outlined />
                   <ThemedText style={styles.activeRate}>
-                    {cur === 'JPY' ? '国内' : `¥${active.manual_rate}`}
+                    {isDomesticTrip(active) ? '国内' : `¥${active.manual_rate}`}
                   </ThemedText>
                 </View>
               </View>
@@ -179,7 +180,7 @@ export default function TripListScreen() {
                     </View>
                     <View style={styles.rateFlagRow}>
                       <CurrencyFlagImage currency={cur} size={13} outlined />
-                      {cur !== 'JPY' && (
+                      {!isDomesticTrip(t) && (
                         <ThemedText style={styles.otherRate}>¥{t.manual_rate}</ThemedText>
                       )}
                     </View>

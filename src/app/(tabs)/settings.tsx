@@ -25,6 +25,7 @@ import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
 import { color, radius, shadow } from '@/theme/tokens';
 import { formatJpy } from '@/utils/format';
+import { isDomesticTrip } from '@/utils/home-currency-core';
 import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
@@ -155,7 +156,7 @@ export default function SettingsScreen() {
                       <ThemedText style={styles.heroBadgeText}>使用中</ThemedText>
                     </View>
                   </View>
-                  {activeTrip.base_currency === 'JPY' ? (
+                  {isDomesticTrip(activeTrip) ? (
                     <View style={styles.heroCurrencyRow}>
                       <CurrencyFlagImage currency="JPY" size={13} outlined />
                       <ThemedText style={styles.heroCurrency}>国内</ThemedText>
@@ -180,7 +181,7 @@ export default function SettingsScreen() {
                   </View>
                   <View style={styles.heroRateCol}>
                     <ThemedText style={styles.heroRate}>
-                      {activeTrip.base_currency === 'JPY'
+                      {isDomesticTrip(activeTrip)
                         ? '円のみ'
                         : activeTrip.manual_rate > 0
                           ? `1 ${activeTrip.base_currency} = ¥${activeTrip.manual_rate}`
@@ -236,7 +237,7 @@ export default function SettingsScreen() {
               />
               <SettingRow
                 label="レート設定"
-                value={activeTrip && activeTrip.base_currency !== 'JPY' && activeTrip.manual_rate > 0 ? `¥${activeTrip.manual_rate}` : undefined}
+                value={activeTrip && !isDomesticTrip(activeTrip) && activeTrip.manual_rate > 0 ? `¥${activeTrip.manual_rate}` : undefined}
                 onPress={() => router.push('/rate-setup')}
               />
               <SettingRow

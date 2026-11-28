@@ -4,12 +4,15 @@ import { SectionCard } from '@/components/ui';
 import type { CurrencyCode } from '@/constants/currencies';
 import { color, spacing, typography } from '@/theme/tokens';
 import { formatForeign, formatJpy } from '@/utils/format';
+import { isDomestic } from '@/utils/money-core';
 
 import { RateInfoRow } from './RateInfoRow';
 
 export interface ConversionSummaryCardProps {
   foreignAmount: number;
   currency: CurrencyCode;
+  /** 基準通貨（旅行の `target_currency`）。現地通貨と同じならレートの行を出さない */
+  homeCurrency: CurrencyCode;
   jpyAmount: number;
   /** 指定するとレート確認行（RateInfoRow）を表示 */
   rate?: number;
@@ -17,7 +20,7 @@ export interface ConversionSummaryCardProps {
 }
 
 /** 外貨→円の換算結果をまとめて表示する小カード。SectionCardを利用 */
-export function ConversionSummaryCard({ foreignAmount, currency, jpyAmount, rate, style }: ConversionSummaryCardProps) {
+export function ConversionSummaryCard({ foreignAmount, currency, homeCurrency, jpyAmount, rate, style }: ConversionSummaryCardProps) {
   return (
     <SectionCard style={style}>
       <View style={styles.row}>
@@ -25,7 +28,7 @@ export function ConversionSummaryCard({ foreignAmount, currency, jpyAmount, rate
         <Text style={styles.arrow}>→</Text>
         <Text style={styles.jpy}>{formatJpy(jpyAmount)}</Text>
       </View>
-      {rate != null && rate > 0 && currency !== 'JPY' && (
+      {rate != null && rate > 0 && !isDomestic(currency, homeCurrency) && (
         <RateInfoRow currency={currency} rate={rate} style={styles.rateRow} />
       )}
     </SectionCard>

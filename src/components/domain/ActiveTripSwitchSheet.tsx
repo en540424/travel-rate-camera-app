@@ -8,6 +8,7 @@ import { useAllHistory } from '@/hooks/use-all-history';
 import { color, radius } from '@/theme/tokens';
 import { computeBudgetStatsFromTotals, EMPTY_BUDGET_TOTALS } from '@/utils/budget-core';
 import { formatJpy } from '@/utils/format';
+import { isDomesticTrip } from '@/utils/home-currency-core';
 
 export interface ActiveTripSwitchSheetProps {
   visible: boolean;
@@ -44,7 +45,7 @@ export function ActiveTripSwitchSheet({ visible, onClose, trips, activeTripId, o
           const totals = totalsByTrip.get(t.id) ?? EMPTY_BUDGET_TOTALS;
           const used = totals.purchasedTotalJpy;
           const remaining = computeBudgetStatsFromTotals(totals, t.budget_jpy).remainingBudget;
-          const ratePart = t.base_currency === 'JPY' ? '国内' : `¥${t.manual_rate}`;
+          const ratePart = isDomesticTrip(t) ? '国内' : `¥${t.manual_rate}`;
           const moneyPart = archived
             ? `使用 ${formatJpy(used)}`
             : t.budget_jpy > 0

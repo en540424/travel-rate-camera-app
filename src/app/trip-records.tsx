@@ -22,6 +22,7 @@ import { useTrips } from '@/hooks/use-trips';
 import { color, radius, shadow, statusColor } from '@/theme/tokens';
 import { EMPTY_BUDGET_TOTALS, type BudgetTotals } from '@/utils/budget-core';
 import { formatForeign, formatJpy } from '@/utils/format';
+import { isDomesticRecord, isDomesticTrip } from '@/utils/home-currency-core';
 import { deleteStoredPhotoFile } from '@/utils/resolve-image-uri';
 
 /** 表示する記録の上限（履歴タブと同じ500件。合計はSQL集計で全件から出す） */
@@ -162,7 +163,7 @@ export default function TripRecordsScreen() {
     const tone = isPurchased ? statusColor.purchased : statusColor.candidate;
     const hasMemo = !!item.memo?.trim();
     const sub = [
-      item.currency !== 'JPY' ? formatForeign(item.foreign_amount, item.currency) : null,
+      !isDomesticRecord(item) ? formatForeign(item.foreign_amount, item.currency) : null,
       formatRecordDate(item),
     ].filter(Boolean).join(' ・ ');
 
@@ -228,7 +229,7 @@ export default function TripRecordsScreen() {
         <View style={styles.summaryMeta}>
           <CurrencyFlagImage currency={trip.base_currency} size={13} outlined />
           <ThemedText style={styles.summaryMetaText}>
-            {trip.base_currency === 'JPY' ? '国内' : trip.base_currency}
+            {isDomesticTrip(trip) ? '国内' : trip.base_currency}
             {period != null ? `・${period}` : ''}
           </ThemedText>
         </View>
