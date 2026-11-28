@@ -1,7 +1,7 @@
-# GX-05 基準通貨のデータ設計（案α・スキーマ変更なし）— 設計書（2026-11-28・審査前）
+# GX-05 基準通貨のデータ設計（案α・スキーマ変更なし）— 設計書（2026-11-28・db-guardian と Fable 5.2 の再監査で条件付き合格）
 
 正本：Vault `旅レートカメラ_多言語多通貨海外展開_機能正本・実装追跡表_2026-11-28`（GX-05・H-GX03・H-GX04）。
-この文書は**設計だけ**で、コードは変えていない。審査（db-guardian・Fable）に合格してから GX-06 で実装する。
+この文書は**設計だけ**で、コードは変えていない。**§11・§12・§13 は §1〜§9 より優先する**（食い違う所は §11〜§13 を正とする）。審査（db-guardian・Fable）に合格してから GX-06 で実装する。
 
 ## 0. 前提と承認境界
 
@@ -39,15 +39,15 @@
 
 - 旅行：`isDomestic(trip.base_currency, trip.target_currency)`（`money-core.ts`）。今の `isJpyMode`（`base_currency === 'JPY'`）は H='JPY' の時に同じ値。
 - 記録：`recordHome = tripOf(record)?.target_currency ?? 'JPY'`、`isDomesticRecord = record.currency === recordHome`。
-- 今の判定（2026-11-28 の grep で 41 行。うち記録単位 13・旅行単位 22・その他）を、この2つの関数の呼び出しへ置き換える。記録だけを受け取る部品（`ItemCard`・`ConversionSummaryCard`・一覧の行）には**記録の基準通貨を一緒に渡す**（**記録の基準通貨は SQL の JOIN で行に載せる：§11 C1**。`tripMap` で別に引く方式は使わない）。
+- 今の判定（2026-11-28 の grep で 41 行。うち記録単位 13・旅行単位 22・その他）を、この2つの関数の呼び出しへ置き換える。記録だけを受け取る部品（`ItemCard`・`ConversionSummaryCard`・一覧の行）には**記録の基準通貨を一緒に渡す**（**記録の基準通貨は SQL の副問い合わせで行に載せる：§11 C1**。JOIN は使わない。`tripMap` で別に引く方式は使わない）。
 - 置き換えの対象（2026-11-28 時点）：`calendar/index.tsx:516,526`・`converter.tsx:61`・`history/index.tsx:113`・`item-detail.tsx:111,208`・`item-edit.tsx:156,308`・`index.tsx:263,856,857`・`index.web.tsx:55`・`settings.tsx:158,183,239`・`rate-setup.tsx:19`・`trip-create.tsx:38,76,77`・`trip-created.tsx:24,58,85`・`trip-edit.tsx:83,114,115,130`・`trip-list.tsx:113,182`・`trip-records.tsx:165,231`・`ActiveTripSwitchSheet.tsx:47`・`ConversionSummaryCard.tsx:28`・`ItemCard.tsx:72`・`csv-export-core.ts:151`・`live-text-core.ts:1518`・`edit-amount-core.ts:46`・`format.ts:31`・`currencies.ts:27`（`FOREIGN_CURRENCY_CODES`）。`extract-prices.ts:242` は OCR の読み取り方式の選択（現地通貨）なので**変えない**。
 
 ## 4. 保存・編集（保護領域）
 
-- 保存（`index.tsx:855-857`）：`rateToSave = isDomestic ? 1 : manual_rate`、`foreignAmountToSave = isDomestic ? homeAmount : foreignAmount`。国内の入力は H の桁へ丸める（`roundMoney(input, H)`。H='JPY' なら今の `normalizeJpyInput`＝`Math.round` と同じ）。
+- 保存（経路は3つ：`index.tsx:855-866`・換算タブ `converter.tsx:63-74, 121`・Web `index.web.tsx:57-58, 105-106`。§12-1 B3）：`rateToSave = isDomestic ? 1 : manual_rate`、`foreignAmountToSave = isDomestic ? homeAmount : foreignAmount`。国内の入力は H の桁へ丸める（`roundMoney(input, H)`。H='JPY' なら今の `normalizeJpyInput`＝`Math.round` と同じ）。
 - 実装の手順：**先に保存する行を作る部分を純粋関数へ切り出し、変更前の式と同じ値になる回帰テストを置く**（H='JPY'・国内／外貨・逆換算・0・小数・NaN）。その後で H を引数にする。
 - 編集（`edit-amount-core.ts:46-52`）：国内の分岐の条件を `currency === recordHome` にし、丸めを H の桁にする。H='JPY' の結果は今と同じ（既存のテストがそのまま通ること）。**訪日客の記録（L='JPY'・H≠'JPY'）を国内として上書きしない**ことを新しいテストで固定する。
-- 逆換算（基準通貨の額を入れる）：保存する `foreign_amount` を現地通貨の桁で丸めるかは変えない（今は丸めない）。編集欄の表示だけ現地通貨の桁で出す（`6.666666666666667` を出さない）。保存値は変えない。
+- 逆換算（基準通貨の額を入れる）：保存する `foreign_amount` を現地通貨の桁で丸めるかは変えない（今は丸めない）。編集欄の表示だけ現地通貨の桁で出す（`6.666666666666667` を出さない）が、**これは基準通貨が円以外の記録だけ**（§12-1 B2。基準通貨が円の記録は今の `String(foreign_amount)` のまま）。保存値は変えない。
 
 ## 5. 集計（全旅行の横断）
 
@@ -55,14 +55,14 @@
 - **H が小数の通貨（USD・EUR・GBP・THB）の合計には SQL の `ROUND`・`SUM` を使わない**。行を読んで JS の `sumMoney` で足す。SQLite の `ROUND(x,2)` は JS の丸めと一致しない（実測：`ROUND(1.005,2)`=1.0・`ROUND(2.675,2)`=2.67・`ROUND(1.115,2)`=1.11・`ROUND(0.285,2)`=0.28 に対し `sumMoney` は 1.01・2.68・1.12・0.29。`SUM` は 0.1+0.2 で 0.30000000000000004）。今の `SUM(ROUND(jpy_amount))`（`history.ts:123`）は小数の H を整数に丸めてしまうので、H が小数の旅行では使わない（GX-06）。
 - カレンダー・分析・旅行一覧（全旅行）：**基準通貨ごとに分けて合計する**（`sumByCurrency`）。異なる通貨の額を足さない。
   - 全記録の基準通貨が同じ（今の利用者はすべて 'JPY'）なら、画面は今と同じ。
-  - 混ざる時（H を変えて新しい旅行を作った利用者）だけ、通貨ごとの合計を並べる。棒グラフ・カテゴリー別は「主な基準通貨（最新の旅行の H）」の記録だけで描き、他の通貨は合計の行で示す（詳細な画面は GX-06 の実装時に ui の審査）。
+  - 混ざる時（H を変えて新しい旅行を作った利用者）だけ、通貨ごとの合計を並べる。棒グラフ・カテゴリー別は「主な基準通貨」（決め方は §12-2 S5。「最新の旅行の H」は使わない）の記録だけで描き、他の通貨は合計の行で示す（詳細な画面は GX-06 の実装時に ui の審査）。
 - 予算の残り：旅行の中だけで計算（H は1つ）。
 
 ## 6. レート
 
 - 入力：「1 L = x H」と「1 H = x L」のどちらでも入れられる（`normalizeRateInput`）。保存は今どおり「1 L あたりの H」（`manual_rate`）。
 - 表示：**H='JPY' の旅行は今の表示（`formatRate`：`1 USD = ¥152.50`・`¥${manual_rate}`）を変えない**。H≠'JPY' の旅行だけ `describeRate`（既定は数が1以上になる向き、`local_first` で入力した向き）と `formatRateNumber`（小さいレートを 0.01 にしない・丸めは自前）を使う。今の `¥${manual_rate}` の直書き（5か所）は「H が円なら今の形、それ以外は `describeRate`」の1つの関数へ集める。
-- 予備のレート（`exchange_rates`・円を軸にした表）：**H='JPY' の時だけ**今どおり使う。H≠'JPY' の時は使わない（その表は円を基準にした利用者の値で、桁や鮮度の前提が違うため）。旅行のレートが未設定なら「レート未設定」。
+- 予備のレート（`exchange_rates`・円を軸にした表）：**書き込みは H='JPY' かつ L≠'JPY' の時だけ**（今と同じ条件。§12-1 S1）。読むのも **H='JPY' の時だけ**今どおり使う。H≠'JPY' の時は使わない（その表は円を基準にした利用者の値で、桁や鮮度の前提が違うため）。旅行のレートが未設定なら「レート未設定」。
 
 ## 7. CSV
 
@@ -93,7 +93,7 @@
 根拠の追加確認：`target_currency` は NOT NULL（NULL の行なし）、`INSERT INTO trips` は `trips.ts` と `schema.ts` の2か所だけ、`DELETE FROM trips` は無い（旅行は archive のみ）、`trip-store` は永続化しない、全データ削除（`clearAll`）は記録だけを消し旅行は残す、Pro+ の `proplus-v1.json` に金額・通貨・予算の項目は無い、CSV の読み込み・復元は存在しない（書き出しだけ）。
 
 - **C1 記録の基準通貨は SQL の副問い合わせで取る（Fable B1 で改訂）**：`history.ts` の各 SELECT を `SELECT *, COALESCE((SELECT target_currency FROM trips WHERE trips.id = conversion_history.trip_id), 'JPY') AS home_currency FROM conversion_history …（以降は今のまま）` にする。**JOIN は使わない**（`SELECT *` のままだと `trips` と同名の `id`・`created_at`・`updated_at` で記録の `id` が旅行の `id` に化け、`WHERE id = ?` と `history-date-core.ts` の無修飾の `created_at` が ambiguous で失敗する。Fable が node:sqlite で実測）。`tripMap` で別に引く方式も使わない（初期値が空の間や1件の読み直しで 'JPY' と誤読するため）
-- **C2 基準通貨の変更はアトミックに**：専用の関数で `UPDATE trips SET target_currency = ?, manual_rate = 0, budget_jpy = ? WHERE id = ? AND NOT EXISTS (SELECT 1 FROM conversion_history WHERE trip_id = ?)` を1文で行う（件数の確認と更新の間に隙間を作らない）。**レートと予算は旧い基準通貨の単位なので、同時にリセットするか再入力させる**。`updateTrip` には実行時の列名の許可リストを持たせる（今は型で除外しているだけで、`Object.keys` をそのまま SET 句に使っている）
+- **C2 基準通貨の変更はアトミックに**：専用の関数で `UPDATE trips SET target_currency = ?, manual_rate = ?, budget_jpy = ?, updated_at = datetime('now') WHERE id = ? AND NOT EXISTS (SELECT 1 FROM conversion_history WHERE conversion_history.trip_id = trips.id)` を1文で行う（件数の確認と更新の間に隙間を作らない。**旅行の id を bind するのは1か所だけ**。再監査 SF2：旧い文〈`… WHERE trip_id = ?` で id を2回 bind〉は、2つ目に別の旅行の id が入ると記録のある旅行を書き換えるので使わない）。**レートと予算は旧い基準通貨の単位なので、フォームの新しい値を同じ1文で SET する**（§12-2 S6）。`updateTrip` には実行時の列名の許可リストを持たせる（今は型で除外しているだけで、`Object.keys` をそのまま SET 句に使っている）
 - **C3 読み取り時の正規化**：7通貨に無い `target_currency` は読み取り時に 'JPY' として扱う関数を1つ置く（列は TEXT で CHECK 制約が無い）
 - **C4 新規作成だけで列を明示する**：`insertTrip` に `target_currency` を足すのは新規作成だけ。ネイティブと Web の作成の4経路（`createTrip`・`endCurrentAndCreateTrip` × 2）で同じ値にする
 - **C5 回帰テストの追加**：読み出した行の `id`・`created_at`・`updated_at` が変更前と同じ（B1）／逆換算で保存した外貨の記録を金額に触れずメモだけ保存すると `changed: false`（B2）／換算タブの4つの値（予備レートの有無 × 基準通貨が円か否か）（B3）／C2 が拒否された時にレート・予算が書かれない／基準通貨が円以外の旅行で `exchange_rates` が書かれない（S1）／既存の小数の円の行（1200.5）で金額に触れずメモだけ保存すると `changed: false`／外貨の記録の編集（`Math.round(f * rateUsed)`）が基準通貨＝円で同じ値／`addEntry` に渡る4つの値（currency・foreign・jpy・rate）が変更前の式と完全に同じ／基準通貨が0桁の時に SQL の合計と JS の合計が一致／CSV が基準通貨＝円で今と同じ列・見出し・値。`record-jpy-total.test.mjs`・`budget-core.test.mjs` に基準通貨が円以外の例を足す。同じ合計の式の写し（`getBudgetTotalsForTrip`・`useHistory.budgetTotals`・`sumBudgetTotals`・`analytics-core`・Web 版）を1つでも旧い式のまま残さない
@@ -102,7 +102,7 @@
 
 ## 12. Fable 5.2 の審査（2026-11-28・条件付き合格）と GX-06 の実装条件
 
-判定：案αは成立（§1 の「既存の行はすべて H='JPY'」に穴なし。`target_currency` を書く経路は存在しない）。ただし文面どおりに作ると円の利用者が壊れる経路が3つ（B1〜B3）あった。**B1〜B3・S1 は本文（§4・§6・§11）を直した。再確認は差分（B1〜B3・S1）だけでよい。** S2〜S11 は GX-06 の実装条件。
+判定：案αは成立（§1 の「既存の行はすべて H='JPY'」に穴なし。`target_currency` を書く経路は存在しない）。ただし文面どおりに作ると円の利用者が壊れる経路が3つ（B1〜B3）あった。**B1〜B3・S1 は最初 §12-1 と §11 C1 にだけ書き、§3〜§6 の本文に食い違いが残っていた（再監査 SF1）。2026-11-28 の再監査の後、§3〜§6 の本文も直した。** S2〜S11 は GX-06 の実装条件。
 
 ### 12-1. 本文の修正（blocker と S1）
 
@@ -124,3 +124,15 @@
 - **S10 旅行編集のレート欄**：基準通貨が円以外の旅行では「欄の文字列が初期値から変わった時だけ `manual_rate` を書く」（名前だけの編集でレートを変えない）
 - **S11 Web 版**：記録を読む場所は3つ（`use-history.web.ts:17`・`use-all-history.web.ts:14`・`trip-stats.ts:14`）。3つとも旅行の基準通貨を載せる（localStorage に書き戻さない）。`use-all-history.web.ts:99` の `Math.round` も写しの1つ。§8 の「Web は旅行の通貨で保存」は基準通貨が円でも挙動が変わるので、「今と同じ」の例外として**別の commit** にする
 - nit：`HistoryRow` に `home_currency` を足すと `insertHistory` の `Omit` と Web の行の生成が型エラーになる（C3 の関数で絞る）／CSV は1旅行単位なので見出しは旅行の H で決まり、「H の桁で丸める」は H≠円の時だけ（既存の「外貨の記録は生値」の契約を保つ）／旅行の作成・編集に基準通貨の選択を足すのは「画面が同じ」の例外（ui の審査）／`expo-localization` は Build が要る（GX-02・Human GO）
+
+## 13. 再監査（2026-11-28・Fable 5.2・条件付き合格）と GX-06 の完了条件の追加
+
+判定：条件付き合格・blocker なし。B1〜B3・S1 の修正は実コードと実測（node:sqlite で実際の `migrateDatabase`・`history.ts`・`trips.ts`・`edit-amount-core.ts` を実行）に対して正しい。C1 の副問い合わせで `getHistory`・`getHistoryById`・`getHistoryInDateKeyRange`・`getHistoryForTrip` の全列・列順が今と一致。v2 の旧スキーマから v7 へ移行した DB でも旅行はすべて `target_currency='JPY'`。`rate_used` を書き換える文は無く、`foreign_amount`・`jpy_amount` を書き換えるのは `updateAmount`（`item-edit.tsx:418`・`changed:true` の時だけ）だけ。起動時・移行時に既存の旅行・記録を書き換える記述は無い。案αの前提を崩す記述は無い。
+
+- **SF1（本文を直した）**：§3 の「JOIN」・§4 の保存の経路と編集欄の表示・§5 の「主な基準通貨」・§6 の書き込み条件。あわせて冒頭に「§11〜§13 が §1〜§9 より優先」と書いた
+- **SF2（§11 C2 を直した）**：基準通貨の変更の SQL は S6 の相関の形1つだけ（旅行の id の bind は1か所）。回帰テスト：記録のある旅行は `changes = 0` で全列が不変／記録の無い旅行は `changes = 1` で他の旅行が不変
+- **SF3（GX-06 の完了条件）**：編集欄の初期値とプレビューを作る式を `edit-amount-core` の純粋関数へ切り出し、`item-edit.tsx` はそれだけを使う。回帰テストは「初期値の関数の出力をそのまま `resolveEditedAmount` に渡すと `changed:false`」を、円の記録・小数の円（1200.5）・順方向の外貨・逆換算の外貨（6.666666666666667）・基準通貨が円以外の各組で確かめる（今のテストは文字列を手で渡しているので、画面が `6.67` を出す実装でも通ってしまう）。プレビューは、未変更の時は保存済みの額を基準通貨の桁で丸めた値、変更の時は保存される値を出す。基準通貨が円の時は今の式（`Math.round(f * rate_used)`）と同じ値
+- **SF4（GX-06 の完了条件・保存処理への追加なので Human の確認の対象）**：`addEntry`（ネイティブ・Web）は INSERT の直前に旅行の `target_currency` を DB から読み直し、画面が金額の計算に使った基準通貨と違えば保存せずに止める（保存する4つの値は変えない。拒否を足すだけ）。C2 の成功後に store の更新が失敗した時は `activeTrip` を旧い値のまま残さない。回帰テスト：基準通貨が食い違う時に記録が1件も増えない。**これは基準通貨を変える操作（C2）を画面に出す時に必須**で、基準通貨が円だけの間（C2 を出す前）は起きない
+- nit（GX-06 で対応）：C3 の正規化は記録の行の `home_currency` にも掛ける（`target_currency` が空文字だと `COALESCE` を素通りする）／S7 で小数の基準通貨の合計を JS で出す時、上限付きの `getHistoryForTrip`（50／500件）を使わず、上限なしで `is_purchased, jpy_amount` だけを読む／C5 の B1 のテストは `tools/store-assets/engine/fixtures/expo-sqlite-node.mjs` と `alias-hooks.mjs` で実際の `history.ts` を node:sqlite に掛けて書ける／基準通貨を変えた成功時に `index.tsx`・`converter.tsx` の入力中の金額を消す／§3 の `csv-export-core.ts` は `src/lib/csv-export-core.ts`
+- Web の記録は `persistAll(loadAll())` で全行を localStorage へ書き戻すので（`use-history.web.ts:110`）、S11 の「書き戻さない」は保存の前に `home_currency` を落とす実装にする
+- **db-guardian の再確認（2026-11-28・C1・C2 の最終形）：合格**。C1 は FROM が `conversion_history` だけのままなので `WHERE id = ?`・`WHERE trip_id = ?`・`history-date-core.ts` の無修飾の列はすべて記録の表に解決され、`trips.id` は `INTEGER PRIMARY KEY`（主キー検索）。C2 は1文で原子的・id の bind は1か所・記録のある旅行は `changes = 0`・`updated_at = datetime('now')` は既存の書き方と同じ。`conversion_history.trip_id` に索引は無いが、操作が稀なので許容（索引はスキーマ変更なので足さない）。実装時の注意：C1 を入れるのは `HistoryRow` を返す4関数（`getHistory`・`getHistoryById`・`getHistoryInDateKeyRange`・`getHistoryForTrip`）だけで、集計（`getBudgetTotals*`・`getHistoryCount*`・`getImageUris`）は変えない／`insertHistory` の `Omit<HistoryRow, …>` に `home_currency` を足す
