@@ -5,7 +5,9 @@ import type { CurrencyCode } from '@/constants/currencies';
 import {
   budgetTotalsByTripFromGroupRows,
   EMPTY_BUDGET_TOTALS,
+  sumBudgetTotalsInMinorUnits,
   type BudgetGroupRow,
+  type BudgetInputRow,
   type BudgetTotals,
 } from '@/utils/budget-core';
 import {
@@ -13,7 +15,7 @@ import {
   historyDateKeyRangeParams,
   type DateKeyRange,
 } from '@/utils/history-date-core';
-import { withHomeCurrency } from '@/utils/home-currency-core';
+import { fractionalHomeCurrency, minorUnitsFor, withHomeCurrency } from '@/utils/home-currency-core';
 
 /** DB（と Web の localStorage）に実際にある記録の列 */
 export interface StoredHistoryRow {
@@ -146,19 +148,61 @@ const BUDGET_GROUP_SQL = `
   SELECT trip_id, is_purchased, COUNT(*) AS count, SUM(ROUND(jpy_amount)) AS total
   FROM conversion_history`;
 
+/**
+ * 小数の基準通貨（USD・EUR・GBP・THB）の旅行の合計を、行を読み直して最小単位の整数で足した値に置き換える
+ * （GX-06 段階 c-2・設計書 §12-2 S7）。SQL の `ROUND(jpy_amount)` は小数の基準通貨を整数に丸めてしまい、
+ * `ROUND(x,2)`・`SUM` も JS の丸めと一致しないため、この旅行の合計には SQL の値を使わない。
+ * - 読むのは `is_purchased, jpy_amount` だけ・**件数の上限なし**（表示用の 50／500件の上限を使わない）
+ * - 件数も同じ読み出しの行数にする（合計と件数を1回の読み出しにそろえる。どちらも同じ行の集まりなので値は SQL の COUNT と同じ）
+ * - 終了済みの旅行も対象（旅行の状態で絞らない）
+ */
+async function fractionalTripTotals(
+  db: SQLiteDatabase,
+  tripId: number,
+  home: CurrencyCode,
+): Promise<BudgetTotals | null> {
+  const rows = await db.getAllAsync<BudgetInputRow>(
+    'SELECT is_purchased, jpy_amount FROM conversion_history WHERE trip_id = ?',
+    tripId,
+  );
+  return rows.length === 0 ? null : sumBudgetTotalsInMinorUnits(rows, minorUnitsFor(home));
+}
+
+/**
+ * 全旅行の集計。基準通貨が0桁の旅行（既存の旅行はすべて JPY）は `BUDGET_GROUP_SQL` の値のまま。
+ * 旅行は `trips` を直接読む（終了済み・アーカイブ済みも含む。`getAllTrips` の絞り込みに依存しない）。
+ * `trip_id` が NULL の記録はどの旅行にも入らない。旅行が見つからない記録は JPY と読む（§11 C1）ので SQL の値のまま
+ */
 export async function getBudgetTotalsByTrip(db: SQLiteDatabase): Promise<Map<number, BudgetTotals>> {
   const rows = await db.getAllAsync<BudgetGroupRow>(
     `${BUDGET_GROUP_SQL} WHERE trip_id IS NOT NULL GROUP BY trip_id, is_purchased`,
   );
-  return budgetTotalsByTripFromGroupRows(rows);
+  const map = budgetTotalsByTripFromGroupRows(rows);
+  const trips = await db.getAllAsync<{ id: number; target_currency: unknown }>(
+    'SELECT id, target_currency FROM trips',
+  );
+  for (const trip of trips) {
+    const home = fractionalHomeCurrency(trip.target_currency);
+    if (!home) continue;
+    const totals = await fractionalTripTotals(db, trip.id, home);
+    if (totals) map.set(trip.id, totals);
+    else map.delete(trip.id);
+  }
+  return map;
 }
 
-/** 1旅行分の集計。行が無ければ全て0 */
+/** 1旅行分の集計。行が無ければ全て0。基準通貨が0桁の旅行は `BUDGET_GROUP_SQL` の値のまま */
 export async function getBudgetTotalsForTrip(db: SQLiteDatabase, tripId: number): Promise<BudgetTotals> {
   const rows = await db.getAllAsync<BudgetGroupRow>(
     `${BUDGET_GROUP_SQL} WHERE trip_id = ? GROUP BY trip_id, is_purchased`,
     tripId,
   );
+  const trip = await db.getFirstAsync<{ target_currency: unknown }>(
+    'SELECT target_currency FROM trips WHERE id = ?',
+    tripId,
+  );
+  const home = fractionalHomeCurrency(trip?.target_currency);
+  if (home) return (await fractionalTripTotals(db, tripId, home)) ?? { ...EMPTY_BUDGET_TOTALS };
   return budgetTotalsByTripFromGroupRows(rows).get(tripId) ?? { ...EMPTY_BUDGET_TOTALS };
 }
 

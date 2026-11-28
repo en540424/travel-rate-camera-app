@@ -53,7 +53,8 @@ import {
 } from '@/utils/ocr-benchmark';
 import type { VisionOcrBenchmarkArmDefinition, VisionOcrBenchmarkArmId, VisionOcrBenchmarkResult } from '@/utils/ocr-benchmark';
 import { registerTabScrollReset } from '@/utils/tab-scroll-reset';
-import { remainingSaveSlots, shouldShowNearSaveLimit } from '@/utils/budget-core';
+import { remainingAfterSaving, remainingSaveSlots, shouldShowNearSaveLimit } from '@/utils/budget-core';
+import { budgetUnitsForHome } from '@/utils/home-currency-core';
 import {
   adoptChosenPhoto,
   adoptNewReadingPhoto,
@@ -312,12 +313,14 @@ export default function CameraScreen() {
   );
 
   const stats = useMemo(
-    () => getTripStatsForDisplay(budgetTotals, tripBudgetJpy, activeTrip?.id),
-    [budgetTotals, tripBudgetJpy, activeTrip?.id],
+    // 第4引数：旅行の基準通貨（小数の基準通貨だけ残り予算を最小単位で引く。円の旅行は今の式のまま・GX-06 段階 c-2）
+    () => getTripStatsForDisplay(budgetTotals, tripBudgetJpy, activeTrip?.id, activeTrip?.target_currency),
+    [budgetTotals, tripBudgetJpy, activeTrip?.id, activeTrip?.target_currency],
   );
 
+  // 小数の基準通貨の旅行だけ最小単位で引く（円の旅行は今の式のまま・GX-06 段階 c-2）
   const remainingIfSaved = canSave
-    ? Math.max(0, stats.remainingBudget - Math.round(jpyAmount))
+    ? remainingAfterSaving(stats.remainingBudget, jpyAmount, budgetUnitsForHome(activeTrip?.target_currency))
     : null;
 
   /**

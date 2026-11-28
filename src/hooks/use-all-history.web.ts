@@ -5,9 +5,13 @@ import { useCallback, useEffect, useState } from 'react';
 import type { CurrencyCode } from '@/constants/currencies';
 import type { HistoryRow, StoredHistoryRow } from '@/db/queries/history';
 import type { TripRow } from '@/db/queries/trips';
-import { budgetTotalsByTripFromGroupRows, type BudgetTotals } from '@/utils/budget-core';
+import type { BudgetTotals } from '@/utils/budget-core';
 import { isDateKeyInRange, rowToDateKey, type DateKeyRange } from '@/utils/history-date-core';
-import { attachHomeCurrencyFromTrips, stripHomeCurrency } from '@/utils/home-currency-core';
+import {
+  attachHomeCurrencyFromTrips,
+  budgetTotalsByTripFromRows,
+  stripHomeCurrency,
+} from '@/utils/home-currency-core';
 
 const HISTORY_KEY = 'travelrate:history';
 const TRIPS_KEY   = 'travelrate:trips';
@@ -94,16 +98,8 @@ export function useAllHistory(options: UseAllHistoryOptions = {}) {
         : [],
     );
     setTripMap(new Map(trips.map((t) => [t.id, t])));
-    setTotalsByTrip(
-      budgetTotalsByTripFromGroupRows(
-        rows.map((r) => ({
-          trip_id: r.trip_id,
-          is_purchased: r.is_purchased,
-          count: 1,
-          total: Number.isFinite(r.jpy_amount) ? Math.round(r.jpy_amount) : 0,
-        })),
-      ),
-    );
+    // 旅行ごとの合計：基準通貨が0桁の旅行は1行ずつ Math.round（変更前と同じ）・小数の基準通貨の旅行は最小単位で足す（GX-06 段階 c-2）
+    setTotalsByTrip(budgetTotalsByTripFromRows(rows, trips));
   }, [rangeFrom, rangeTo]);
 
   useEffect(() => {

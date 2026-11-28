@@ -8,10 +8,26 @@ import {
   sumBudgetTotals,
   type BudgetTotals,
 } from '@/utils/budget-core';
+import {
+  budgetTotalsForHome,
+  budgetUnitsForHome,
+  homeCurrencyOfTrip,
+  tripHomesFromJson,
+} from '@/utils/home-currency-core';
 
 const WEB_HISTORY_STORAGE_KEY = 'travelrate:history';
+/** 旅行の保存先（`use-trips.ts` の `STORAGE_KEY` と同じ）。旅行の基準通貨を引くためだけに読む */
+const WEB_TRIPS_STORAGE_KEY = 'travelrate:trips';
 
-/** 集計（件数・合計）にだけ使うので基準通貨は付けない（小数の基準通貨の合計は GX-06 段階 c〈S7〉で扱う） */
+function loadTripHomesFromWebStorage(): { id: number; target_currency: unknown }[] {
+  try {
+    return tripHomesFromJson(localStorage.getItem(WEB_TRIPS_STORAGE_KEY));
+  } catch {
+    return [];
+  }
+}
+
+/** 集計（件数・合計）にだけ使うので記録に基準通貨は付けない（合計の桁は旅行の基準通貨で決める。GX-06 段階 c-2） */
 function loadAllFromWebStorage(): StoredHistoryRow[] {
   try {
     const raw = localStorage.getItem(WEB_HISTORY_STORAGE_KEY);
@@ -59,18 +75,23 @@ export function getTripStats(rows: HistoryRow[], budgetJpy: number): TripStats {
  * 表示用の500件上限に依存しない残り予算を出す。
  * Web は hook の state ではなく localStorage 全件から集計し、タブ間でズレないようにする
  * （activeTripId が渡された場合は旅行スコープでフィルタする）。
+ *
+ * `homeCurrency`（GX-06 段階 c-2）：native の旅行の `target_currency`。小数の基準通貨なら残り予算を最小単位で引く。
+ * 未指定・0桁の基準通貨は今の式のまま。Web は渡された値を使わず、記録と同じ同期処理で読んだ localStorage の旅行から引く。
+ * 旅行が選ばれていない時（activeTripId が null）は全旅行の行が混ざるが、その金額はどの画面にも出さないので今の式のまま
  */
 export function getTripStatsForDisplay(
   hookTotals: BudgetTotals,
   budgetJpy: number,
   activeTripId?: number | null,
+  homeCurrency?: unknown,
 ): TripStats {
   if (Platform.OS === 'web') {
     const all = loadAllFromWebStorage();
-    const rows = activeTripId != null
-      ? all.filter((r) => r.trip_id === activeTripId)
-      : all;
-    return computeBudgetStatsFromTotals(sumBudgetTotals(rows), budgetJpy);
+    if (activeTripId == null) return computeBudgetStatsFromTotals(sumBudgetTotals(all), budgetJpy);
+    const rows = all.filter((r) => r.trip_id === activeTripId);
+    const home = homeCurrencyOfTrip(activeTripId, loadTripHomesFromWebStorage());
+    return computeBudgetStatsFromTotals(budgetTotalsForHome(rows, home), budgetJpy, budgetUnitsForHome(home));
   }
-  return computeBudgetStatsFromTotals(hookTotals, budgetJpy);
+  return computeBudgetStatsFromTotals(hookTotals, budgetJpy, budgetUnitsForHome(homeCurrency));
 }

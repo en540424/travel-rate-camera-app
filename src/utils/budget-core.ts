@@ -89,6 +89,49 @@ export function sumBudgetTotals(rows: readonly BudgetInputRow[]): BudgetTotals {
 }
 
 /**
+ * 基準通貨の最小単位への変換（GX-06 段階 c-2・設計書 `design/gx05-home-currency-design.md` §12-2 S7・S8）。
+ * このモジュールは値の import を持たないので、呼ぶ側（`home-currency-core.ts`）が `money-core` の関数を注入する。
+ */
+export type MinorUnits = {
+  /** 1件の額を基準通貨の最小単位の整数へ（USD 12.345 → 1235）。有限でない値は 0 */
+  toMinor: (amount: number) => number;
+  /** 最小単位の整数を額へ（1235 → 12.35） */
+  fromMinor: (minor: number) => number;
+};
+
+/**
+ * 小数の基準通貨（USD・EUR・GBP・THB）の旅行の候補/購入済みの件数・合計。
+ * **1件ずつ基準通貨の桁で丸め、最小単位の整数で足し、最後に1回だけ額へ戻す**（`money-core` の `sumMoney` と同じ値。
+ * SQL の `ROUND(x,2)`・`SUM` や浮動小数の足し算〈0.1+0.2〉の誤差を持ち込まない）。
+ * 基準通貨が0桁の旅行（JPY・KRW・TWD）はこれを使わず、今の `sumBudgetTotals`・SQL `SUM(ROUND(jpy_amount))` のまま。
+ */
+export function sumBudgetTotalsInMinorUnits(
+  rows: readonly BudgetInputRow[],
+  units: MinorUnits,
+): BudgetTotals {
+  let candidateCount = 0;
+  let candidateMinor = 0;
+  let purchasedCount = 0;
+  let purchasedMinor = 0;
+  for (const row of rows ?? []) {
+    const minor = units.toMinor(row.jpy_amount);
+    if ((row.is_purchased ?? 0) === 1) {
+      purchasedCount += 1;
+      purchasedMinor += minor;
+    } else {
+      candidateCount += 1;
+      candidateMinor += minor;
+    }
+  }
+  return {
+    candidateCount,
+    candidateTotalJpy: units.fromMinor(candidateMinor),
+    purchasedCount,
+    purchasedTotalJpy: units.fromMinor(purchasedMinor),
+  };
+}
+
+/**
  * SQLの`GROUP BY trip_id, is_purchased`結果（`db/queries/history.ts`）を`BudgetTotals`へ畳む。
  * `trip_id`ごとのMapを返す。NULLのtrip_id（未分類）はキー`null`として保持しない（旅行画面では使わない）。
  * SQL側の`SUM(ROUND(jpy_amount))`は行ごとの丸めなので、`sumBudgetTotals`と同じ結果になる。
@@ -123,16 +166,35 @@ export function budgetTotalsByTripFromGroupRows(rows: readonly BudgetGroupRow[])
  * 合計から残り予算を求める。**残り予算 = 予算 − 購入済み合計**（候補は差し引かない）。
  * 残り予算は`Math.max(0, …)`でclampする（既存仕様。購入済みが予算を超えても0止まり）。
  * 旅行一覧・切替シート・カメラ・履歴・設定のすべてがこの1関数を通る（画面間で定義をずらさない）。
+ *
+ * `units`（GX-06 段階 c-2）：小数の基準通貨の旅行だけ渡す。予算と購入済み合計を最小単位の整数にしてから引く
+ * （100.1 − 33.41 のような浮動小数の誤差を残さない）。**未指定なら今の式のまま**（基準通貨が0桁の旅行・既存の円の旅行）。
  */
-export function computeBudgetStatsFromTotals(totals: BudgetTotals, budgetJpy: number): BudgetStats {
+export function computeBudgetStatsFromTotals(
+  totals: BudgetTotals,
+  budgetJpy: number,
+  units?: MinorUnits,
+): BudgetStats {
   const budget = Number.isFinite(budgetJpy) ? budgetJpy : 0;
   return {
     candidateCount: totals.candidateCount,
     candidateTotalJpy: totals.candidateTotalJpy,
     purchasedTotalJpy: totals.purchasedTotalJpy,
     // 候補は差し引かない（上部コメント参照）
-    remainingBudget: Math.max(0, budget - totals.purchasedTotalJpy),
+    remainingBudget: units
+      ? units.fromMinor(Math.max(0, units.toMinor(budget) - units.toMinor(totals.purchasedTotalJpy)))
+      : Math.max(0, budget - totals.purchasedTotalJpy),
   };
+}
+
+/**
+ * 「保存したら残り」：残り予算から、これから保存する1件の額を引いた値（0 で止める）。
+ * `units`（GX-06 段階 c-2・Fable SF3）を渡すと最小単位の整数で引く（USD 667.09 − 12.34 = 654.75）。
+ * **未指定なら今の式のまま**（`Math.max(0, remaining - Math.round(amount))`。円の旅行は値が変わらない）
+ */
+export function remainingAfterSaving(remaining: number, amount: number, units?: MinorUnits): number {
+  if (!units) return Math.max(0, remaining - Math.round(amount));
+  return units.fromMinor(Math.max(0, units.toMinor(remaining) - units.toMinor(amount)));
 }
 
 /**

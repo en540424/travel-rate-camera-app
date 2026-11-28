@@ -49,6 +49,7 @@ export function useHistory() {
       activeTrip ? getHistoryForTrip(db, activeTrip.id, limit) : getHistory(db, limit),
       activeTrip ? getHistoryCountForTrip(db, activeTrip.id) : getHistoryCount(db),
       // 旅行未選択時は保存もできないため、表示行からの集計で足りる
+      // （全旅行の行が混ざり基準通貨も混ざり得るが、その合計の金額はどの画面にも出さない。件数だけ使う・GX-06 段階 c-2）
       activeTrip ? getBudgetTotalsForTrip(db, activeTrip.id) : null,
     ]);
     setHistory(rows);

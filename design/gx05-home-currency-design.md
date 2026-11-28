@@ -118,7 +118,7 @@
 - **S4 分析**：`formatCompactYen`・`formatAxisLabels`（`analytics-core.ts:183-235`）は通貨と表示言語を引数に取る。`summarizePeriodSpending` は基準通貨を受け取り、合計・棒・カテゴリー別を**最小単位の整数で足してから戻す**（浮動小数で足すと3つの合計の一致が崩れる）
 - **S5 主な基準通貨**：「表示期間内の記録の基準通貨（1種類ならそれ、複数なら件数が最多か最新の記録）、記録が無い時だけ使用中の旅行の H」。§5 の「最新の旅行の H」は使わない。旅行なしの履歴（`use-history.ts:55`）も全旅行の横断として扱う
 - **S6 C2 の運用**：`changes === 0` は拒否。基準通貨の変更は、フォームの新しいレート・予算を**同じ1文で SET** し、拒否なら全体を中止（旧い基準通貨の旅行に新しい単位の値を書かない）。`updated_at = datetime('now')`。条件は `NOT EXISTS (SELECT 1 FROM conversion_history WHERE conversion_history.trip_id = trips.id)`。成功後に `getTripById` → `setActiveTrip`。Web（`use-trips.ts:108-110`）にも同じ条件と許可リスト
-- **S7 旅行ごとの合計**：**H が0桁の旅行は `BUDGET_GROUP_SQL`（`history.ts:122-124`）を1文字も変えずに使う**。H が小数の旅行だけ行を別に読んで JS の `sumMoney` で上書きする（同一性を構造で保証）。件数は SQL のまま
+- **S7 旅行ごとの合計**：**H が0桁の旅行は `BUDGET_GROUP_SQL`（`history.ts:122-124`）を1文字も変えずに使う**。H が小数の旅行だけ行を別に読んで JS の `sumMoney` で上書きする（同一性を構造で保証）。~~件数は SQL のまま~~ → **件数も同じ読み出しの行数にする**（GX-06 段階 c-2 で変更・db-guardian 確認済み：合計と件数を1回の読み出しにそろえる。行の集まりは同じなので値は SQL の COUNT と同じ）。残り予算も小数の H では最小単位で引く（`computeBudgetStatsFromTotals` の `units`）
 - **S8 純粋モジュールの規律**：`edit-amount-core`・`budget-core`・`analytics-core`・`csv-export-core` は値の import を持たない（テストが直接 import）。桁や丸めは**引数で注入**する（`csv-export-core.ts` の `categoryLabelOf` と同じ方式）
 - **S9 訪日客で検索に掛からない前提**：`translation-languages.ts:26` の `JPY: null`（スマートカメラの換算・メモの翻訳・翻訳タブの初期言語）、`live-text-core.ts:1531` の「元」を TWD と判定（日本語の「元祖」「地元」）、`getRateInputExample` は1通貨あたりの円。**訪日客の翻訳ページ・スマートカメラの換算は GX-09 で扱い、それまで出さない**。入力例は `crossRateFromJpyTable` で作る
 - **S10 旅行編集のレート欄**：基準通貨が円以外の旅行では「欄の文字列が初期値から変わった時だけ `manual_rate` を書く」（名前だけの編集でレートを変えない）

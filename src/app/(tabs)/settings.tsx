@@ -76,8 +76,9 @@ export default function SettingsScreen() {
 
   const tripBudgetJpy = activeTrip?.budget_jpy ?? FALLBACK_BUDGET_JPY;
   const stats = useMemo(
-    () => getTripStatsForDisplay(budgetTotals, tripBudgetJpy, activeTrip?.id),
-    [budgetTotals, tripBudgetJpy, activeTrip?.id],
+    // 第4引数：旅行の基準通貨（小数の基準通貨だけ残り予算を最小単位で引く。円の旅行は今の式のまま・GX-06 段階 c-2）
+    () => getTripStatsForDisplay(budgetTotals, tripBudgetJpy, activeTrip?.id, activeTrip?.target_currency),
+    [budgetTotals, tripBudgetJpy, activeTrip?.id, activeTrip?.target_currency],
   );
 
   // 旅行切替失敗時に無言で終わらないよう try/catch + Alert を追加（S-08）。切替処理本体は変更しない。

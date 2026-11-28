@@ -11,7 +11,7 @@ import { useTrips } from '@/hooks/use-trips';
 import { color, radius, shadow } from '@/theme/tokens';
 import { computeBudgetStatsFromTotals, EMPTY_BUDGET_TOTALS } from '@/utils/budget-core';
 import { formatJpy } from '@/utils/format';
-import { isDomesticTrip } from '@/utils/home-currency-core';
+import { budgetUnitsForHome, isDomesticTrip } from '@/utils/home-currency-core';
 
 function monthLabel(t: TripRow): string {
   const src = t.started_at ?? t.created_at;
@@ -99,7 +99,7 @@ export default function TripListScreen() {
         {/* アクティブ旅行（大カード） */}
         {active && (() => {
           const s = totalsByTrip.get(active.id) ?? EMPTY_BUDGET_TOTALS;
-          const remaining = computeBudgetStatsFromTotals(s, active.budget_jpy).remainingBudget;
+          const remaining = computeBudgetStatsFromTotals(s, active.budget_jpy, budgetUnitsForHome(active.target_currency)).remainingBudget;
           const cur = active.base_currency;
           return (
             <View style={styles.activeCard}>
@@ -166,7 +166,7 @@ export default function TripListScreen() {
             {others.map((t) => {
               const s = totalsByTrip.get(t.id) ?? EMPTY_BUDGET_TOTALS;
               const archived = t.archived_at != null;
-              const remaining = computeBudgetStatsFromTotals(s, t.budget_jpy).remainingBudget;
+              const remaining = computeBudgetStatsFromTotals(s, t.budget_jpy, budgetUnitsForHome(t.target_currency)).remainingBudget;
               const cur = t.base_currency;
               return (
                 <Pressable

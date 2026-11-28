@@ -9,7 +9,13 @@ import type { HistoryRow, StoredHistoryRow } from '@/db/queries/history';
 import { useIsPro } from '@/hooks/use-purchases';
 import { useTripStore } from '@/stores/trip-store';
 import { EMPTY_BUDGET_TOTALS, sumBudgetTotals, type BudgetTotals } from '@/utils/budget-core';
-import { attachHomeCurrencyFromTrips, stripHomeCurrency, tripHomesFromJson } from '@/utils/home-currency-core';
+import {
+  attachHomeCurrencyFromTrips,
+  budgetTotalsForHome,
+  homeCurrencyOfTrip,
+  stripHomeCurrency,
+  tripHomesFromJson,
+} from '@/utils/home-currency-core';
 
 const STORAGE_KEY = 'travelrate:history';
 /** 旅行の保存先（`use-trips.ts` の `STORAGE_KEY` と同じ）。記録の基準通貨を引くためだけに読む */
@@ -75,12 +81,17 @@ export function useHistory() {
       ? all.filter((r) => r.trip_id === activeTrip.id)
       : all;
     setTotalCount(rows.length);
-    setBudgetTotals(sumBudgetTotals(rows));
+    // 記録の基準通貨は、記録と同じ同期処理の中で読んだ旅行から引く（store の activeTrip は使わない。GX-06 段階 a）
+    const tripHomes = loadTripHomes();
+    // 合計は旅行の基準通貨の桁で（小数の基準通貨だけ最小単位で足す。GX-06 段階 c-2）。
+    // 旅行が選ばれていない時は全旅行の行が混ざるが、その合計の金額はどの画面にも出さない（件数だけ使う）ので今の式のまま
+    setBudgetTotals(
+      activeTrip ? budgetTotalsForHome(rows, homeCurrencyOfTrip(activeTrip.id, tripHomes)) : sumBudgetTotals(rows),
+    );
     // 初回MVPは保存上限を露出しない方針のため、表示件数はFREE_HISTORY_LIMIT（FREE_LIMITS.saves）で切らない（P0-04）。
     const limit = 500;
-    // 記録の基準通貨は、記録と同じ同期処理の中で読んだ旅行から引く（store の activeTrip は使わない。GX-06 段階 a）
     setHistoryState(
-      attachHomeCurrencyFromTrips(rows.slice(0, limit), loadTripHomes()),
+      attachHomeCurrencyFromTrips(rows.slice(0, limit), tripHomes),
     );
   }, [activeTrip]);
 

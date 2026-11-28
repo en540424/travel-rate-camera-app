@@ -20,7 +20,9 @@ import { useIsPro } from '@/hooks/use-purchases';
 import { useRates } from '@/hooks/use-rates';
 import { useTrips } from '@/hooks/use-trips';
 import { useSettingsStore } from '@/stores/settings-store';
+import { remainingAfterSaving } from '@/utils/budget-core';
 import { formatForeign, formatJpy, formatRate } from '@/utils/format';
+import { budgetUnitsForHome } from '@/utils/home-currency-core';
 import { deriveEntryAmounts, webHomeSaveValues } from '@/utils/save-values-core';
 import { getTripStatsForDisplay } from '@/utils/trip-stats';
 
@@ -72,8 +74,9 @@ export default function CameraScreen() {
     [budgetTotals, tripBudgetJpy, activeTrip?.id],
   );
 
+  // 小数の基準通貨の旅行だけ最小単位で引く（円の旅行は今の式のまま・GX-06 段階 c-2）
   const remainingIfSaved = canSave
-    ? Math.max(0, stats.remainingBudget - Math.round(jpyAmount))
+    ? remainingAfterSaving(stats.remainingBudget, jpyAmount, budgetUnitsForHome(activeTrip?.target_currency))
     : null;
   const budgetUsedRatio = tripBudgetJpy > 0
     ? Math.min(1, stats.purchasedTotalJpy / tripBudgetJpy)
