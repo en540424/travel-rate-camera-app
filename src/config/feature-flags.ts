@@ -40,3 +40,11 @@ export const DEV_PRO_PLUS_PREVIEW = __DEV__;
  * trueの時は`DEV_PRO_PLUS_PREVIEW`の「契約を装う」を止める（判定は`lib/proplus/proplus-access-core.ts`の`resolveProPlusFlags`）。
  */
 export const PRO_PLUS_QA = process.env.EXPO_PUBLIC_PRO_PLUS_QA === '1';
+
+/**
+ * 多言語の画面（GX-01〜GX-08・2026-11-28）。訳とキー化が揃うまでは false（表示言語を常に日本語にする）。
+ * 途中の版で英語と日本語が混ざった画面を出さないため。開発中は `__DEV__` の時だけ端末の言語・切り替えを使う。
+ * true にするのは GX-08（全キーの訳）と GX-12（言語別の確認）の後。
+ */
+export const SHOW_MULTILINGUAL_UI = false;
+export const DEV_MULTILINGUAL_PREVIEW = __DEV__;

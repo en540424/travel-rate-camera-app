@@ -4,6 +4,11 @@
 
 > 本節が現在地の正。以下の「現在の開発フェーズ」以降は2026-07-01〜08時点の履歴で、完了済み項目を未完へ戻さない。
 
+> [!important] 2026-11-28 **多言語・多通貨・海外展開（D＋B・Human 正式実装決定）／branch `feat/i18n-multicurrency`（`bba5ccb` から）**
+> - 進捗台帳の正本は Vault `旅レートカメラ_多言語多通貨海外展開_機能正本・実装追跡表_2026-11-28` の §5（GX-01〜GX-13）、再開手順は同 §7。ここは再開位置の案内だけ
+> - ローカル完了：GX-01 i18n コア（`src/i18n/`）・GX-03 日本語の直書きの検査（`scripts/i18n/ja-literals.mjs`・基準値）・GX-04 通貨のコア（`src/utils/money-core.ts`）。独立監査 Fable 5.2（2回・blocker の丸めの不一致を修正済み）。既存画面にはまだ配線していない（`SHOW_MULTILINGUAL_UI=false`）
+> - 次：GX-05 設計書（`design/gx05-home-currency-design.md`・審査前）を db-guardian と Fable で審査 → GX-06（保護領域・回帰テストを先に）。Pro+ branch との合流は Human 判断（H-GX01）
+
 > [!important] 2026-11-26（続き2）**Pro+ 本人認証の残課題の修正・購読の更新の整合性・Sandbox の準備／ローカル実装済み・モックテスト合格・独立検収（Fable 5.2・2回）blocker 0・外部サービスでの実証0件・本番公開は不可**
 > - 中継 `2d63c43`：RS-2 の残り（署名日時ごとの窓＋外側の上限）・RS-5（返金と取り消しを事象の時刻で・Directory version 3・旧い版へ戻しても同じ判定）・RS-6（権利なしを60秒覚える・同時の照会は3本）・NX-2・NY-1（持ち主の記録の期限・件数・not_owner で消す）・Webhook の HMAC 署名（RevenueCat 公式の機能・任意で必須）・RS-3（S1 の記述）。検収の RV-1〜6・NV-1〜2 の should-fix は修正、nit の一部は記録のみ（中継 README）
 > - アプリ `dc3fb72`：403 `not_entitled` の後、トークンにつき1回だけ新しい証拠で交換し直す（商品の変更で RevenueCat が別の購読を作るため）。TEST_CHECKLIST #104 の更新と X-1〜X-7（Sandbox の実測項目）
